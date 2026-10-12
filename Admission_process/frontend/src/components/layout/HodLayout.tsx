@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   Lock,
   UserCheck,
+  FileCheck,
 } from 'lucide-react';
 import hodService, { HodDashboardData } from '../../services/hod.service';
 import usePwa from '../../hooks/usePwa';
@@ -84,6 +85,13 @@ export const HodLayout: React.FC = () => {
     window.addEventListener('academic-year-changed', handleYearChanged);
     return () => {
       window.removeEventListener('academic-year-changed', handleYearChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.body.dataset.portal = 'hod';
+    return () => {
+      delete document.body.dataset.portal;
     };
   }, []);
 
@@ -180,6 +188,7 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Attendance', path: '/hod/attendance', icon: CalendarCheck },
         { name: 'Attendance Defaulters', path: '/hod/attendance/defaulters', icon: AlertTriangle, badge: defaultersCount > 0 ? defaultersCount : undefined },
+        { name: 'Examination & Assessments', path: '/hod/assessments', icon: FileCheck },
         { name: 'Marks / IA', path: '/hod/academics/performance', icon: TrendingUp },
         { name: 'Bit-Wise Marks', path: '/hod/academics/bitwise', icon: BarChart3 },
       ],
@@ -228,6 +237,7 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Subjects', path: '/hod/subjects', icon: BookOpen },
         { name: 'Attendance', path: '/hod/attendance', icon: CalendarCheck },
+        { name: 'Examination & Assessments', path: '/hod/assessments', icon: FileCheck },
         { name: 'Analytics', path: '/hod/academics', icon: BarChart3 },
       ],
     },
@@ -266,6 +276,7 @@ export const HodLayout: React.FC = () => {
     '/hod/subjects': 'Department Subjects Directory',
     '/hod/attendance': 'Department Attendance Overview',
     '/hod/attendance/defaulters': 'Attendance Defaulters List',
+    '/hod/assessments': 'Examination & Assessment Management',
     '/hod/academics': 'Academic Performance Overview',
     '/hod/academics/bitwise': 'Bit-Wise Component Analysis',
     '/hod/academics/performance': 'Student Academic Performance',
@@ -302,7 +313,10 @@ export const HodLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen max-w-full overflow-x-hidden flex text-neutral-900 dark:text-neutral-100 transition-colors duration-300 font-sans pb-6 pr-6">
+    <div
+      data-portal="hod"
+      className="portal-table-center min-h-screen max-w-full overflow-x-hidden flex text-neutral-900 dark:text-neutral-100 transition-colors duration-300 font-sans pb-6 pr-6"
+    >
 
       {/* ── MOBILE BACKDROP ── */}
       {mobileMenuOpen && (

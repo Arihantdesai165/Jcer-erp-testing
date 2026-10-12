@@ -132,6 +132,45 @@ export interface AttendanceHistoryData {
   sessions: AttendanceHistorySessionItem[];
 }
 
+export interface ScheduledSessionItem {
+  id: string;
+  date: string;
+  classroom: string;
+  startTime: string;
+  endTime: string;
+  status: 'Completed' | 'Pending' | 'Cancelled';
+  rawStatus: string;
+  totalStudents: number;
+  presentCount: number;
+  absentCount: number;
+  percentage: number;
+  submittedAt: string;
+  cancellationReason: string | null;
+  cancelledAt: string | null;
+}
+
+export interface CompleteAttendanceData {
+  assignment: {
+    id: string;
+    subjectId: string;
+    subjectName: string;
+    subjectCode: string;
+    semester: number;
+    section: string;
+    academicYear: string;
+    departmentName: string;
+    departmentCode: string;
+    classroom: string;
+  };
+  summary: {
+    totalScheduled: number;
+    classesHeld: number;
+    pendingCount: number;
+    cancelledCount: number;
+  };
+  sessions: ScheduledSessionItem[];
+}
+
 export interface CorrectionStudentRow {
   slNo: number;
   studentId: string;
@@ -377,6 +416,46 @@ export const facultyService = {
    */
   async getAttendanceHistory(assignmentId: string): Promise<AttendanceHistoryData> {
     const res = await axios.get(`${API_BASE_URL}/faculty/attendance/history/${assignmentId}`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
+   * Fetches date-wise complete scheduled, completed, and cancelled attendance history
+   */
+  async getCompleteAttendanceHistory(assignmentId: string): Promise<CompleteAttendanceData> {
+    const res = await axios.get(`${API_BASE_URL}/faculty/attendance/complete-history/${assignmentId}`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
+   * Schedules a class session (Pending status)
+   */
+  async scheduleClassSession(
+    assignmentId: string,
+    payload: {
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      classroom?: string;
+    }
+  ): Promise<any> {
+    const res = await axios.post(
+      `${API_BASE_URL}/faculty/attendance/schedule-session/${assignmentId}`,
+      payload,
+      getAuthHeaders()
+    );
+    return res.data.data;
+  },
+
+  /**
+   * Explicitly marks a scheduled class session as Cancelled
+   */
+  async cancelClassSession(sessionId: string, reason: string): Promise<any> {
+    const res = await axios.post(
+      `${API_BASE_URL}/faculty/attendance/cancel-session/${sessionId}`,
+      { reason },
+      getAuthHeaders()
+    );
     return res.data.data;
   },
 
@@ -694,6 +773,29 @@ export const facultyService = {
     );
     return res.data;
   },
+
+  /**
+   * Submits assessment to HOD for review
+   */
+  async submitAssessmentForHodReview(assessmentId: string): Promise<{ success: boolean; message: string; data?: any }> {
+    const res = await axios.post(
+      `${API_BASE_URL}/faculty/marks/assessments/${assessmentId}/submit`,
+      {},
+      getAuthHeaders()
+    );
+    return res.data;
+  },
+
+  /**
+   * Gets assessment submission and review workflow status
+   */
+  async getAssessmentWorkflowStatus(assessmentId: string): Promise<{ success: boolean; data: any }> {
+    const res = await axios.get(
+      `${API_BASE_URL}/faculty/marks/assessments/${assessmentId}/status`,
+      getAuthHeaders()
+    );
+    return res.data;
+  },
 };
 
 export interface BitwiseSemesterCard {
@@ -772,6 +874,12 @@ export interface AssessmentConfigData {
   attemptRules: AttemptRulesDef;
   configurationVersion: number;
   status: string;
+  workflowStatus?: 'DRAFT' | 'SUBMITTED' | 'UNDER_REVIEW' | 'RETURNED' | 'RESUBMITTED' | 'APPROVED' | 'PUBLISHED';
+  hodReviewComment?: string | null;
+  assignedHodId?: string | null;
+  reviewedAt?: string | null;
+  approvedAt?: string | null;
+  isPublished?: boolean;
   hasExistingMarks: boolean;
   existingMarksCount: number;
 }
@@ -908,6 +1016,9 @@ export interface ExternalMarksWorkspaceData {
     subjectId: string;
     subjectCode: string;
     subjectName: string;
+    subjectType?: string;
+    isLabOrPractical?: boolean;
+    isInternalFinalized?: boolean;
     defaultMaxMarks: number;
   };
   students: Array<{
@@ -916,9 +1027,16 @@ export interface ExternalMarksWorkspaceData {
     usn: string;
     studentName: string;
     section: string;
+    finalInternalMarks?: number | null;
     externalMarks: number | null;
     maximumMarks: number;
+    seeScaled50?: number | null;
+    totalMarks?: number | null;
     status: string;
+    reason?: string;
+    ciePassed?: boolean;
+    seePassed?: boolean;
+    aggregatePassed?: boolean;
   }>;
 }
 

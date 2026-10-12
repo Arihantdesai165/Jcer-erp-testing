@@ -187,13 +187,13 @@ export const HodFacultyListPage: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase tracking-wider font-extrabold border-b border-neutral-800">
               <tr>
-                <th className="py-3.5 px-4 w-12 text-center">#</th>
-                <th className="py-3.5 px-4">Faculty Member</th>
+                <th className="py-3.5 px-4 w-12 text-center">SL NO</th>
+                <th className="py-3.5 px-4 text-left">Faculty Member</th>
                 <th className="py-3.5 px-4">Core Department</th>
                 <th className="py-3.5 px-4">Designation</th>
                 <th className="py-3.5 px-4 text-center">Assigned in {hodDeptCode}</th>
                 <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+                <th className="py-3.5 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -220,21 +220,13 @@ export const HodFacultyListPage: React.FC = () => {
                       </td>
 
                       {/* Faculty Name */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center space-x-3">
-                          <ProfileAvatar
-                            imageUrl={member.profileImage}
-                            name={member.name}
-                            size="sm"
-                            className="shrink-0"
-                          />
-                          <div>
-                            <div className="font-bold text-neutral-900 dark:text-white">
-                              {member.name}
-                            </div>
-                            <div className="text-[10px] text-neutral-400">
-                              {member.email || member.phone || ''}
-                            </div>
+                      <td className="py-3.5 px-4 text-left">
+                        <div>
+                          <div className="font-bold text-neutral-900 dark:text-white whitespace-nowrap">
+                            {member.name}
+                          </div>
+                          <div className="text-[10px] text-neutral-400 whitespace-nowrap">
+                            {member.email || member.phone || ''}
                           </div>
                         </div>
                       </td>

@@ -184,7 +184,7 @@ async function runBitwiseMarksDriveSyncTests() {
     const cleanAY = testAY;
     const deptCode = dept.code || 'CSE';
     const semName = `Semester ${testSem}`;
-    console.log(`Target Drive Hierarchy: JCER ERP Bitwise Marks -> ${cleanAY} -> ${deptCode} -> ${semName} -> ${subj.code}_${subj.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.xlsx`);
+    console.log(`Target Drive Hierarchy: JCER ERP Bitwise Marks -> ${deptCode} -> ${cleanAY} -> ${semName} -> ${subj.code}_${subj.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.xlsx`);
     console.log('✓ Folder hierarchy path verified.');
 
     // ── Test 7: Attendance Integration Regression Check ───────────────────

@@ -20,6 +20,7 @@ import HodSubjectHandlingRequest from '../models/HodSubjectHandlingRequest';
 import AttendanceRecord from '../models/AttendanceRecord';
 import AttendanceSession from '../models/AttendanceSession';
 import AttendanceBackupFile from '../models/AttendanceBackupFile';
+import AttendanceBackupJob from '../models/AttendanceBackupJob';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import AuditLog from '../models/AuditLog';
@@ -3050,29 +3051,93 @@ export const assignFacultySubject = async (req: AuthenticatedRequest, res: Respo
  * Removes a teaching allocation from a faculty member
  */
 export const deleteFacultyAssignment = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
+  const transaction = await sequelize.transaction();
   try {
     const departmentId = req.departmentId;
     const { assignmentId, id } = req.params;
     const targetId = assignmentId || id;
 
-    const department = departmentId ? await Department.findByPk(departmentId) : null;
+    const department = departmentId ? await Department.findByPk(departmentId, { transaction }) : null;
     const isAppliedScience = Boolean(
       req.isSemesterHandling ||
       department?.type === 'SEMESTER_HANDLING' ||
       department?.code === 'AS'
     );
 
-    const assignment = await FacultyAssignment.findByPk(targetId);
+    const assignment = await FacultyAssignment.findByPk(targetId, { transaction });
 
     if (!assignment) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Faculty assignment not found.' });
     }
 
     if (!isAppliedScience && assignment.departmentId !== departmentId) {
+      await transaction.rollback();
       return res.status(403).json({ error: 'Faculty assignment not found in your department scope.' });
     }
 
-    await assignment.destroy();
+    // 1. Delete all attendance records linked to this faculty assignment
+    await AttendanceRecord.destroy({
+      where: { facultyAssignmentId: targetId },
+      transaction,
+    });
+
+    // 2. Delete all attendance backup jobs linked to this faculty assignment
+    await AttendanceBackupJob.destroy({
+      where: { facultyAssignmentId: targetId },
+      transaction,
+    });
+
+    // 3. Find any attendance sessions linked to this faculty assignment
+    const sessions = await AttendanceSession.findAll({
+      where: { facultyAssignmentId: targetId },
+      attributes: ['id'],
+      transaction,
+    });
+    const sessionIds = sessions.map((s) => s.id);
+
+    if (sessionIds.length > 0) {
+      // Remove any dependent records or backup jobs pointing to these sessions
+      await AttendanceRecord.destroy({
+        where: { attendanceSessionId: { [Op.in]: sessionIds } },
+        transaction,
+      });
+      await AttendanceBackupJob.destroy({
+        where: { attendanceSessionId: { [Op.in]: sessionIds } },
+        transaction,
+      });
+      await AttendanceSession.destroy({
+        where: { id: { [Op.in]: sessionIds } },
+        transaction,
+      });
+    }
+
+    // Delete attendance sessions linked directly to targetId
+    await AttendanceSession.destroy({
+      where: { facultyAssignmentId: targetId },
+      transaction,
+    });
+
+    // 4. Detach foreign keys in related tables
+    await AttendanceBackupFile.update(
+      { facultyAssignmentId: null },
+      { where: { facultyAssignmentId: targetId }, transaction }
+    );
+
+    await HodSubjectHandlingRequest.update(
+      { teachingAssignmentId: null },
+      { where: { teachingAssignmentId: targetId }, transaction }
+    );
+
+    await FacultyAssignment.update(
+      { previousFacultyAssignmentId: null },
+      { where: { previousFacultyAssignmentId: targetId }, transaction }
+    );
+
+    // 5. Delete the faculty assignment
+    await assignment.destroy({ transaction });
+
+    await transaction.commit();
 
     await logAudit(req, 'HOD_REMOVE_FACULTY_ASSIGNMENT', {
       assignmentId: targetId,
@@ -3085,6 +3150,13 @@ export const deleteFacultyAssignment = async (req: AuthenticatedRequest, res: Re
       message: 'Teaching allocation removed successfully.',
     });
   } catch (error: any) {
+    if (transaction) {
+      try {
+        await transaction.rollback();
+      } catch (rbErr) {
+        // transaction may already have resolved
+      }
+    }
     logger.error('HOD_DELETE_ASSIGNMENT_ERROR:', error);
     return next(error);
   }

@@ -17,7 +17,9 @@ class User extends Model {
   public role!: 'SUPER_ADMIN' | 'ADMIN' | 'HOD' | 'TEACHER' | 'STUDENT' | 'PARENT' | 'PRINCIPAL' | 'DEAN';
   public status!: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING_AUTHORIZATION';
   public firstName!: string;
+  public middleName!: string | null;
   public lastName!: string;
+  public gender!: string | null;
   public phone!: string;
   public profileImage!: string;
   public tokenVersion!: number;
@@ -103,9 +105,19 @@ User.init(
       type: DataTypes.STRING(50),
       allowNull: false,
     },
+    middleName: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      defaultValue: null,
+    },
     lastName: {
       type: DataTypes.STRING(50),
       allowNull: false,
+    },
+    gender: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null,
     },
     phone: {
       type: DataTypes.STRING(20),
@@ -156,4 +168,5 @@ User.init(
   }
 );
 
+export { User };
 export default User;

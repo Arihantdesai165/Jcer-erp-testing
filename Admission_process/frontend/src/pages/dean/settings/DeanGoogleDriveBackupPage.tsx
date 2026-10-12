@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
   Cloud,
@@ -14,6 +15,7 @@ import {
   Clock,
   Database,
   Info,
+  X,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import googleDriveService, { GoogleDriveStatus } from '../../../services/googleDrive.service';
@@ -57,6 +59,18 @@ export const DeanGoogleDriveBackupPage: React.FC = () => {
       setSearchParams({});
     }
   }, []);
+
+  // Close disconnect modal on Escape key
+  useEffect(() => {
+    if (!disconnectModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !disconnecting) {
+        setDisconnectModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [disconnectModalOpen, disconnecting]);
 
   const handleConnect = async () => {
     try {
@@ -509,44 +523,115 @@ export const DeanGoogleDriveBackupPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Disconnect Confirmation Dialog ── */}
-      {disconnectModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl border border-slate-200 dark:border-neutral-800 space-y-5 animate-scaleUp">
-            <div className="size-12 rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 flex items-center justify-center">
-              <AlertTriangle className="size-6" />
-            </div>
+      {/* ── Disconnect Confirmation Dialog (rendered via Portal directly to body) ── */}
+      {disconnectModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => !disconnecting && setDisconnectModalOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="disconnect-modal-title"
+          >
+            <div
+              className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl border border-slate-200/90 dark:border-neutral-800 overflow-hidden space-y-0 animate-in fade-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header with warning accent badge & close button */}
+              <div className="px-6 py-5 bg-gradient-to-r from-rose-50/80 via-rose-50/30 to-transparent dark:from-rose-950/40 dark:via-rose-950/10 dark:to-transparent border-b border-rose-100/80 dark:border-rose-950/60 flex items-center justify-between">
+                <div className="flex items-center gap-3.5">
+                  <div className="size-11 rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-950/80 dark:text-rose-400 flex items-center justify-center border border-rose-200/60 dark:border-rose-900/60 shadow-xs">
+                    <AlertTriangle className="size-5" />
+                  </div>
+                  <div>
+                    <h3 id="disconnect-modal-title" className="text-base font-extrabold text-slate-900 dark:text-white">
+                      Disconnect Google Drive?
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-neutral-400 font-medium">
+                      Revoke automated attendance cloud backup
+                    </p>
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-neutral-100">
-                Disconnect Google Drive?
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-neutral-400">
-                Automatic attendance backup will stop until a Google account is connected again. Existing Excel files in Google Drive and backup records in PostgreSQL will <strong>remain intact</strong>.
-              </p>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => !disconnecting && setDisconnectModalOpen(false)}
+                  disabled={disconnecting}
+                  className="size-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-400 hover:text-slate-600 dark:hover:text-neutral-200 flex items-center justify-center transition-colors cursor-pointer"
+                  title="Close dialog"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setDisconnectModalOpen(false)}
-                disabled={disconnecting}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-300 text-sm font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                disabled={disconnecting}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold shadow-md transition-all active:scale-95 disabled:opacity-50"
-              >
-                {disconnecting ? 'Disconnecting...' : 'Yes, Disconnect'}
-              </button>
+              {/* Modal Content */}
+              <div className="p-6 space-y-4">
+                <p className="text-xs leading-relaxed text-slate-600 dark:text-neutral-300">
+                  Automatic attendance backup will pause immediately until a Google account is re-authorized.
+                </p>
+
+                {/* Target Account Summary Card */}
+                {isConnected && (
+                  <div className="rounded-2xl border border-slate-200/90 dark:border-neutral-800 bg-slate-50/80 dark:bg-neutral-850 p-4 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500 dark:text-neutral-400 font-medium">Connected Account</span>
+                      <span className="font-bold text-slate-900 dark:text-neutral-100 font-mono text-[11px] bg-white dark:bg-neutral-800 px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-neutral-700">
+                        {authorizedEmail}
+                      </span>
+                    </div>
+                    {rootFolderName && (
+                      <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60 dark:border-neutral-800">
+                        <span className="text-slate-500 dark:text-neutral-400 font-medium">Root Backup Folder</span>
+                        <span className="font-semibold text-slate-700 dark:text-neutral-300 text-[11px]">
+                          📁 {rootFolderName}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Data Safety Reassurance */}
+                <div className="rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/40 p-3 flex items-start gap-2.5">
+                  <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-emerald-800 dark:text-emerald-300 leading-normal font-medium">
+                    <strong>Data Integrity Guaranteed:</strong> All historical Excel spreadsheets in your Google Drive and attendance session records in PostgreSQL remain <strong>100% intact</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="px-6 py-4 bg-slate-50 dark:bg-neutral-900/90 border-t border-slate-100 dark:border-neutral-800/80 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDisconnectModalOpen(false)}
+                  disabled={disconnecting}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-slate-700 dark:text-neutral-200 hover:bg-slate-50 dark:hover:bg-neutral-700 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  disabled={disconnecting}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 active:scale-95 transition-all disabled:opacity-50 inline-flex items-center gap-2 cursor-pointer"
+                >
+                  {disconnecting ? (
+                    <>
+                      <RefreshCw className="size-3.5 animate-spin" />
+                      <span>Disconnecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Power className="size-3.5" />
+                      <span>Yes, Disconnect</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

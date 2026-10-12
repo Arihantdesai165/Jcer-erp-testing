@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAcademicYear } from '../../../context/AcademicYearContext';
 import facultyService, {
@@ -14,6 +14,10 @@ import {
   FileText,
   Search,
   Layers,
+  RefreshCw,
+  AlertTriangle,
+  Clock,
+  Cloud,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -34,13 +38,52 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
   const [cellValues, setCellValues] = useState<Record<string, string>>({});
   const [dirtyCellKeys, setDirtyCellKeys] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  const fetchWorkspace = async () => {
+  // Background Auto-Save Refs
+  const cellValuesRef = useRef<Record<string, string>>({});
+  const dirtyCellKeysRef = useRef<Set<string>>(new Set());
+  const isSavingRef = useRef<boolean>(false);
+  const pendingSaveRef = useRef<boolean>(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const workspaceRef = useRef<AssignmentWorkspaceData | null>(null);
+
+  useEffect(() => {
+    cellValuesRef.current = cellValues;
+  }, [cellValues]);
+
+  useEffect(() => {
+    dirtyCellKeysRef.current = dirtyCellKeys;
+  }, [dirtyCellKeys]);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyCellKeysRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const fetchWorkspace = async (silent: boolean = false) => {
     if (!subjectId) return;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await facultyService.getAssignmentWorkspace(subjectId, semester, academicYear);
       setWorkspace(data);
+      workspaceRef.current = data;
 
       if (!data.isConfigured || !data.configuration || data.configuration.components.length === 0) {
         // Redirect directly to the dedicated assignment configuration page
@@ -50,19 +93,26 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
         return;
       }
 
-      const initialMap: Record<string, string> = {};
-      for (const s of data.students) {
-        for (const [cId, val] of Object.entries(s.marks)) {
-          const fullKey = `${s.studentId}___${cId}`;
-          initialMap[fullKey] = val !== null && val !== undefined ? String(val) : '';
+      if (!silent) {
+        const initialMap: Record<string, string> = {};
+        for (const s of data.students) {
+          for (const [cId, val] of Object.entries(s.marks)) {
+            const fullKey = `${s.studentId}___${cId}`;
+            initialMap[fullKey] = val !== null && val !== undefined ? String(val) : '';
+          }
         }
+        setCellValues(initialMap);
+        cellValuesRef.current = initialMap;
+        setDirtyCellKeys(new Set());
+        dirtyCellKeysRef.current = new Set();
+        setLastSavedAt(new Date());
       }
-      setCellValues(initialMap);
-      setDirtyCellKeys(new Set());
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to load assignment marks.');
+      if (!silent) {
+        toast.error(err.response?.data?.error || 'Failed to load assignment marks.');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -76,6 +126,99 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
     }
     return [];
   }, [workspace]);
+
+  // Background Auto-Save execution for assignments
+  const performAutoSave = async () => {
+    const ws = workspaceRef.current;
+    if (!ws || !ws.isConfigured || activeComponents.length === 0 || dirtyCellKeysRef.current.size === 0) {
+      return;
+    }
+
+    if (isSavingRef.current) {
+      pendingSaveRef.current = true;
+      return;
+    }
+
+    isSavingRef.current = true;
+    setAutoSaveStatus('saving');
+
+    const keysBeingSaved = new Set(dirtyCellKeysRef.current);
+    const snapshotValues = { ...cellValuesRef.current };
+
+    try {
+      const marksPayload: Array<{
+        studentId: string;
+        componentId: string;
+        marksObtained: number | null;
+      }> = [];
+
+      for (const student of ws.students) {
+        for (const comp of activeComponents) {
+          const fullKey = `${student.studentId}___${comp.id}`;
+          const rawVal = snapshotValues[fullKey];
+          const parsed = rawVal !== undefined && rawVal.trim() !== '' ? parseFloat(rawVal) : null;
+          marksPayload.push({
+            studentId: student.studentId,
+            componentId: comp.id,
+            marksObtained: parsed,
+          });
+        }
+      }
+
+      await facultyService.saveAssignmentMarks({
+        subjectId,
+        semester,
+        maximumMarks: 25,
+        components: activeComponents,
+        marks: marksPayload,
+        isDraft: false,
+        academicYear,
+      });
+
+      setDirtyCellKeys((prev) => {
+        const next = new Set<string>();
+        for (const k of prev) {
+          if (!keysBeingSaved.has(k)) {
+            next.add(k);
+          }
+        }
+        dirtyCellKeysRef.current = next;
+        return next;
+      });
+
+      setLastSavedAt(new Date());
+      setAutoSaveStatus('saved');
+    } catch (err: any) {
+      console.error('Auto-save assignment marks failed:', err);
+      setAutoSaveStatus('error');
+    } finally {
+      isSavingRef.current = false;
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        performAutoSave();
+      }
+    }
+  };
+
+  const scheduleAutoSave = () => {
+    setAutoSaveStatus('saving');
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 1000);
+  };
+
+  const handleCellBlur = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (dirtyCellKeysRef.current.size > 0) {
+      performAutoSave();
+    }
+  };
 
   // Handle cell value change
   const handleCellChange = (studentId: string, compId: string, val: string, maxMarks: number) => {
@@ -95,12 +238,18 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
       }
     }
     const fullKey = `${studentId}___${compId}`;
-    setCellValues((prev) => ({ ...prev, [fullKey]: val }));
+    setCellValues((prev) => {
+      const next = { ...prev, [fullKey]: val };
+      cellValuesRef.current = next;
+      return next;
+    });
     setDirtyCellKeys((prev) => {
       const next = new Set(prev);
       next.add(fullKey);
+      dirtyCellKeysRef.current = next;
       return next;
     });
+    scheduleAutoSave();
   };
 
   // Keyboard navigation between table inputs
@@ -176,6 +325,10 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
       navigate(`/faculty/marks/assignments/config?subjectId=${subjectId}&semester=${semester}`);
       return;
     }
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
 
     try {
       setSaving(true);
@@ -209,9 +362,12 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
         academicYear,
       });
 
-      toast.success(res.message || 'Assignment marks saved successfully.');
+      toast.success(res.message || 'Assignment marks saved & synchronized to Dashboard and Drive.');
       setDirtyCellKeys(new Set());
-      await fetchWorkspace();
+      dirtyCellKeysRef.current = new Set();
+      setLastSavedAt(new Date());
+      setAutoSaveStatus('saved');
+      await fetchWorkspace(true);
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to save assignment marks.');
     } finally {
@@ -265,7 +421,16 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
       <header className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-2.5 sm:px-6 flex items-center justify-between shadow-xs flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate(`/faculty/marks/semesters/${semester}`)}
+            onClick={async () => {
+              if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+                debounceTimerRef.current = null;
+              }
+              if (dirtyCellKeysRef.current.size > 0) {
+                await performAutoSave();
+              }
+              navigate(`/faculty/marks/semesters/${semester}`);
+            }}
             className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800 dark:border-neutral-200 border-2 border-slate-800 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
             title="Back to Semester Subjects"
           >
@@ -289,9 +454,16 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() =>
-              navigate(`/faculty/marks/assignments/config?subjectId=${subjectId}&semester=${semester}`)
-            }
+            onClick={async () => {
+              if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+                debounceTimerRef.current = null;
+              }
+              if (dirtyCellKeysRef.current.size > 0) {
+                await performAutoSave();
+              }
+              navigate(`/faculty/marks/assignments/config?subjectId=${subjectId}&semester=${semester}`);
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700/60 text-neutral-800 dark:text-neutral-200 font-bold text-xs shadow-xs transition-colors"
           >
             <Settings className="w-3.5 h-3.5 text-purple-600" />
@@ -310,20 +482,16 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
           <button
             onClick={handleSaveMarks}
             disabled={saving}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-white font-bold text-xs shadow-sm transition-all ${
-              dirtyCellKeys.size > 0
-                ? 'bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-400/40'
-                : 'bg-purple-600 hover:bg-purple-700'
-            } disabled:opacity-50`}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition-all disabled:opacity-50"
           >
-            <Save className="w-3.5 h-3.5" />
-            <span>{saving ? 'Saving...' : dirtyCellKeys.size > 0 ? `Save (${dirtyCellKeys.size})` : 'Save Marks'}</span>
+            {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{saving ? 'Saving...' : 'Save Marks'}</span>
           </button>
         </div>
       </header>
 
       {/* ── SEARCH & FILTER BAR ── */}
-      <div className="bg-neutral-50 dark:bg-neutral-900/60 border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 sm:px-6 flex items-center justify-between gap-4 flex-shrink-0">
+      <div className="bg-neutral-50 dark:bg-neutral-900/60 border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-shrink-0">
         <div className="relative w-full max-w-sm">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
           <input
@@ -335,7 +503,8 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-neutral-600 dark:text-neutral-400">
+        {/* Status, Counters & Live Sync Indicators */}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600 dark:text-neutral-400">
           <span className="font-medium">
             Pattern:{' '}
             <strong className="text-purple-700 dark:text-purple-300">
@@ -346,10 +515,40 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
                 : 'Not Configured'}
             </strong>
           </span>
+
           <span className="text-neutral-300 dark:text-neutral-700">•</span>
           <span>
             Students: <strong>{workspace?.students.length || 0}</strong>
           </span>
+
+          {/* Real-time Auto-save Badge */}
+          {autoSaveStatus === 'saving' || dirtyCellKeys.size > 0 ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] font-bold">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600 dark:text-amber-400" />
+              <span>Auto-saving to Dashboard & Drive...</span>
+            </span>
+          ) : autoSaveStatus === 'saved' || dirtyCellKeys.size === 0 ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Saved to Dashboard & Drive</span>
+            </span>
+          ) : autoSaveStatus === 'error' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-bold">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+              <span>Auto-save issue • Click Save Marks</span>
+            </span>
+          ) : null}
+
+          {lastSavedAt && (
+            <span className="text-neutral-400 text-[11px] hidden md:inline">
+              Last saved: {lastSavedAt.toLocaleTimeString()}
+            </span>
+          )}
+
+          <div className="flex items-center gap-1 pl-2 border-l border-neutral-300 dark:border-neutral-700">
+            <Cloud className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs">Drive Synced</span>
+          </div>
         </div>
       </div>
 
@@ -418,12 +617,12 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
                   className="hover:bg-purple-50/40 dark:hover:bg-neutral-800/60 transition-colors"
                 >
                   {/* Sl No */}
-                  <td className="sticky left-0 z-20 bg-white dark:bg-neutral-900 w-12 min-w-[48px] max-w-[48px] px-3 py-2 text-center text-neutral-600 dark:text-neutral-400 border-r border-neutral-200 dark:border-neutral-800 font-mono font-bold text-xs">
+                  <td className="sticky left-0 z-20 bg-white dark:bg-neutral-900 w-12 min-w-[48px] max-w-[48px] px-3 py-2 text-center font-bold text-xs text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-neutral-800">
                     {rIdx + 1}
                   </td>
 
                   {/* USN */}
-                  <td className="sticky left-[48px] z-20 bg-white dark:bg-neutral-900 w-40 min-w-[160px] max-w-[160px] px-3 py-2 font-mono font-black text-sm tracking-wide text-neutral-950 dark:text-white border-r border-neutral-200 dark:border-neutral-800 uppercase">
+                  <td className="sticky left-[48px] z-20 bg-white dark:bg-neutral-900 w-40 min-w-[160px] max-w-[160px] px-3 py-2 font-bold text-xs uppercase tracking-tight text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-neutral-800">
                     {(row.usn || '').toUpperCase()}
                   </td>
 
@@ -450,6 +649,7 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
                           onChange={(e) =>
                             handleCellChange(row.studentId, comp.id, e.target.value, comp.maxMarks)
                           }
+                          onBlur={handleCellBlur}
                           onKeyDown={(e) => handleKeyDown(e, rIdx, cIdx)}
                           className={`w-20 h-8 px-2 py-1 text-center rounded-lg font-bold text-xs transition-all shadow-xs ${
                             isDirty
@@ -463,7 +663,6 @@ export const FacultyAssignmentMarksPage: React.FC = () => {
                       </td>
                     );
                   })}
-
                   {/* Read-only Scaled Total */}
                   <td className="px-4 py-1.5 text-center font-black text-sm text-purple-900 dark:text-purple-200 bg-purple-50/70 dark:bg-purple-950/40">
                     {row.displayTotal}

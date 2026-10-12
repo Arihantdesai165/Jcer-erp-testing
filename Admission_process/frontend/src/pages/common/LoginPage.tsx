@@ -54,7 +54,7 @@ export const LoginPage: React.FC = () => {
 
   const handleRedirect = (userRole: string) => {
     const dashboardRoutes: Record<string, string> = {
-      STUDENT: '/admission/dashboard',
+      STUDENT: '/student/dashboard',
       FACULTY: '/faculty/dashboard',
       TEACHER: '/faculty/dashboard',
       HOD: '/hod/dashboard',

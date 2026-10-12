@@ -219,7 +219,7 @@ export const facultyService = {
    */
   async getFacultyProfile(userId: string) {
     const user = await User.findByPk(userId, {
-      attributes: ['id', 'firstName', 'lastName', 'email', 'role', 'phone', 'profileImage'],
+      attributes: ['id', 'firstName', 'middleName', 'lastName', 'gender', 'email', 'role', 'phone', 'profileImage'],
     });
 
     const teacher = await Teacher.findOne({
@@ -898,6 +898,249 @@ export const facultyService = {
       totalSessions: formattedSessions.length,
       sessions: formattedSessions,
     };
+  },
+
+  /**
+   * Retrieves complete scheduled and recorded attendance history for an assignment
+   */
+  async getFacultyCompleteAttendanceHistory(userId: string, assignmentId: string) {
+    const teacher = await Teacher.findOne({ where: { userId } });
+    const teacherId = teacher?.id;
+
+    const assignment = await FacultyAssignment.findOne({
+      where: {
+        id: assignmentId,
+        [Op.or]: [
+          { userId },
+          ...(teacherId ? [{ teacherId }] : []),
+        ],
+        status: 'ACTIVE',
+      },
+      include: [
+        { model: Subject, as: 'subject' },
+        { model: Department, as: 'department' },
+      ],
+    });
+
+    if (!assignment) {
+      throw new Error('Unauthorized or inactive attendance assignment. Access denied.');
+    }
+
+    const { matchedSection } = await getEnrolledStudentsForAssignment(assignment);
+    const defaultClassroom = matchedSection?.classroom || 'B-403';
+
+    const cohortWhere = buildAssignmentCohortWhere(assignment);
+    const sessions = await AttendanceSession.findAll({
+      where: cohortWhere,
+      order: [
+        ['attendanceDate', 'DESC'],
+        ['createdAt', 'DESC'],
+      ],
+    });
+
+    let completedCount = 0;
+    let pendingCount = 0;
+    let cancelledCount = 0;
+
+    const formattedSessions = sessions.map((s: any) => {
+      const dStr = typeof s.attendanceDate === 'string' ? s.attendanceDate : String(s.attendanceDate);
+      const total = s.totalStudents || 0;
+      const present = s.presentCount || 0;
+      const absent = s.absentCount || 0;
+      const pct = total > 0 ? Number(((present / total) * 100).toFixed(1)) : 100.0;
+
+      let resolvedStatus: 'Completed' | 'Pending' | 'Cancelled' = 'Completed';
+      if (s.status === 'CANCELLED') {
+        resolvedStatus = 'Cancelled';
+        cancelledCount++;
+      } else if (s.status === 'PENDING') {
+        resolvedStatus = 'Pending';
+        pendingCount++;
+      } else {
+        resolvedStatus = 'Completed';
+        completedCount++;
+      }
+
+      return {
+        id: s.id,
+        date: dStr,
+        classroom: s.classroom || defaultClassroom,
+        startTime: s.startTime || '10:35 AM',
+        endTime: s.endTime || '11:30 AM',
+        status: resolvedStatus,
+        rawStatus: s.status,
+        totalStudents: total,
+        presentCount: present,
+        absentCount: absent,
+        percentage: pct,
+        submittedAt: s.submittedAt || s.createdAt,
+        cancellationReason: s.cancellationReason || null,
+        cancelledAt: s.cancelledAt || null,
+      };
+    });
+
+    return {
+      assignment: {
+        id: assignment.id,
+        subjectId: (assignment as any).subject?.id,
+        subjectName: (assignment as any).subject?.name || 'Assigned Subject',
+        subjectCode: (assignment as any).subject?.code || 'SUB001',
+        semester: assignment.semester,
+        section: normalizeSection(assignment.section),
+        academicYear: assignment.academicYear,
+        departmentName: (assignment as any).department?.name || 'Department',
+        departmentCode: (assignment as any).department?.code || 'CSE',
+        classroom: defaultClassroom,
+      },
+      summary: {
+        totalScheduled: formattedSessions.length,
+        classesHeld: completedCount,
+        pendingCount,
+        cancelledCount,
+      },
+      sessions: formattedSessions,
+    };
+  },
+
+  /**
+   * Schedules a class session for an assigned cohort (Pending status)
+   */
+  async scheduleFacultyClassSession(
+    userId: string,
+    assignmentId: string,
+    payload: {
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      classroom?: string;
+    }
+  ) {
+    const teacher = await Teacher.findOne({ where: { userId } });
+    const teacherId = teacher?.id;
+
+    const assignment = await FacultyAssignment.findOne({
+      where: {
+        id: assignmentId,
+        [Op.or]: [
+          { userId },
+          ...(teacherId ? [{ teacherId }] : []),
+        ],
+        status: 'ACTIVE',
+        attendanceAccess: true,
+      },
+    });
+
+    if (!assignment) {
+      throw new Error('Unauthorized or inactive attendance assignment. Access denied.');
+    }
+
+    if (!payload.date) {
+      throw new Error('Date is required to schedule a class session.');
+    }
+
+    const { matchedSection, students } = await getEnrolledStudentsForAssignment(assignment);
+    const sessionDate = payload.date;
+    const startTime = payload.startTime || '10:35 AM';
+    const endTime = payload.endTime || '11:30 AM';
+    const classroom = payload.classroom || matchedSection?.classroom || 'B-403';
+
+    // Check if session already exists for this date
+    const existing = await AttendanceSession.findOne({
+      where: {
+        facultyAssignmentId: assignment.id,
+        attendanceDate: sessionDate,
+        ...(payload.startTime ? { startTime: payload.startTime } : {}),
+      },
+    });
+
+    if (existing) {
+      if (existing.status === 'SUBMITTED' || existing.status === 'LOCKED') {
+        throw new Error(`A completed class session already exists for ${sessionDate}.`);
+      }
+      return existing;
+    }
+
+    const session = await AttendanceSession.create({
+      facultyAssignmentId: assignment.id,
+      departmentId: assignment.departmentId,
+      subjectId: assignment.subjectId,
+      sectionId: matchedSection?.id || (assignment as any).sectionId || null,
+      section: matchedSection?.name || assignment.section || 'A',
+      semester: assignment.semester,
+      academicYear: assignment.academicYear,
+      attendanceDate: sessionDate,
+      sessionPeriod: 1,
+      status: 'PENDING',
+      startTime,
+      endTime,
+      classroom,
+      totalStudents: students.length,
+      presentCount: 0,
+      absentCount: 0,
+    });
+
+    return session;
+  },
+
+  /**
+   * Explicitly marks a scheduled class session as Cancelled
+   */
+  async cancelFacultyClassSession(userId: string, sessionId: string, payload: { reason: string }) {
+    const teacher = await Teacher.findOne({ where: { userId } });
+    const teacherId = teacher?.id;
+
+    const session = await AttendanceSession.findByPk(sessionId, {
+      include: [{ model: FacultyAssignment, as: 'facultyAssignment' }],
+    });
+
+    if (!session) {
+      throw new Error('Attendance session not found.');
+    }
+
+    const rawSession = session as any;
+    let assignment = rawSession.facultyAssignment;
+    let isOwner = false;
+
+    if (assignment && assignment.status === 'ACTIVE' && (assignment.userId === userId || (teacherId && assignment.teacherId === teacherId))) {
+      isOwner = true;
+    } else {
+      const activeAssignment = await FacultyAssignment.findOne({
+        where: {
+          [Op.or]: [
+            { userId },
+            ...(teacherId ? [{ teacherId }] : []),
+          ],
+          subjectId: session.subjectId,
+          semester: session.semester,
+          academicYear: session.academicYear,
+          ...(session.section ? { section: session.section } : {}),
+          status: 'ACTIVE',
+        },
+      });
+      if (activeAssignment) {
+        isOwner = true;
+      }
+    }
+
+    if (!isOwner) {
+      throw new Error('Unauthorized: You do not have permission to modify this attendance session.');
+    }
+
+    if (session.status === 'LOCKED') {
+      throw new Error('Cannot cancel a locked attendance session.');
+    }
+
+    if (session.status === 'SUBMITTED' && session.presentCount > 0) {
+      throw new Error('Cannot cancel a class session for which attendance has already been recorded and submitted. Use Correction instead.');
+    }
+
+    session.status = 'CANCELLED';
+    session.cancellationReason = payload.reason || 'Class cancelled by faculty';
+    session.cancelledAt = new Date();
+    session.cancelledById = userId;
+    await session.save();
+
+    return session;
   },
 
   /**

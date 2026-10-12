@@ -164,10 +164,9 @@ export const PrincipalFacultyListPage: React.FC = () => {
                           size="sm"
                           className="shrink-0"
                         />
-                        <div>
-                          <span className="font-extrabold text-neutral-900 dark:text-white block">{fac.name}</span>
-                          <span className="text-[10px] text-neutral-400">{fac.phone || 'Phone not set'}</span>
-                        </div>
+                        <span className="font-extrabold text-neutral-900 dark:text-white">
+                          {fac.name}
+                        </span>
                       </div>
                     </td>
                     <td className="py-4 px-6 font-bold text-neutral-800 dark:text-neutral-200">

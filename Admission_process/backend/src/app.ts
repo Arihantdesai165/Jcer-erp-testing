@@ -31,6 +31,7 @@ import hodRoutes from './routes/hod.routes';
 import facultyRoutes from './routes/faculty.routes';
 import bitwiseMarksRoutes from './routes/bitwiseMarks.routes';
 import googleDriveRoutes from './routes/googleDrive.routes';
+import studentAcademicRoutes from './routes/student.routes';
 const app: Application = express();
 
 // Trust first proxy hop (e.g. Nginx, Cloudflare, Load Balancer)
@@ -320,6 +321,10 @@ v1Router.get('/address/districts', (_req: Request, res: Response) => {
   });
 });
 
+// Student academic dashboard endpoints
+v1Router.use('/student', studentAcademicRoutes);
+v1Router.use('/student/academic', studentAcademicRoutes);
+
 // Student admission endpoints
 v1Router.use('/student', studentRouter);
 
@@ -355,6 +360,7 @@ v1Router.use('/teaching-allocations', hodRoutes);
 v1Router.use('/faculty', facultyRoutes);
 v1Router.use('/faculty/marks', bitwiseMarksRoutes);
 v1Router.use('/faculty/bitwise-marks', bitwiseMarksRoutes);
+v1Router.use('/bitwise-marks', bitwiseMarksRoutes);
 
 // Google Drive Integration & Attendance Backup routes
 v1Router.use('/', googleDriveRoutes);

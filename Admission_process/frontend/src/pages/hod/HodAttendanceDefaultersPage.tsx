@@ -152,7 +152,7 @@ export const HodAttendanceDefaultersPage: React.FC = () => {
                 <th className="py-3.5 px-4 text-center">Attendance %</th>
                 <th className="py-3.5 px-4 text-center">Deficit</th>
                 <th className="py-3.5 px-4">Parent Contact</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+                <th className="py-3.5 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">

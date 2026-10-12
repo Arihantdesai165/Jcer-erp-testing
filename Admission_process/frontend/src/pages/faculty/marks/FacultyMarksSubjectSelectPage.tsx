@@ -320,15 +320,27 @@ export const FacultyMarksSubjectSelectPage: React.FC = () => {
                 </div>
 
                 {/* External Exam Option */}
-                <button
-                  onClick={() =>
-                    navigate(`/faculty/marks/external?subjectId=${subj.subjectId}&semester=${semester}`)
-                  }
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-400 text-xs font-medium transition-colors"
-                >
-                  <GraduationCap className="w-3.5 h-3.5" />
-                  <span>External VTU Examination Marks (Optional)</span>
-                </button>
+                {['Saved', 'Finalized', 'FINALIZED'].includes(subj.finalInternalStatus) ? (
+                  <button
+                    onClick={() =>
+                      navigate(`/faculty/marks/external?subjectId=${subj.subjectId}&semester=${semester}`)
+                    }
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold text-xs border border-purple-200 dark:border-purple-800 transition-all shadow-xs cursor-pointer"
+                  >
+                    <GraduationCap className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span>Enter External VTU Marks (SEE) &rarr;</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() =>
+                      navigate(`/faculty/marks/external?subjectId=${subj.subjectId}&semester=${semester}`)
+                    }
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 text-xs font-medium transition-colors"
+                  >
+                    <GraduationCap className="w-3.5 h-3.5 text-neutral-400" />
+                    <span>External VTU Examination Marks</span>
+                  </button>
+                )}
               </div>
             </div>
           ))}

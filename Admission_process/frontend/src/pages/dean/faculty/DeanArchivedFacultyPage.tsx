@@ -18,7 +18,9 @@ import {
   ShieldCheck,
   Award,
   Layers,
-  FileCheck2
+  FileCheck2,
+  SlidersHorizontal,
+  Filter
 } from 'lucide-react';
 import deanService, { ArchivedFacultyRecord, DepartmentRecord, FacultyProfileResponse } from '../../../services/dean.service';
 import Skeleton from '../../../components/common/Skeleton';
@@ -140,44 +142,132 @@ export const DeanArchivedFacultyPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── SEARCH & FILTER CONTROLS ── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 rounded-2xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl border border-neutral-200/80 dark:border-neutral-800/80">
-        <form onSubmit={handleSearchSubmit} className="flex flex-wrap items-center gap-2 flex-1">
-          <div className="relative min-w-[240px] flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+      {/* ── FILTERS PANEL (MATERIALISTIC DESIGN) ── */}
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200/80 dark:border-neutral-800 overflow-hidden">
+        {/* Search Row */}
+        <div className="px-5 py-3.5 flex flex-wrap lg:flex-nowrap items-center gap-3 border-b border-neutral-100 dark:border-neutral-800">
+          <div className="flex-1 min-w-[260px] flex items-center gap-2.5 px-3.5 py-2.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all">
+            <Search className="shrink-0 text-neutral-400" size={16} />
             <input
               type="text"
               placeholder="Search archived faculty by name, email, or designation..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700/80 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  fetchArchivedFaculty();
+                }
+              }}
+              className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-white placeholder:text-neutral-400 outline-none font-medium"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearch(''); fetchArchivedFaculty(); }}
+                className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-neutral-600 dark:text-neutral-300 transition-colors text-xs font-bold cursor-pointer"
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
-          <select
-            value={selectedDept}
-            onChange={(e) => setSelectedDept(e.target.value)}
-            className="px-3 py-2 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700/80 focus:outline-none"
-          >
-            <option value="ALL">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.code} - {d.name}
-              </option>
-            ))}
-          </select>
-
           <button
-            type="submit"
-            className="px-3 py-2 rounded-xl text-xs font-bold bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300"
+            type="button"
+            onClick={() => fetchArchivedFaculty()}
+            className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
           >
-            Filter
+            <Search size={14} />
+            Search
           </button>
-        </form>
 
-        <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 self-start lg:self-auto">
-          Archived Records: {archivedFaculty.length}
-        </span>
+          <span className="text-xs font-bold px-3.5 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 shrink-0">
+            Archived Records: {archivedFaculty.length}
+          </span>
+        </div>
+
+        {/* Filter Dropdowns & Inline Actions */}
+        <div className="px-5 pt-4 pb-5 space-y-4">
+          <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+            <div className="space-y-1 w-full sm:w-64">
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">
+                Core Department
+              </label>
+              <select
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                className="w-full bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer h-[38px]"
+              >
+                <option value="ALL">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.code} - {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Reset & Apply in one line with Department */}
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setSelectedDept('ALL'); }}
+                className="h-[38px] flex items-center gap-1.5 px-4 rounded-lg border border-rose-300 dark:border-rose-700 bg-white dark:bg-neutral-900 text-rose-500 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Filters</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fetchArchivedFaculty()}
+                className="h-[38px] flex items-center gap-1.5 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors shadow-xs cursor-pointer whitespace-nowrap"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span>Apply Filters</span>
+              </button>
+            </div>
+          </div>
+
+          {(search.trim() || selectedDept !== 'ALL') && (
+            <div className="flex items-center flex-wrap gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                Active Filters:
+              </span>
+              {search.trim() && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700">
+                  Search: "{search}"
+                  <button
+                    type="button"
+                    onClick={() => { setSearch(''); fetchArchivedFaculty(); }}
+                    className="text-neutral-400 hover:text-neutral-700 dark:hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {selectedDept !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700">
+                  Dept: {departments.find(d => d.id === selectedDept)?.code || selectedDept}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDept('ALL')}
+                    className="text-neutral-400 hover:text-neutral-700 dark:hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setSelectedDept('ALL'); }}
+                className="text-xs font-semibold text-neutral-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer ml-1"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── ARCHIVED FACULTY TABLE ── */}
@@ -186,7 +276,7 @@ export const DeanArchivedFacultyPage: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase tracking-wider font-extrabold text-[10px] border-b border-neutral-800">
               <tr>
-                <th className="py-3.5 px-6 font-bold text-white">Faculty Name</th>
+                <th className="py-3.5 px-6 font-bold text-white text-left">Faculty Name</th>
                 <th className="py-3.5 px-6 font-bold text-white">Core Department</th>
                 <th className="py-3.5 px-6 font-bold text-white">Official Email</th>
                 <th className="py-3.5 px-6 font-bold text-white">Designation</th>
@@ -194,7 +284,7 @@ export const DeanArchivedFacultyPage: React.FC = () => {
                 <th className="py-3.5 px-6 font-bold text-white">Archived Date</th>
                 <th className="py-3.5 px-6 font-bold text-white">Archived By</th>
                 <th className="py-3.5 px-6 font-bold text-white">Previous Assignments</th>
-                <th className="py-3.5 px-6 font-bold text-white text-right">Actions</th>
+                <th className="py-3.5 px-6 font-bold text-white text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
@@ -215,24 +305,13 @@ export const DeanArchivedFacultyPage: React.FC = () => {
               ) : archivedFaculty.length ? (
                 archivedFaculty.map((fac) => (
                   <tr key={fac.id} className="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/30 transition-colors">
-                    <td className="py-4 px-6">
-                      <div
+                    <td className="py-4 px-6 text-left">
+                      <span
                         onClick={() => navigate(`/dean/faculty/${fac.id}`)}
-                        className="flex items-center space-x-3 cursor-pointer group"
+                        className="font-extrabold text-neutral-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer whitespace-nowrap text-left"
                       >
-                        <ProfileAvatar
-                          imageUrl={fac.profileImage}
-                          name={fac.name}
-                          size="sm"
-                          className="opacity-75 group-hover:ring-2 group-hover:ring-indigo-500 transition-all shrink-0"
-                        />
-                        <div>
-                          <span className="font-extrabold text-neutral-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors block">
-                            {fac.name}
-                          </span>
-                          <span className="text-[10px] text-neutral-400">{fac.phone || 'Phone not set'}</span>
-                        </div>
-                      </div>
+                        {fac.name}
+                      </span>
                     </td>
                     <td className="py-4 px-6 font-bold text-neutral-800 dark:text-neutral-200">
                       <span className="px-2.5 py-1 rounded-lg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200/60 dark:border-neutral-700/60">

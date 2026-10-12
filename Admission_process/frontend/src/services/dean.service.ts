@@ -164,7 +164,9 @@ export interface FacultyProfileResponse {
     userId: string;
     facultyId?: string;
     firstName: string;
+    middleName?: string | null;
     lastName: string;
+    gender?: string | null;
     name: string;
     email: string;
     phone?: string | null;
@@ -484,7 +486,9 @@ const deanService = {
 
   createFaculty: async (payload: {
     firstName: string;
+    middleName?: string;
     lastName: string;
+    gender?: string;
     email: string;
     phone?: string;
     designation: string;

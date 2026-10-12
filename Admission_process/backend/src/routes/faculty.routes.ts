@@ -23,6 +23,9 @@ router.get('/attendance/:assignmentId', ...facultyAuthGuard, facultyController.g
 router.get('/attendance/:assignmentId/export', ...facultyAuthGuard, facultyController.exportFacultyAttendanceExcel as any);
 router.post('/attendance/:assignmentId', ...facultyAuthGuard, facultyController.saveFacultyAttendance as any);
 router.get('/attendance/history/:assignmentId', ...facultyAuthGuard, facultyController.getFacultyAttendanceHistory as any);
+router.get('/attendance/complete-history/:assignmentId', ...facultyAuthGuard, facultyController.getFacultyCompleteAttendanceHistory as any);
+router.post('/attendance/schedule-session/:assignmentId', ...facultyAuthGuard, facultyController.scheduleFacultyClassSession as any);
+router.post('/attendance/cancel-session/:sessionId', ...facultyAuthGuard, facultyController.cancelFacultyClassSession as any);
 router.get('/attendance/session/:sessionId', ...facultyAuthGuard, facultyController.getFacultyAttendanceSessionDetail as any);
 router.post('/attendance/session/:sessionId/correction', ...facultyAuthGuard, facultyController.correctFacultyAttendance as any);
 router.get('/attendance/corrections/:assignmentId', ...facultyAuthGuard, facultyController.getFacultyAttendanceCorrections as any);

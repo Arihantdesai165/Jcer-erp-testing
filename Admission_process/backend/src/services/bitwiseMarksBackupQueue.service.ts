@@ -136,24 +136,13 @@ export const bitwiseMarksBackupQueueService = {
       );
 
       // 3. Ensure target folder hierarchy on Google Drive:
-      // JCER ERP Bitwise Marks -> [AY] -> [Dept] -> Semester [N]
-      const { drive } = await googleDriveService.getAuthorizedDriveClient();
-      const marksRootFolderId = await googleDriveService.ensureMarksRootFolder(drive, 'JCER ERP Bitwise Marks');
-
-      // Academic Year folder (e.g. "2026-27")
-      let cleanAY = metadata.academicYear.trim().replace(/\u2013|\u2014/g, '-');
-      const ayMatch = cleanAY.match(/^(\d{4})-\d{2}(\d{2})$/);
-      if (ayMatch) {
-        cleanAY = `${ayMatch[1]}-${ayMatch[2]}`;
-      }
-      const ayFolderId = await googleDriveService.findOrCreateSubfolder(drive, marksRootFolderId, cleanAY);
-
-      // Department folder (e.g. "CSE")
-      const deptCode = (metadata.departmentCode || 'CSE').trim().toUpperCase();
-      const deptFolderId = await googleDriveService.findOrCreateSubfolder(drive, ayFolderId, deptCode);
-
-      // Semester folder (e.g. "Semester 1")
-      const targetFolderId = await googleDriveService.findOrCreateSubfolder(drive, deptFolderId, `Semester ${job.semester}`);
+      // JCER ERP Bitwise Marks -> [Dept] -> [AY] -> Semester [N]
+      // (Structure matches Attendance: Department precedes Academic Year)
+      const targetFolderId = await googleDriveService.ensureMarksSemesterFolderHierarchy(
+        metadata.academicYear,
+        metadata.departmentCode || 'CSE',
+        job.semester
+      );
 
       // 4. Upload / Update workbook on Google Drive (ONE persistent workbook reused via fileId)
       const googleDriveFileId = await googleDriveService.uploadOrUpdateAttendanceWorkbook(
@@ -225,6 +214,12 @@ export const bitwiseMarksBackupQueueService = {
     if (workerInterval) return;
 
     logger.info('Starting Google Drive Bitwise Marks Backup background worker (interval: 45s)...');
+
+    // Reconcile department folders and auto-migrate any legacy inverted hierarchy on startup
+    googleDriveService.reconcileMarksHierarchy().catch((err: any) => {
+      logger.warn('INITIAL_BITWISE_MARKS_HIERARCHY_RECONCILE_NOTICE:', err.message);
+    });
+
     workerInterval = setInterval(() => {
       this.processPendingJobs().catch((err) => {
         logger.error('CRON_MARKS_BACKUP_PROCESSOR_ERROR:', err);

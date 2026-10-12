@@ -17,8 +17,15 @@ import PrincipalLayout from './components/layout/PrincipalLayout';
 import DeanLayout from './components/layout/DeanLayout';
 import HodLayout from './components/layout/HodLayout';
 import FacultyLayout from './components/layout/FacultyLayout';
+import StudentLayout from './components/layout/StudentLayout';
 import TopLoadingBar from './components/common/TopLoadingBar';
 import PwaManager from './components/PwaManager';
+
+// ─── Student Pages ────────────────────────────────────────────────────────────
+import StudentOverviewPage from './pages/student/StudentOverviewPage';
+import StudentAttendancePage from './pages/student/StudentAttendancePage';
+import StudentMarksPage from './pages/student/StudentMarksPage';
+import StudentProfilePage from './pages/student/StudentProfilePage';
 
 // ─── Faculty Pages ────────────────────────────────────────────────────────────
 import FacultyOverviewPage from './pages/faculty/FacultyOverviewPage';
@@ -87,6 +94,8 @@ import HodStudentPerformancePage from './pages/hod/HodStudentPerformancePage';
 import HodReportsPage from './pages/hod/HodReportsPage';
 import HodSettingsPage from './pages/hod/HodSettingsPage';
 import HodSemesterTransitionPage from './pages/hod/HodSemesterTransitionPage';
+import HodAssessmentManagementPage from './pages/hod/HodAssessmentManagementPage';
+import HodAssessmentReviewPage from './pages/hod/HodAssessmentReviewPage';
 
 // ─── Admission Portal ─────────────────────────────────────────────────────────
 import { AuthProvider as AdmissionAuthProvider } from './pages/admission/src/context/AuthContext';
@@ -166,7 +175,7 @@ const RoleBasedRedirect: React.FC = () => {
   const role = user?.role;
 
   if (role === 'STUDENT') {
-    return <Navigate to="/admission/dashboard" replace />;
+    return <Navigate to="/student/dashboard" replace />;
   }
   if (role === 'ADMIN' || role === 'SUPER_ADMIN') return <Navigate to="/admin/dashboard" replace />;
   if (role === 'PRINCIPAL') return <Navigate to="/principal/dashboard" replace />;
@@ -427,6 +436,8 @@ export const App: React.FC = () => (
               <Route path="academics/subjects" element={<HodAcademicsOverviewPage />} />
               <Route path="academics/bitwise" element={<HodBitwiseAnalysisPage />} />
               <Route path="academics/performance" element={<HodStudentPerformancePage />} />
+              <Route path="assessments" element={<HodAssessmentManagementPage />} />
+              <Route path="assessments/:id" element={<HodAssessmentReviewPage />} />
 
               {/* Reports & Settings */}
               <Route path="reports" element={<HodReportsPage />} />
@@ -458,6 +469,16 @@ export const App: React.FC = () => (
               <Route path="marks/assignments/config" element={<FacultyAssignmentConfigPage />} />
               <Route path="marks/final-internal" element={<FacultyFinalInternalMarksPage />} />
               <Route path="marks/external" element={<FacultyExternalMarksPage />} />
+            </Route>
+
+            {/* ── Student Portal ── */}
+            <Route path="student" element={<StudentLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<StudentOverviewPage />} />
+              <Route path="overview" element={<StudentOverviewPage />} />
+              <Route path="attendance" element={<StudentAttendancePage />} />
+              <Route path="marks" element={<StudentMarksPage />} />
+              <Route path="profile" element={<StudentProfilePage />} />
             </Route>
           </Route>
 

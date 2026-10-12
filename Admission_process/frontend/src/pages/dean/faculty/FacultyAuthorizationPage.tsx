@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Search, ShieldCheck, CheckCircle2, XCircle, Eye, AlertCircle, RefreshCw } from 'lucide-react';
+import { Search, ShieldCheck, CheckCircle2, XCircle, Eye, AlertCircle, RefreshCw, SlidersHorizontal, Filter, RotateCcw, X } from 'lucide-react';
 import deanService, { FacultyAuthRequest, DepartmentRecord, AcademicYearRecord } from '../../../services/dean.service';
 import Skeleton from '../../../components/common/Skeleton';
 import { toast } from 'react-toastify';
@@ -125,7 +125,7 @@ export const FacultyAuthorizationPage: React.FC = () => {
               placeholder="Search by faculty name or email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700/80 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700/80 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             />
           </div>
 
@@ -190,14 +190,14 @@ export const FacultyAuthorizationPage: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase tracking-wider font-extrabold text-[10px] border-b border-neutral-800">
               <tr>
-                <th className="py-3.5 px-6 font-bold text-white">Faculty Candidate</th>
+                <th className="py-3.5 px-6 font-bold text-white text-left">Faculty Candidate</th>
                 <th className="py-3.5 px-6 font-bold text-white">Department</th>
                 <th className="py-3.5 px-6 font-bold text-white">Assigned Subject</th>
                 <th className="py-3.5 px-6 font-bold text-white text-center">Class</th>
                 <th className="py-3.5 px-6 font-bold text-white">Submitted By</th>
                 <th className="py-3.5 px-6 font-bold text-white">Submitted On</th>
                 <th className="py-3.5 px-6 font-bold text-white text-center">Status</th>
-                <th className="py-3.5 px-6 font-bold text-white text-right">Actions</th>
+                <th className="py-3.5 px-6 font-bold text-white text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
@@ -217,18 +217,10 @@ export const FacultyAuthorizationPage: React.FC = () => {
               ) : requests.length ? (
                 requests.map((reqItem) => (
                   <tr key={reqItem.id} className="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/30 transition-colors">
-                    <td className="py-4 px-6">
-                      <div className="flex items-center space-x-3">
-                        <ProfileAvatar
-                          imageUrl={reqItem.profileImage}
-                          name={reqItem.facultyName}
-                          size="sm"
-                          className="shrink-0"
-                        />
-                        <div>
-                          <span className="font-extrabold text-neutral-900 dark:text-white block">{reqItem.facultyName}</span>
-                          <span className="text-[10px] text-neutral-400">{reqItem.email}</span>
-                        </div>
+                    <td className="py-4 px-6 text-left">
+                      <div>
+                        <span className="font-extrabold text-neutral-900 dark:text-white block whitespace-nowrap">{reqItem.facultyName}</span>
+                        <span className="text-[10px] text-neutral-400 block whitespace-nowrap">{reqItem.email}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 font-bold text-neutral-800 dark:text-neutral-200">

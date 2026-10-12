@@ -19,7 +19,9 @@ import usePersistentFormState from '../../../hooks/usePersistentFormState';
 
 interface DeanCreateFacultyFormState {
   firstName: string;
+  middleName: string;
   lastName: string;
+  gender: string;
   email: string;
   phone: string;
   designation: string;
@@ -29,7 +31,9 @@ interface DeanCreateFacultyFormState {
 
 const defaultDeanFacultyForm: DeanCreateFacultyFormState = {
   firstName: '',
+  middleName: '',
   lastName: '',
+  gender: 'Male',
   email: '',
   phone: '',
   designation: 'Assistant Professor',
@@ -55,7 +59,9 @@ export const DeanCreateFacultyPage: React.FC = () => {
 
   const {
     firstName,
+    middleName,
     lastName,
+    gender,
     email,
     phone,
     designation,
@@ -64,7 +70,9 @@ export const DeanCreateFacultyPage: React.FC = () => {
   } = formState;
 
   const setFirstName = (val: string) => updateField('firstName', val);
+  const setMiddleName = (val: string) => updateField('middleName', val);
   const setLastName = (val: string) => updateField('lastName', val);
+  const setGender = (val: string) => updateField('gender', val);
   const setEmail = (val: string) => updateField('email', val);
   const setPhone = (val: string) => updateField('phone', val);
   const setDesignation = (val: string) => updateField('designation', val);
@@ -135,7 +143,9 @@ export const DeanCreateFacultyPage: React.FC = () => {
     try {
       const response = await deanService.createFaculty({
         firstName: firstName.trim(),
+        middleName: middleName.trim() || undefined,
         lastName: lastName.trim(),
+        gender: gender || undefined,
         email: email.trim().toLowerCase(),
         phone: phone.trim() || undefined,
         designation: designation.trim(),
@@ -152,7 +162,7 @@ export const DeanCreateFacultyPage: React.FC = () => {
       setSuccessModalData({
         email: email.trim().toLowerCase(),
         temporaryPassword: response.data?.temporaryCredentials?.temporaryPassword || 'Faculty@123',
-        facultyName: `${firstName.trim()} ${lastName.trim()}`,
+        facultyName: [firstName.trim(), middleName.trim(), lastName.trim()].filter(Boolean).join(' '),
         departmentName: deptLabel,
       });
     } catch (err: any) {
@@ -374,7 +384,7 @@ export const DeanCreateFacultyPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
                 First Name <span className="text-rose-500">*</span>
@@ -391,6 +401,19 @@ export const DeanCreateFacultyPage: React.FC = () => {
 
             <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                Middle Name <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Kumar"
+                value={middleName}
+                onChange={(e) => setMiddleName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
                 Last Name <span className="text-rose-500">*</span>
               </label>
               <input
@@ -401,6 +424,23 @@ export const DeanCreateFacultyPage: React.FC = () => {
                 onChange={(e) => setLastName(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <div>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                Gender <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
+              >
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
 
             <div>
@@ -430,7 +470,9 @@ export const DeanCreateFacultyPage: React.FC = () => {
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
                 Academic Designation <span className="text-rose-500">*</span>

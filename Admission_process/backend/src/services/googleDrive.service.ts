@@ -4,6 +4,7 @@ import GoogleDriveIntegration from '../models/GoogleDriveIntegration';
 import AttendanceBackupFile from '../models/AttendanceBackupFile';
 import AttendanceBackupJob from '../models/AttendanceBackupJob';
 import User from '../models/User';
+import MarksBackupFile from '../models/MarksBackupFile';
 import { encryptText, decryptText } from '../utils/crypto.util';
 import logger from '../utils/logger.util';
 
@@ -461,6 +462,195 @@ export const googleDriveService = {
     const ayFolderId = await this.findOrCreateSubfolder(drive, deptFolderId, cleanAY);
 
     // 3. Semester Folder inside Academic Year (e.g. "Semester 1", "Semester 3")
+    const semFolderName = `Semester ${semester}`;
+    const semFolderId = await this.findOrCreateSubfolder(drive, ayFolderId, semFolderName);
+
+    return semFolderId;
+  },
+
+  /**
+   * Safe, idempotent reconciliation method to ensure the Root folder "JCER ERP Bitwise Marks"
+   * and permanent department folders are present in Google Drive, and any legacy inverted
+   * folders (e.g. 2026-27 -> CV -> Semester 1) are migrated to Department-first.
+   */
+  async reconcileMarksHierarchy(): Promise<{
+    rootFolderId: string;
+    departmentFolders: Record<string, string>;
+  }> {
+    const { drive } = await this.getAuthorizedDriveClient();
+    const marksRootFolderId = await this.ensureMarksRootFolder(drive, 'JCER ERP Bitwise Marks');
+    const departmentFolders = await this.ensureDefaultDepartmentFolders(drive, marksRootFolderId);
+    await this.cleanupLegacyMarksHierarchy(drive, marksRootFolderId);
+    return { rootFolderId: marksRootFolderId, departmentFolders };
+  },
+
+  /**
+   * Cleans up and migrates any legacy inverted folders (e.g. Root -> "2026-27" -> "CV" -> "Semester 1")
+   * into the standard Attendance-aligned hierarchy:
+   * JCER ERP Bitwise Marks -> [DeptCode] (CV) -> [AcademicYear] (2026-27) -> Semester [N] (Semester 1)
+   */
+  async cleanupLegacyMarksHierarchy(drive: any, marksRootFolderId: string): Promise<void> {
+    try {
+      // Find all direct folder children under marksRootFolderId
+      const res = await drive.files.list({
+        q: `'${marksRootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id, name)',
+        spaces: 'drive',
+      });
+
+      const folders = res.data.files || [];
+      for (const folder of folders) {
+        const folderName = folder.name?.trim() || '';
+        // Detect if folder name is an Academic Year (e.g. "2026-27", "2025-2026", "2024–25")
+        if (/^\d{4}[-–—]\d{2,4}$/.test(folderName)) {
+          logger.info(`Detected legacy academic year folder "${folderName}" directly under Bitwise Marks root. Migrating to Department-first structure...`);
+
+          let cleanAY = folderName.replace(/\u2013|\u2014/g, '-');
+          const ayMatch = cleanAY.match(/^(\d{4})-\d{2}(\d{2})$/);
+          if (ayMatch) {
+            cleanAY = `${ayMatch[1]}-${ayMatch[2]}`;
+          }
+
+          // List contents of this legacy AY folder
+          const subRes = await drive.files.list({
+            q: `'${folder.id}' in parents and trashed = false`,
+            fields: 'files(id, name, mimeType)',
+            spaces: 'drive',
+          });
+
+          for (const deptItem of subRes.data.files || []) {
+            if (deptItem.mimeType === 'application/vnd.google-apps.folder') {
+              const cleanDept = resolveAttendanceDepartmentCode(deptItem.name);
+              // Ensure Root -> DeptCode
+              const targetDeptFolderId = await this.findOrCreateSubfolder(drive, marksRootFolderId, cleanDept);
+              // Ensure Root -> DeptCode -> AcademicYear
+              const targetAyFolderId = await this.findOrCreateSubfolder(drive, targetDeptFolderId, cleanAY);
+
+              // List contents of this legacy dept folder (e.g. "Semester 1" folders)
+              const deptSubRes = await drive.files.list({
+                q: `'${deptItem.id}' in parents and trashed = false`,
+                fields: 'files(id, name, mimeType)',
+                spaces: 'drive',
+              });
+
+              for (const semItem of deptSubRes.data.files || []) {
+                if (semItem.mimeType === 'application/vnd.google-apps.folder') {
+                  // Ensure Root -> DeptCode -> AcademicYear -> Semester [N]
+                  const targetSemFolderId = await this.findOrCreateSubfolder(drive, targetAyFolderId, semItem.name);
+
+                  // Move any files inside the legacy semester folder to the new semester folder
+                  const filesRes = await drive.files.list({
+                    q: `'${semItem.id}' in parents and trashed = false`,
+                    fields: 'files(id, name)',
+                    spaces: 'drive',
+                  });
+
+                  for (const file of filesRes.data.files || []) {
+                    try {
+                      await drive.files.update({
+                        fileId: file.id,
+                        addParents: targetSemFolderId,
+                        removeParents: semItem.id,
+                        fields: 'id, parents',
+                      });
+                      logger.info(`Migrated marks file "${file.name}" to new Semester folder (${targetSemFolderId})`);
+
+                      // Update MarksBackupFile in DB if present
+                      await MarksBackupFile.update(
+                        { googleDriveFolderId: targetSemFolderId },
+                        { where: { googleDriveFileId: file.id } }
+                      );
+                    } catch (moveErr: any) {
+                      logger.warn(`Failed moving file "${file.name}":`, moveErr.message);
+                    }
+                  }
+
+                  // Trash old semester folder
+                  try {
+                    await drive.files.update({
+                      fileId: semItem.id,
+                      requestBody: { trashed: true },
+                    });
+                  } catch (tErr: any) {
+                    logger.warn(`Failed trashing legacy sem folder "${semItem.name}":`, tErr.message);
+                  }
+                } else {
+                  // Direct file under dept folder
+                  try {
+                    await drive.files.update({
+                      fileId: semItem.id,
+                      addParents: targetAyFolderId,
+                      removeParents: deptItem.id,
+                      fields: 'id, parents',
+                    });
+                  } catch (moveErr: any) {
+                    logger.warn(`Failed moving file "${semItem.name}":`, moveErr.message);
+                  }
+                }
+              }
+
+              // Trash old dept folder
+              try {
+                await drive.files.update({
+                  fileId: deptItem.id,
+                  requestBody: { trashed: true },
+                });
+              } catch (tErr: any) {
+                logger.warn(`Failed trashing legacy dept folder "${deptItem.name}":`, tErr.message);
+              }
+            }
+          }
+
+          // Trash the legacy academic year folder itself
+          try {
+            await drive.files.update({
+              fileId: folder.id,
+              requestBody: { trashed: true },
+            });
+            logger.info(`Successfully trashed legacy AY folder "${folder.name}" (${folder.id})`);
+          } catch (tErr: any) {
+            logger.warn(`Failed trashing legacy folder "${folder.name}":`, tErr.message);
+          }
+        }
+      }
+    } catch (err: any) {
+      logger.warn('Error during legacy Bitwise Marks hierarchy cleanup:', err.message);
+    }
+  },
+
+  /**
+   * Idempotently builds or locates Semester folder directly under Department -> Academic Year for Bitwise Marks:
+   * JCER ERP Bitwise Marks -> [DeptCode] -> [AcademicYear] -> Semester [N]
+   *
+   * DEPARTMENT ALWAYS PRECEDES ACADEMIC YEAR (Matching Attendance structure).
+   */
+  async ensureMarksSemesterFolderHierarchy(
+    academicYear: string,
+    departmentCode: string,
+    semester: number
+  ): Promise<string> {
+    const { drive } = await this.getAuthorizedDriveClient();
+    const marksRootFolderId = await this.ensureMarksRootFolder(drive, 'JCER ERP Bitwise Marks');
+
+    // 1. Ensure 5 default department folders exist under Root
+    await this.ensureDefaultDepartmentFolders(drive, marksRootFolderId);
+
+    // 2. Clean up any legacy inverted folders (e.g. Root -> 2026-27 -> CV -> Semester 1)
+    await this.cleanupLegacyMarksHierarchy(drive, marksRootFolderId);
+
+    // 3. Department Folder directly under Root (Canonical Code: CSE, CSE-AIML, ECE, ME, CV, etc.)
+    const cleanDept = resolveAttendanceDepartmentCode(departmentCode);
+    const deptFolderId = await this.findOrCreateSubfolder(drive, marksRootFolderId, cleanDept);
+
+    // 4. Academic Year Folder inside Department (e.g. "2026-27")
+    let cleanAY = academicYear.trim().replace(/\u2013|\u2014/g, '-');
+    const ayMatch = cleanAY.match(/^(\d{4})-\d{2}(\d{2})$/);
+    if (ayMatch) {
+      cleanAY = `${ayMatch[1]}-${ayMatch[2]}`;
+    }
+    const ayFolderId = await this.findOrCreateSubfolder(drive, deptFolderId, cleanAY);
+
+    // 5. Semester Folder inside Academic Year (e.g. "Semester 1", "Semester 3")
     const semFolderName = `Semester ${semester}`;
     const semFolderId = await this.findOrCreateSubfolder(drive, ayFolderId, semFolderName);
 

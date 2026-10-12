@@ -72,6 +72,13 @@ export const DeanLayout: React.FC = () => {
   }, [location.pathname]);
 
   useEffect(() => {
+    document.body.dataset.portal = 'dean';
+    return () => {
+      delete document.body.dataset.portal;
+    };
+  }, []);
+
+  useEffect(() => {
     const handleYearChanged = (e: any) => {
       if (e?.detail?.year) {
         setAcademicYear(e.detail.year);
@@ -177,7 +184,10 @@ export const DeanLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen max-w-full overflow-x-hidden flex text-neutral-900 dark:text-neutral-100 transition-colors duration-300 font-sans pb-6 pr-6">
+    <div
+      data-portal="dean"
+      className="portal-table-center min-h-screen max-w-full overflow-x-hidden flex text-neutral-900 dark:text-neutral-100 transition-colors duration-300 font-sans pb-6 pr-6"
+    >
 
       {/* ── FLOATING SIDEBAR ── */}
       <aside className="fixed left-6 top-6 bottom-6 w-[280px] min-w-[280px] max-w-[280px] flex-shrink-0 flex flex-col justify-between py-6 px-4 rounded-[32px] glass-bar z-40">

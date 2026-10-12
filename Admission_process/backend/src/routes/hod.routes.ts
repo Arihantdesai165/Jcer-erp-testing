@@ -146,5 +146,13 @@ router.get('/subject-handling/available-subjects', hodController.getAvailableSub
 router.post('/subject-handling/requests', hodController.createSubjectHandlingRequest as any);
 router.get('/subject-handling/requests', hodController.getHodSubjectHandlingRequests as any);
 
+// ─── 10. Examination & Assessment Management Module ──────────────────────────
+import * as assessmentWorkflowController from '../controllers/assessmentWorkflow.controller';
+router.get('/assessments/overview', assessmentWorkflowController.getHodOverviewStats as any);
+router.get('/assessments', assessmentWorkflowController.getHodSubmissions as any);
+router.get('/assessments/:id', assessmentWorkflowController.getHodReviewDetail as any);
+router.post('/assessments/:id/approve-publish', assessmentWorkflowController.approveAndPublishAssessment as any);
+router.post('/assessments/:id/return', assessmentWorkflowController.returnAssessmentForCorrection as any);
+
 export default router;
 

@@ -13,7 +13,7 @@ import Student from '../models/Student';
 import User from '../models/User';
 import FacultyAssignment from '../models/FacultyAssignment';
 import { Op } from 'sequelize';
-import { calculateFinalInternalMarks } from '../utils/bitwiseCalculation.util';
+import { calculateFinalInternalMarks, calculateVtuPassingStatus } from '../utils/bitwiseCalculation.util';
 
 const getAYVariants = (ay?: string): string[] => {
   if (!ay || ay === 'ALL') return [];
@@ -1177,9 +1177,27 @@ export const bitwiseMarksExcelService = {
       r.getCell(6).alignment = { horizontal: 'center', vertical: 'middle' };
       r.getCell(6).numFmt = '0';
 
-      // 7. Status
-      r.getCell(7).value = recExt?.status || 'NOT_ENTERED';
-      r.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
+      // 7. Status (VTU Scheme Passing Evaluation)
+      const isLabOrPractical = Boolean(
+        (subjName && (subjName.toUpperCase().includes('LAB') || subjName.toUpperCase().includes('PRACTICAL'))) ||
+        (subjCode && (subjCode.toUpperCase().includes('L') || subjCode.toUpperCase().includes('LAB')))
+      );
+      const vtuResult = calculateVtuPassingStatus(
+        finalVal,
+        recExt?.externalMarks !== null && recExt?.externalMarks !== undefined ? Number(recExt.externalMarks) : null,
+        maxExt,
+        isLabOrPractical
+      );
+      const statusCell = r.getCell(7);
+      statusCell.value = vtuResult.status;
+      statusCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      if (vtuResult.status === 'PASS') {
+        statusCell.font = { name: 'Times New Roman', bold: true, color: { argb: 'FF047857' } };
+      } else if (vtuResult.status === 'FAIL') {
+        statusCell.font = { name: 'Times New Roman', bold: true, color: { argb: 'FFE11D48' } };
+      } else {
+        statusCell.font = { name: 'Times New Roman', color: { argb: 'FF64748B' } };
+      }
 
       curRow++;
     }

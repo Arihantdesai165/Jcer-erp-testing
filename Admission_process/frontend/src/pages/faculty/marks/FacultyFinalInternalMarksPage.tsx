@@ -15,6 +15,7 @@ import {
   Info,
   Layers,
   FileSpreadsheet,
+  GraduationCap,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -144,44 +145,78 @@ export const FacultyFinalInternalMarksPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportExcel}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-semibold text-xs transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export Excel</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportExcel}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-semibold text-xs transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Excel</span>
+              </button>
 
-            {!isFinalized && (
-              <>
+              {isFinalized ? (
                 <button
-                  onClick={() => handleSaveOrFinalize(false)}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 text-neutral-700 dark:text-neutral-300 font-semibold text-xs transition-colors"
+                  onClick={() => navigate(`/faculty/marks/external?subjectId=${subjectId}&semester=${semester}`)}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all cursor-pointer"
                 >
-                  <span>Save Record</span>
+                  <GraduationCap className="w-4 h-4" />
+                  <span>Enter External Marks (SEE) &rarr;</span>
                 </button>
-                <button
-                  onClick={() => handleSaveOrFinalize(true)}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Finalize & Submit</span>
-                </button>
-              </>
-            )}
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleSaveOrFinalize(false)}
+                    disabled={saving}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 text-neutral-700 dark:text-neutral-300 font-semibold text-xs transition-colors"
+                  >
+                    <span>Save Record</span>
+                  </button>
+                  <button
+                    onClick={() => handleSaveOrFinalize(true)}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Finalize & Submit</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Formula Explainer */}
-        <div className="flex items-center gap-2 p-3 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl text-xs text-neutral-600 dark:text-neutral-400">
-          <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
-          <span>
-            <strong>Calculation Policy:</strong> CIE Avg = (CIE-1 + CIE-2) / 2 out of 50M. Scaled Down = CIE Avg / 2 (out of 25M). Final Internal Marks = Scaled Down (25M) + Assignment (25M) = Max 50M.
-          </span>
-        </div>
+          {/* Finalized Banner with External Exam Direct Entry */}
+          {isFinalized && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 dark:from-purple-950/40 dark:via-indigo-950/40 dark:to-blue-950/40 border border-purple-200 dark:border-purple-800 rounded-xl shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-600 text-white flex-shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-neutral-900 dark:text-white uppercase tracking-wider">
+                    Continuous Internal Evaluation (CIE) Finalized
+                  </h3>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                    Internal marks are locked and synced. You can now proceed to enter VTU Semester End Examination (SEE) marks to calculate final Pass/Fail status.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate(`/faculty/marks/external?subjectId=${subjectId}&semester=${semester}`)}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition-all flex-shrink-0 cursor-pointer"
+              >
+                <span>Proceed to External Marks</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Formula Explainer */}
+          <div className="flex items-center gap-2 p-3 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl text-xs text-neutral-600 dark:text-neutral-400">
+            <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            <span>
+              <strong>Calculation Policy:</strong> CIE Avg = (CIE-1 + CIE-2) / 2 out of 50M. Scaled Down = CIE Avg / 2 (out of 25M). Final Internal Marks = Scaled Down (25M) + Assignment (25M) = Max 50M.
+            </span>
+          </div>
       </div>
 
       {/* ── SEARCH BAR ── */}
@@ -240,10 +275,10 @@ export const FacultyFinalInternalMarksPage: React.FC = () => {
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
               {filteredStudents.map((row, rIdx) => (
                 <tr key={row.studentId} className="hover:bg-emerald-50/40 dark:hover:bg-neutral-800/60 transition-colors">
-                  <td className="sticky left-0 z-20 bg-white dark:bg-neutral-900 w-12 min-w-[48px] max-w-[48px] px-3 py-2.5 text-center text-neutral-500 border-r border-neutral-200 dark:border-neutral-800">
+                  <td className="sticky left-0 z-20 bg-white dark:bg-neutral-900 w-12 min-w-[48px] max-w-[48px] px-3 py-2.5 text-center font-bold text-xs text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-neutral-800">
                     {rIdx + 1}
                   </td>
-                  <td className="sticky left-[48px] z-20 bg-white dark:bg-neutral-900 w-36 min-w-[144px] max-w-[144px] px-3 py-2.5 font-mono font-black text-sm tracking-wide text-neutral-950 dark:text-white border-r border-neutral-200 dark:border-neutral-800 uppercase">
+                  <td className="sticky left-[48px] z-20 bg-white dark:bg-neutral-900 w-36 min-w-[144px] max-w-[144px] px-3 py-2.5 font-bold text-xs text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-neutral-800 uppercase tracking-tight">
                     {(row.usn || '').toUpperCase()}
                   </td>
                   <td className="sticky left-[192px] z-20 bg-white dark:bg-neutral-900 w-52 min-w-[208px] max-w-[208px] px-4 py-2.5 font-bold text-xs uppercase tracking-tight text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-neutral-800 truncate">

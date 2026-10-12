@@ -22,7 +22,9 @@ import deanService from '../../../services/dean.service';
 interface ValidationRow {
   rowNumber: number;
   firstName: string;
+  middleName?: string | null;
   lastName: string;
+  gender?: string | null;
   email: string;
   phone?: string | null;
   designation: string;
@@ -48,7 +50,9 @@ interface ImportedFacultyResult {
   teacherId?: string;
   userId?: string;
   firstName?: string;
+  middleName?: string;
   lastName?: string;
+  gender?: string;
   name: string;
   email: string;
   temporaryPassword?: string;
@@ -133,7 +137,9 @@ export const DeanBulkFacultyImportPage: React.FC = () => {
       const parsedRows: ValidationRow[] = rawRows.map((r: any, idx: number) => ({
         rowNumber: r.rowNumber ?? idx + 2,
         firstName: r.firstName ?? r.rowData?.firstName ?? '',
+        middleName: r.middleName ?? r.rowData?.middleName ?? '',
         lastName: r.lastName ?? r.rowData?.lastName ?? '',
+        gender: r.gender ?? r.rowData?.gender ?? '',
         email: r.email ?? r.rowData?.email ?? '',
         phone: r.phone ?? r.rowData?.phone ?? null,
         designation: r.designation ?? r.rowData?.designation ?? '',
@@ -197,12 +203,14 @@ export const DeanBulkFacultyImportPage: React.FC = () => {
 
     const invalidRecords = (validationData.results || []).filter((r) => !r.isValid);
     const csvRows = [
-      ['Row #', 'First Name', 'Last Name', 'Email', 'Phone', 'Designation', 'Joining Date', 'Core Department', 'Validation Errors'].join(','),
+      ['Row #', 'First Name', 'Middle Name', 'Last Name', 'Gender', 'Email', 'Phone', 'Designation', 'Joining Date', 'Core Department', 'Validation Errors'].join(','),
       ...invalidRecords.map((r) =>
         [
           r.rowNumber,
           `"${(r.firstName || '').replace(/"/g, '""')}"`,
+          `"${(r.middleName || '').replace(/"/g, '""')}"`,
           `"${(r.lastName || '').replace(/"/g, '""')}"`,
+          `"${(r.gender || '').replace(/"/g, '""')}"`,
           `"${(r.email || '').replace(/"/g, '""')}"`,
           `"${(r.phone || '').replace(/"/g, '""')}"`,
           `"${(r.designation || '').replace(/"/g, '""')}"`,
@@ -232,7 +240,9 @@ export const DeanBulkFacultyImportPage: React.FC = () => {
       .filter((r) => r.isValid)
       .map((r) => ({
         firstName: r.firstName,
+        middleName: r.middleName,
         lastName: r.lastName,
+        gender: r.gender,
         email: r.email,
         phone: r.phone,
         designation: r.designation,
@@ -275,10 +285,12 @@ export const DeanBulkFacultyImportPage: React.FC = () => {
     if (!importedAccounts || importedAccounts.length === 0) return;
 
     const csvRows = [
-      ['First Name', 'Last Name', 'Login Email', 'Temporary Password', 'Core Department', 'Status'].join(','),
+      ['First Name', 'Middle Name', 'Last Name', 'Gender', 'Login Email', 'Temporary Password', 'Core Department', 'Status'].join(','),
       ...importedAccounts.map((acc) => [
         `"${(acc.firstName || acc.name.split(' ')[0] || '').replace(/"/g, '""')}"`,
+        `"${(acc.middleName || '').replace(/"/g, '""')}"`,
         `"${(acc.lastName || acc.name.split(' ').slice(1).join(' ') || '').replace(/"/g, '""')}"`,
+        `"${(acc.gender || '').replace(/"/g, '""')}"`,
         `"${(acc.email || '').replace(/"/g, '""')}"`,
         `"${(acc.temporaryPassword || '').replace(/"/g, '""')}"`,
         `"${(acc.coreDepartmentName || acc.coreDepartmentCode || '').replace(/"/g, '""')}"`,
@@ -547,7 +559,9 @@ export const DeanBulkFacultyImportPage: React.FC = () => {
                 <tr>
                   <th className="py-3.5 px-3 font-bold text-white">Row</th>
                   <th className="py-3.5 px-3 font-bold text-white">First Name</th>
+                  <th className="py-3.5 px-3 font-bold text-white">Middle Name</th>
                   <th className="py-3.5 px-3 font-bold text-white">Last Name</th>
+                  <th className="py-3.5 px-3 font-bold text-white">Gender</th>
                   <th className="py-3.5 px-3 font-bold text-white">Email</th>
                   <th className="py-3.5 px-3 font-bold text-white">Designation</th>
                   <th className="py-3.5 px-3 font-bold text-white">Joining Date</th>
@@ -569,7 +583,9 @@ export const DeanBulkFacultyImportPage: React.FC = () => {
                     >
                       <td className="py-3 px-3 font-mono font-bold text-slate-500">{row.rowNumber}</td>
                       <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">{row.firstName || '—'}</td>
+                      <td className="py-3 px-3 text-slate-700 dark:text-slate-300">{row.middleName || '—'}</td>
                       <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">{row.lastName || '—'}</td>
+                      <td className="py-3 px-3 text-slate-700 dark:text-slate-300">{row.gender || '—'}</td>
                       <td className="py-3 px-3 text-slate-600 dark:text-slate-300 font-mono text-[11px]">{row.email || '—'}</td>
                       <td className="py-3 px-3 text-slate-700 dark:text-slate-300">{row.designation || '—'}</td>
                       <td className="py-3 px-3 text-slate-600 dark:text-slate-400 font-mono text-[11px]">{row.joiningDate || '—'}</td>
@@ -616,7 +632,7 @@ export const DeanBulkFacultyImportPage: React.FC = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-400 text-xs">
+                    <td colSpan={11} className="py-8 text-center text-slate-400 text-xs">
                       No rows match the current filter.
                     </td>
                   </tr>

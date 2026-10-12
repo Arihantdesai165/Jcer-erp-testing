@@ -39,4 +39,9 @@ router.post('/external', ...facultyAuthGuard, bitwiseMarksController.saveExterna
 router.get('/export', ...facultyAuthGuard, bitwiseMarksController.exportMarksExcel as any);
 router.post('/sync-retry', ...facultyAuthGuard, bitwiseMarksController.retryDriveSync as any);
 
+// ── 8. Assessment Workflow (Submit & Status) ──────────────────────────────────
+import * as assessmentWorkflowController from '../controllers/assessmentWorkflow.controller';
+router.post('/assessments/:id/submit', ...facultyAuthGuard, assessmentWorkflowController.facultySubmitAssessment as any);
+router.get('/assessments/:id/status', ...facultyAuthGuard, assessmentWorkflowController.getFacultyAssessmentStatus as any);
+
 export default router;

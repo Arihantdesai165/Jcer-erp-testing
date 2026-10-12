@@ -200,7 +200,7 @@ export const FacultyOverviewPage: React.FC = () => {
                   <th className="py-3.5 px-6 text-center text-white font-extrabold">Section</th>
                   <th className="py-3.5 px-6 text-center text-white font-extrabold">Attendance Access</th>
                   <th className="py-3.5 px-6 text-center text-white font-extrabold">Marks Access</th>
-                  <th className="py-3.5 px-6 text-right text-white font-extrabold">Action</th>
+                  <th className="py-3.5 px-6 text-center text-white font-extrabold">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200/60 dark:divide-neutral-800/60 text-xs">

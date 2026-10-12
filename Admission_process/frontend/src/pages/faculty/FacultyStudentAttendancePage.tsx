@@ -418,7 +418,7 @@ export const FacultyStudentAttendancePage: React.FC = () => {
                       <th className="py-3 px-3 text-center text-white font-extrabold">Absent</th>
                       <th className="py-3 px-3 text-center text-white font-extrabold">%</th>
                       <th className="py-3 px-3 text-center text-white font-extrabold">Status</th>
-                      <th className="py-3 px-4 text-right text-white font-extrabold">Action</th>
+                      <th className="py-3 px-4 text-center text-white font-extrabold">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">

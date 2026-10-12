@@ -9,7 +9,6 @@ import {
   Download,
   Search,
   Calendar,
-  Clock,
   Save,
   ChevronRight,
   ArrowLeft,
@@ -27,6 +26,10 @@ import {
   UserX,
   UserCheck,
   User,
+  MoreVertical,
+  Plus,
+  Eye,
+  Ban,
 } from 'lucide-react';
 import facultyService, {
   FacultyAssignmentItem,
@@ -36,6 +39,8 @@ import facultyService, {
   AttendanceSessionDetailData,
   CorrectionStudentRow,
   AttendanceCorrectionLogItem,
+  CompleteAttendanceData,
+  ScheduledSessionItem,
 } from '../../services/faculty.service';
 import { useAcademicYear } from '../../context/AcademicYearContext';
 
@@ -89,11 +94,41 @@ export const FacultyAttendancePage: React.FC = () => {
   const [workspaceData, setWorkspaceData] = useState<FacultyAttendanceWorkspaceData | null>(null);
   const [loadingWorkspace, setLoadingWorkspace] = useState<boolean>(false);
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const [selectedPeriod, setSelectedPeriod] = useState<number>(1);
+  const selectedPeriod = 1;
   const [showPreviousDetails, setShowPreviousDetails] = useState<boolean>(true);
 
-  // Workspace Sub-Tab: 'TAKE' | 'CORRECTION' | 'HISTORY'
-  const [workspaceTab, setWorkspaceTab] = useState<'TAKE' | 'CORRECTION' | 'HISTORY'>('TAKE');
+  // Workspace Sub-Tab: 'TAKE' | 'COMPLETE_HISTORY' | 'CORRECTION' | 'HISTORY'
+  const [workspaceTab, setWorkspaceTab] = useState<'TAKE' | 'COMPLETE_HISTORY' | 'CORRECTION' | 'HISTORY'>('TAKE');
+
+  // Complete Attendance States
+  const [completeHistoryData, setCompleteHistoryData] = useState<CompleteAttendanceData | null>(null);
+  const [loadingCompleteHistory, setLoadingCompleteHistory] = useState<boolean>(false);
+  const [completeHistoryFilter, setCompleteHistoryFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'CANCELLED'>('ALL');
+  const [activeActionMenuSessionId, setActiveActionMenuSessionId] = useState<string | null>(null);
+
+  // View Attendance Modal
+  const [isViewSessionModalOpen, setIsViewSessionModalOpen] = useState<boolean>(false);
+  const [viewSessionModalData, setViewSessionModalData] = useState<AttendanceSessionDetailData | null>(null);
+  const [loadingViewSessionModal, setLoadingViewSessionModal] = useState<boolean>(false);
+  const [viewSessionSearchQuery, setViewSessionSearchQuery] = useState<string>('');
+
+  // Schedule Session Modal
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+  const [scheduleDate, setScheduleDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [scheduleStartTime, setScheduleStartTime] = useState<string>('10:35 AM');
+  const [scheduleEndTime, setScheduleEndTime] = useState<string>('11:30 AM');
+  const [scheduleClassroom, setScheduleClassroom] = useState<string>('');
+  const [isSchedulingSession, setIsSchedulingSession] = useState<boolean>(false);
+
+  // Cancel Session Modal
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState<boolean>(false);
+  const [cancelTargetSession, setCancelTargetSession] = useState<ScheduledSessionItem | null>(null);
+  const [cancelReasonInput, setCancelReasonInput] = useState<string>('');
+  const [isCancellingSession, setIsCancellingSession] = useState<boolean>(false);
+
+  // Cancellation Details Modal
+  const [isCancellationDetailModalOpen, setIsCancellationDetailModalOpen] = useState<boolean>(false);
+  const [cancellationDetailSession, setCancellationDetailSession] = useState<ScheduledSessionItem | null>(null);
 
   // Correction Mode States
   const [historyData, setHistoryData] = useState<AttendanceHistoryData | null>(null);
@@ -259,19 +294,189 @@ export const FacultyAttendancePage: React.FC = () => {
     });
 
     setSessionAttendance(initialMap);
-  }, [workspaceData, selectedDate, selectedPeriod]);
+  }, [workspaceData, selectedDate]);
+
+  const formatDateLong = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const year = Number(parts[0]);
+        const month = Number(parts[1]) - 1;
+        const day = Number(parts[2]);
+        const d = new Date(year, month, day);
+        return d.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        });
+      }
+      return dateStr;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const loadCompleteAttendanceHistory = useCallback(async (assignmentId: string) => {
+    setLoadingCompleteHistory(true);
+    try {
+      const data = await facultyService.getCompleteAttendanceHistory(assignmentId);
+      setCompleteHistoryData(data);
+    } catch (err: any) {
+      console.error('Failed to load complete attendance history:', err);
+      setNotification({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to load complete attendance history.',
+      });
+    } finally {
+      setLoadingCompleteHistory(false);
+    }
+  }, []);
 
   // Handle Tab Switch inside Workspace
-  const handleTabChange = (newTab: 'TAKE' | 'CORRECTION' | 'HISTORY') => {
+  const handleTabChange = (newTab: 'TAKE' | 'COMPLETE_HISTORY' | 'CORRECTION' | 'HISTORY') => {
     setWorkspaceTab(newTab);
     setSelectedStudentIdsForCorrection([]);
+    setActiveActionMenuSessionId(null);
     if (selectedAssignmentId) {
-      if (newTab === 'CORRECTION') {
+      if (newTab === 'COMPLETE_HISTORY') {
+        loadCompleteAttendanceHistory(selectedAssignmentId);
+      } else if (newTab === 'CORRECTION') {
         loadAttendanceHistory(selectedAssignmentId);
       } else if (newTab === 'HISTORY') {
         loadAttendanceHistory(selectedAssignmentId);
         loadAssignmentCorrections(selectedAssignmentId);
       }
+    }
+  };
+
+  // Filtered complete attendance sessions
+  const filteredSessions = useMemo(() => {
+    if (!completeHistoryData || !completeHistoryData.sessions) return [];
+    if (completeHistoryFilter === 'PENDING') {
+      return completeHistoryData.sessions.filter((s) => s.status === 'Pending');
+    }
+    if (completeHistoryFilter === 'COMPLETED') {
+      return completeHistoryData.sessions.filter((s) => s.status === 'Completed');
+    }
+    if (completeHistoryFilter === 'CANCELLED') {
+      return completeHistoryData.sessions.filter((s) => s.status === 'Cancelled');
+    }
+    return completeHistoryData.sessions;
+  }, [completeHistoryData, completeHistoryFilter]);
+
+  // Action: Take Attendance for pending session
+  const handleActionTakeAttendance = (sessionDate: string) => {
+    setSelectedDate(sessionDate);
+    setActiveActionMenuSessionId(null);
+    handleTabChange('TAKE');
+  };
+
+  // Action: View Attendance for completed session
+  const handleActionViewAttendance = async (sessionId: string) => {
+    setActiveActionMenuSessionId(null);
+    setIsViewSessionModalOpen(true);
+    setLoadingViewSessionModal(true);
+    setViewSessionSearchQuery('');
+    try {
+      const data = await facultyService.getAttendanceSessionDetail(sessionId);
+      setViewSessionModalData(data);
+    } catch (err: any) {
+      console.error('Failed to load session attendance detail:', err);
+      setNotification({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to load session attendance detail.',
+      });
+      setIsViewSessionModalOpen(false);
+    } finally {
+      setLoadingViewSessionModal(false);
+    }
+  };
+
+  // Action: Request Correction for completed session
+  const handleActionRequestCorrection = (sessionId: string) => {
+    setActiveActionMenuSessionId(null);
+    handleSelectSessionForCorrection(sessionId);
+    handleTabChange('CORRECTION');
+  };
+
+  // Action: Open Cancel modal
+  const handleOpenCancelModal = (session: ScheduledSessionItem) => {
+    setActiveActionMenuSessionId(null);
+    setCancelTargetSession(session);
+    setCancelReasonInput('');
+    setIsCancelModalOpen(true);
+  };
+
+  // Action: Open Cancellation details modal
+  const handleOpenCancellationDetailModal = (session: ScheduledSessionItem) => {
+    setActiveActionMenuSessionId(null);
+    setCancellationDetailSession(session);
+    setIsCancellationDetailModalOpen(true);
+  };
+
+  // Action: Open Schedule modal
+  const handleOpenScheduleModal = () => {
+    setScheduleDate(new Date().toISOString().split('T')[0]);
+    setScheduleStartTime('10:35 AM');
+    setScheduleEndTime('11:30 AM');
+    setScheduleClassroom(completeHistoryData?.assignment.classroom || 'B-403');
+    setIsScheduleModalOpen(true);
+  };
+
+  // Submit Schedule Session
+  const handleScheduleSessionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAssignmentId || !scheduleDate) return;
+    setIsSchedulingSession(true);
+    try {
+      await facultyService.scheduleClassSession(selectedAssignmentId, {
+        date: scheduleDate,
+        startTime: scheduleStartTime,
+        endTime: scheduleEndTime,
+        classroom: scheduleClassroom.trim() || undefined,
+      });
+      setNotification({
+        type: 'success',
+        message: `Class session scheduled successfully for ${scheduleDate}.`,
+      });
+      setIsScheduleModalOpen(false);
+      await loadCompleteAttendanceHistory(selectedAssignmentId);
+    } catch (err: any) {
+      console.error('Failed to schedule session:', err);
+      setNotification({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to schedule class session.',
+      });
+    } finally {
+      setIsSchedulingSession(false);
+    }
+  };
+
+  // Submit Cancel Session
+  const handleCancelSessionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cancelTargetSession) return;
+    setIsCancellingSession(true);
+    try {
+      await facultyService.cancelClassSession(cancelTargetSession.id, cancelReasonInput.trim() || 'Class cancelled by faculty');
+      setNotification({
+        type: 'success',
+        message: `Class session for ${cancelTargetSession.date} marked as cancelled.`,
+      });
+      setIsCancelModalOpen(false);
+      setCancelTargetSession(null);
+      if (selectedAssignmentId) {
+        await loadCompleteAttendanceHistory(selectedAssignmentId);
+      }
+    } catch (err: any) {
+      console.error('Failed to cancel session:', err);
+      setNotification({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to cancel class session.',
+      });
+    } finally {
+      setIsCancellingSession(false);
     }
   };
 
@@ -291,13 +496,13 @@ export const FacultyAttendancePage: React.FC = () => {
     }
   };
 
-  // Find existing session info for selected date & period
+  // Find existing session info for selected date
   const existingSession: RecordedSessionItem | undefined = useMemo(() => {
     if (!workspaceData || !workspaceData.recordedSessions) return undefined;
     return workspaceData.recordedSessions.find(
-      (s) => s.date === selectedDate && s.sessionPeriod === selectedPeriod
+      (s) => s.date === selectedDate
     );
-  }, [workspaceData, selectedDate, selectedPeriod]);
+  }, [workspaceData, selectedDate]);
 
   // Previous class session
   const previousClassInfo = useMemo(() => {
@@ -442,7 +647,7 @@ export const FacultyAttendancePage: React.FC = () => {
       setWorkspaceData(updatedWorkspace);
       setNotification({
         type: 'success',
-        message: `Attendance saved successfully for ${selectedDate} (Period ${selectedPeriod}).`,
+        message: `Attendance saved successfully for ${selectedDate}.`,
       });
       await loadCourses();
     } catch (err: any) {
@@ -1005,7 +1210,7 @@ export const FacultyAttendancePage: React.FC = () => {
 
             {/* ACTION ROW: ALL ACTIONS ON HORIZONTAL ROW */}
             <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              {/* Left Action Group (Take Attendance, Student Attendance, Correction, History) */}
+              {/* Left Action Group (Take Attendance, View Complete Attendance, Correction, History) */}
               <div className="flex flex-row items-center gap-2.5 overflow-x-auto">
                 <button
                   type="button"
@@ -1018,6 +1223,19 @@ export const FacultyAttendancePage: React.FC = () => {
                 >
                   <CalendarCheck className="w-4 h-4 shrink-0" />
                   <span>Take Attendance</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTabChange('COMPLETE_HISTORY')}
+                  className={`h-[42px] px-3.5 rounded-lg text-xs font-semibold flex items-center space-x-2 transition shrink-0 cursor-pointer ${
+                    workspaceTab === 'COMPLETE_HISTORY'
+                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4 shrink-0" />
+                  <span>View Complete Attendance</span>
                 </button>
 
                 <button
@@ -1038,8 +1256,8 @@ export const FacultyAttendancePage: React.FC = () => {
                   onClick={() => handleTabChange('HISTORY')}
                   className={`h-[42px] px-3.5 rounded-lg text-xs font-semibold flex items-center space-x-2 transition shrink-0 cursor-pointer ${
                     workspaceTab === 'HISTORY'
-                      ? 'bg-indigo-700 hover:bg-indigo-800 text-white shadow-xs'
-                      : 'bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100'
+                      ? 'bg-purple-700 hover:bg-purple-800 text-white shadow-xs'
+                      : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'
                   }`}
                 >
                   <History className="w-4 h-4 shrink-0" />
@@ -1070,6 +1288,361 @@ export const FacultyAttendancePage: React.FC = () => {
             </div>
           </div>
 
+          {/* TAB: COMPLETE ATTENDANCE HISTORY (MATCHING SCREENSHOT 1) */}
+          {workspaceTab === 'COMPLETE_HISTORY' && (
+            <div className="space-y-4">
+              {/* Backdrop for closing 3-dot action menu */}
+              {activeActionMenuSessionId && (
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setActiveActionMenuSessionId(null)}
+                />
+              )}
+
+              {/* Header Card: Back button + Subject title + Meta chips */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('TAKE')}
+                    className="p-2 -ml-1 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition cursor-pointer shrink-0"
+                    title="Back to Take Attendance"
+                  >
+                    <ArrowLeft className="w-5 h-5 text-slate-800" />
+                  </button>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                      {selectedSubject?.name || completeHistoryData?.assignment.subjectName || 'Course Attendance'}
+                    </h2>
+                    <div className="text-xs sm:text-sm font-semibold text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-slate-700">
+                        {selectedSubject?.code || completeHistoryData?.assignment.subjectCode}
+                      </span>
+                      <span>•</span>
+                      <span>{selectedSubject?.department || completeHistoryData?.assignment.department || 'CSE'}</span>
+                      <span>•</span>
+                      <span>Semester {selectedSemNum || completeHistoryData?.assignment.semester}</span>
+                      <span>•</span>
+                      <span>{formatSectionLabel(selectedSubject?.section || completeHistoryData?.assignment.section)}</span>
+                      {(completeHistoryData?.assignment.academicYear || activeAY) && (
+                        <>
+                          <span>•</span>
+                          <span>AY: {completeHistoryData?.assignment.academicYear || activeAY}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick actions on header right: Schedule Class & Refresh */}
+                <div className="flex items-center space-x-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleOpenScheduleModal}
+                    className="h-9 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 transition shadow-xs cursor-pointer"
+                    title="Schedule a new class session"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Schedule Class</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectedAssignmentId && loadCompleteAttendanceHistory(selectedAssignmentId)}
+                    disabled={loadingCompleteHistory}
+                    className="h-9 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-60"
+                    title="Refresh attendance records"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingCompleteHistory ? 'animate-spin text-blue-600' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Filter Pills Toolbar */}
+              <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* Left: 4 Filter Pills (All, Pending, Completed, Cancelled) */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCompleteHistoryFilter('ALL')}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                      completeHistoryFilter === 'ALL'
+                        ? 'bg-blue-100 text-blue-800 border border-blue-300 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {completeHistoryFilter === 'ALL' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    <span>All ({completeHistoryData?.summary.totalSessions ?? 0})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCompleteHistoryFilter('PENDING')}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                      completeHistoryFilter === 'PENDING'
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {completeHistoryFilter === 'PENDING' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    <span>Pending ({completeHistoryData?.summary.pendingCount ?? 0})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCompleteHistoryFilter('COMPLETED')}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                      completeHistoryFilter === 'COMPLETED'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {completeHistoryFilter === 'COMPLETED' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    <span>Completed ({completeHistoryData?.summary.completedCount ?? 0})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCompleteHistoryFilter('CANCELLED')}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                      completeHistoryFilter === 'CANCELLED'
+                        ? 'bg-slate-200 text-slate-800 border border-slate-400 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {completeHistoryFilter === 'CANCELLED' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    <span>Cancelled ({completeHistoryData?.summary.cancelledCount ?? 0})</span>
+                  </button>
+                </div>
+
+                {/* Right: Classes held indicator + Plus button */}
+                <div className="flex items-center space-x-3 shrink-0 self-end sm:self-auto">
+                  <span className="text-xs font-bold text-slate-600">
+                    <span className="text-slate-900 font-extrabold">{completeHistoryData?.summary.classesHeld ?? 0}</span> classes held
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleOpenScheduleModal}
+                    className="w-8 h-8 rounded-lg border border-slate-300 flex items-center justify-center hover:bg-slate-100 text-slate-700 transition cursor-pointer shadow-2xs"
+                    title="Schedule a new class"
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Date-Wise Attendance List */}
+              {loadingCompleteHistory ? (
+                <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3">
+                  <RefreshCw className="w-7 h-7 animate-spin text-blue-600 mx-auto" />
+                  <p className="text-sm font-semibold text-slate-600">Loading complete attendance history...</p>
+                </div>
+              ) : filteredSessions.length === 0 ? (
+                <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3">
+                  <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-800">No Class Sessions Found</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    {completeHistoryFilter === 'ALL'
+                      ? 'No scheduled or conducted classes recorded yet for this subject and section.'
+                      : `No sessions found with "${completeHistoryFilter.toLowerCase()}" status.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleOpenScheduleModal}
+                    className="inline-flex items-center space-x-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer mt-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Schedule Class Session</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100 overflow-visible">
+                  {filteredSessions.map((session) => {
+                    const isCompleted = session.status === 'Completed';
+                    const isPending = session.status === 'Pending';
+                    const isCancelled = session.status === 'Cancelled';
+
+                    return (
+                      <div
+                        key={session.id}
+                        className="p-4 sm:px-5 sm:py-4 flex items-center justify-between hover:bg-slate-50/80 transition relative"
+                      >
+                        {/* Left: Square Status Box + Class Info */}
+                        <div className="flex items-center space-x-4 min-w-0">
+                          {/* Square indicator matching Reference Screenshot 1 */}
+                          {isCompleted && (
+                            <div
+                              className="w-11 h-11 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs"
+                              title="Completed: Attendance Saved"
+                            >
+                              <Check className="w-6 h-6 stroke-[3]" />
+                            </div>
+                          )}
+                          {isPending && (
+                            <div
+                              className="w-11 h-11 rounded-lg bg-amber-100 border border-amber-300 text-amber-700 flex items-center justify-center shrink-0 shadow-xs"
+                              title="Pending: Attendance Not Recorded"
+                            >
+                              <span className="text-xl font-black leading-none">!</span>
+                            </div>
+                          )}
+                          {isCancelled && (
+                            <div
+                              className="w-11 h-11 rounded-lg bg-slate-100 border border-slate-300 text-slate-500 flex items-center justify-center shrink-0 shadow-xs"
+                              title="Cancelled Class"
+                            >
+                              <X className="w-5 h-5 stroke-[2.5]" />
+                            </div>
+                          )}
+
+                          {/* Info Column */}
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                                {formatDateLong(session.date)}
+                                {session.classroom && (
+                                  <span className="text-slate-600 font-semibold ml-1.5">
+                                    - ( {session.classroom} )
+                                  </span>
+                                )}
+                              </h4>
+                              {/* Accessible Status Label */}
+                              {isCompleted && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Completed
+                                </span>
+                              )}
+                              {isPending && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                                  Pending
+                                </span>
+                              )}
+                              {isCancelled && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                                  Cancelled
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-xs text-slate-500 font-medium mt-1 flex flex-wrap items-center gap-2">
+                              <span className="text-slate-600 font-semibold">
+                                {session.timeSlot || '10:35 AM – 11:30 AM'}
+                              </span>
+                              {isCompleted && session.summary && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-emerald-700 font-bold">
+                                    {session.summary.presentCount} Present
+                                  </span>
+                                  <span>•</span>
+                                  <span className="text-rose-600 font-bold">
+                                    {session.summary.absentCount} Absent
+                                  </span>
+                                  <span>•</span>
+                                  <span className="text-blue-700 font-extrabold">
+                                    {session.summary.attendanceRate}% Rate
+                                  </span>
+                                </>
+                              )}
+                              {isCancelled && session.cancellationReason && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-rose-600 italic">
+                                    Reason: {session.cancellationReason}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Three-Dot Menu */}
+                        <div className="relative shrink-0 ml-3">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveActionMenuSessionId(
+                                activeActionMenuSessionId === session.id ? null : session.id
+                              );
+                            }}
+                            className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+                            title="Class Actions"
+                          >
+                            <MoreVertical className="w-5 h-5" />
+                          </button>
+
+                          {/* Menu Dropdown */}
+                          {activeActionMenuSessionId === session.id && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute right-0 top-10 z-30 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 animate-in fade-in zoom-in-95 duration-100"
+                            >
+                              {isPending && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleActionTakeAttendance(session.date)}
+                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-blue-700 hover:bg-blue-50 flex items-center space-x-2 transition cursor-pointer"
+                                  >
+                                    <CalendarCheck className="w-4 h-4 text-blue-600" />
+                                    <span>Take Attendance</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenCancelModal(session)}
+                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center space-x-2 transition cursor-pointer"
+                                  >
+                                    <Ban className="w-4 h-4 text-rose-500" />
+                                    <span>Cancel Class</span>
+                                  </button>
+                                </>
+                              )}
+
+                              {isCompleted && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleActionViewAttendance(session.id)}
+                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-800 hover:bg-slate-100 flex items-center space-x-2 transition cursor-pointer"
+                                  >
+                                    <Eye className="w-4 h-4 text-blue-600" />
+                                    <span>View Attendance</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleActionRequestCorrection(session.id)}
+                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-amber-700 hover:bg-amber-50 flex items-center space-x-2 transition cursor-pointer"
+                                  >
+                                    <Edit3 className="w-4 h-4 text-amber-600" />
+                                    <span>Request Correction</span>
+                                  </button>
+                                </>
+                              )}
+
+                              {isCancelled && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCancellationDetailModal(session)}
+                                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center space-x-2 transition cursor-pointer"
+                                >
+                                  <Info className="w-4 h-4 text-slate-500" />
+                                  <span>View Cancellation Details</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 1: NORMAL TAKE ATTENDANCE (TWO-COLUMN PRODUCTIVITY LAYOUT) */}
           {workspaceTab === 'TAKE' && (
             <div className="space-y-3.5">
@@ -1089,22 +1662,6 @@ export const FacultyAttendancePage: React.FC = () => {
                     />
                   </div>
 
-                  {/* Period Input */}
-                  <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 h-9">
-                    <Clock className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    <span className="text-[11px] font-bold text-slate-500">Period:</span>
-                    <select
-                      value={selectedPeriod}
-                      onChange={(e) => setSelectedPeriod(Number(e.target.value))}
-                      className="text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer pr-1"
-                    >
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map((p) => (
-                        <option key={p} value={p}>
-                          Period {p}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
 
                   {/* Session Status Chip */}
                   {existingSession ? (
@@ -1254,11 +1811,11 @@ export const FacultyAttendancePage: React.FC = () => {
                                       : 'bg-rose-50/20 hover:bg-rose-50/40'
                                   }`}
                                 >
-                                  <td className="py-1.5 px-3 font-mono font-bold text-slate-400 text-center">
+                                  <td className="py-1.5 px-3 font-bold text-slate-900 dark:text-white text-xs text-center">
                                     {String(idx + 1).padStart(2, '0')}
                                   </td>
 
-                                  <td className="py-1.5 px-3 font-mono font-semibold text-slate-800">
+                                  <td className="py-1.5 px-3 font-bold text-slate-900 dark:text-white text-xs uppercase tracking-tight">
                                     {st.usn}
                                   </td>
 
@@ -1341,9 +1898,6 @@ export const FacultyAttendancePage: React.FC = () => {
                         <div className="flex items-center justify-between">
                           <span className="font-extrabold text-slate-900">
                             {previousClassInfo.date}
-                          </span>
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold text-[10px] rounded">
-                            Period {previousClassInfo.sessionPeriod}
                           </span>
                         </div>
 
@@ -1462,9 +2016,6 @@ export const FacultyAttendancePage: React.FC = () => {
                                 <span className="px-2 py-0.5 bg-slate-900 text-white font-mono text-[11px] font-bold rounded">
                                   {s.date}
                                 </span>
-                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold text-[11px] rounded-full border border-indigo-100">
-                                  Period {s.sessionPeriod}
-                                </span>
                               </div>
                               <div className="pt-1 flex items-center justify-between text-xs">
                                 <div className="text-slate-600 font-medium">
@@ -1538,9 +2089,9 @@ export const FacultyAttendancePage: React.FC = () => {
                     {/* Compact Summary Tiles in One Horizontal Row */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                       <div className="bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Session Date & Period</span>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Session Date</span>
                         <span className="text-xs font-extrabold text-slate-900 mt-0.5 block">
-                          {correctionSessionData.session.date} · Period {correctionSessionData.session.sessionPeriod}
+                          {correctionSessionData.session.date}
                         </span>
                       </div>
 
@@ -1636,7 +2187,7 @@ export const FacultyAttendancePage: React.FC = () => {
                             <th className="py-2.5 px-3 w-[160px] font-mono">USN</th>
                             <th className="py-2.5 px-3 min-w-[260px]">STUDENT NAME</th>
                             <th className="py-2.5 px-3 w-[130px] text-center">CURRENT STATUS</th>
-                            <th className="py-2.5 px-4 w-[160px] text-right">CORRECTION ACTION</th>
+                            <th className="py-2.5 px-4 w-[160px] text-center">CORRECTION ACTION</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
@@ -1664,11 +2215,11 @@ export const FacultyAttendancePage: React.FC = () => {
                                   />
                                 </td>
 
-                                <td className="py-2 px-3 font-mono font-bold text-slate-400 text-center">
+                                <td className="py-2 px-3 font-bold text-slate-900 dark:text-white text-xs text-center">
                                   {String(idx + 1).padStart(2, '0')}
                                 </td>
 
-                                <td className="py-2 px-3 font-mono font-bold text-slate-900 text-xs">
+                                <td className="py-2 px-3 font-bold text-slate-900 dark:text-white text-xs uppercase tracking-tight">
                                   {st.usn}
                                 </td>
 
@@ -1789,19 +2340,17 @@ export const FacultyAttendancePage: React.FC = () => {
                       <thead className="bg-[#111111] dark:bg-neutral-950 text-white font-extrabold uppercase text-[10px] border-b border-neutral-800">
                         <tr>
                           <th className="py-2 px-3 text-white font-extrabold">Date</th>
-                          <th className="py-2 px-3 text-white font-extrabold">Period</th>
                           <th className="py-2 px-3 text-white font-extrabold">Present / Total</th>
                           <th className="py-2 px-3 text-white font-extrabold">Absent</th>
                           <th className="py-2 px-3 text-white font-extrabold">Rate</th>
                           <th className="py-2 px-3 text-white font-extrabold">Status</th>
-                          <th className="py-2 px-3 text-right text-white font-extrabold">Action</th>
+                          <th className="py-2 px-3 text-center text-white font-extrabold">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {historyData.sessions.map((s) => (
                           <tr key={s.id} className="hover:bg-slate-50/80">
                             <td className="py-2 px-3 font-mono font-bold text-slate-900">{s.date}</td>
-                            <td className="py-2 px-3 font-bold text-indigo-900">Period {s.sessionPeriod}</td>
                             <td className="py-2 px-3 font-bold text-emerald-700">
                               {s.presentCount} / {s.totalStudents}
                             </td>
@@ -1868,7 +2417,7 @@ export const FacultyAttendancePage: React.FC = () => {
                               {log.studentUsn} &bull; {log.studentName}
                             </span>
                             <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-mono text-[10px] font-bold rounded">
-                              Class: {log.date || 'N/A'} (P{log.sessionPeriod || 1})
+                              Class Date: {log.date || 'N/A'}
                             </span>
                           </div>
                           <div className="text-slate-600 text-[11px]">
@@ -1925,9 +2474,9 @@ export const FacultyAttendancePage: React.FC = () => {
             {correctionSessionData && (
               <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs space-y-0.5">
                 <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">Class:</span>
+                  <span className="text-slate-500 font-bold">Class Date:</span>
                   <span className="font-extrabold text-slate-900">
-                    {correctionSessionData.session.date} • Period {correctionSessionData.session.sessionPeriod}
+                    {correctionSessionData.session.date}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -2034,6 +2583,441 @@ export const FacultyAttendancePage: React.FC = () => {
                     <span>Confirm</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: VIEW ATTENDANCE MODAL */}
+      {isViewSessionModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Class Attendance Details
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  {viewSessionModalData
+                    ? `${formatDateLong(viewSessionModalData.session.date)} • ${viewSessionModalData.session.classroom || 'Classroom'} • ${viewSessionModalData.session.startTime || ''} - ${viewSessionModalData.session.endTime || ''}`
+                    : 'Loading attendance record...'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsViewSessionModalOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {loadingViewSessionModal ? (
+                <div className="py-12 text-center">
+                  <RefreshCw className="w-7 h-7 animate-spin text-blue-600 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-600">Loading student attendance...</p>
+                </div>
+              ) : viewSessionModalData ? (
+                <>
+                  {/* Summary Metric Chips */}
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total</div>
+                      <div className="text-base font-black text-slate-900">{viewSessionModalData.summary.total}</div>
+                    </div>
+                    <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 text-center">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Present</div>
+                      <div className="text-base font-black text-emerald-800">{viewSessionModalData.summary.present}</div>
+                    </div>
+                    <div className="bg-rose-50 p-2.5 rounded-xl border border-rose-200 text-center">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Absent</div>
+                      <div className="text-base font-black text-rose-800">{viewSessionModalData.summary.absent}</div>
+                    </div>
+                    <div className="bg-blue-50 p-2.5 rounded-xl border border-blue-200 text-center">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Rate</div>
+                      <div className="text-base font-black text-blue-800">{viewSessionModalData.summary.rate}%</div>
+                    </div>
+                  </div>
+
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Search student name or USN..."
+                      value={viewSessionSearchQuery}
+                      onChange={(e) => setViewSessionSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Student Table */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[11px] font-black text-slate-600 uppercase tracking-wider border-b border-slate-200 sticky top-0">
+                        <tr>
+                          <th className="py-2 px-3 text-center w-12">#</th>
+                          <th className="py-2 px-3">USN</th>
+                          <th className="py-2 px-3">Student Name</th>
+                          <th className="py-2 px-3 text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {viewSessionModalData.students
+                          .filter((st) => {
+                            if (!viewSessionSearchQuery.trim()) return true;
+                            const q = viewSessionSearchQuery.toLowerCase();
+                            return (
+                              st.usn.toLowerCase().includes(q) ||
+                              st.name.toLowerCase().includes(q)
+                            );
+                          })
+                          .map((st, idx) => (
+                            <tr key={st.id} className="hover:bg-slate-50/70 transition">
+                              <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">
+                                {String(idx + 1).padStart(2, '0')}
+                              </td>
+                              <td className="py-2 px-3 font-mono font-bold text-slate-800">{st.usn}</td>
+                              <td className="py-2 px-3 font-semibold text-slate-900">{st.name}</td>
+                              <td className="py-2 px-3 text-right">
+                                {st.status === 'PRESENT' ? (
+                                  <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[11px] font-black rounded-md inline-flex items-center space-x-1">
+                                    <Check className="w-3 h-3 stroke-[2.5]" />
+                                    <span>Present</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-1 bg-rose-100 text-rose-800 text-[11px] font-black rounded-md inline-flex items-center space-x-1">
+                                    <X className="w-3 h-3 stroke-[2.5]" />
+                                    <span>Absent</span>
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+              {viewSessionModalData && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sid = viewSessionModalData.session.id;
+                    setIsViewSessionModalOpen(false);
+                    handleActionRequestCorrection(sid);
+                  }}
+                  className="px-3 py-1.5 bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Request Correction</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsViewSessionModalOpen(false)}
+                className="ml-auto px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: SCHEDULE CLASS SESSION MODAL */}
+      {isScheduleModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Schedule Class Session
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  {selectedSubject?.name || 'Class Session'} • {formatSectionLabel(selectedSubject?.section)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleScheduleSessionSubmit} className="p-5 space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Class Date <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                    Start Time
+                  </label>
+                  <input
+                    type="text"
+                    value={scheduleStartTime}
+                    onChange={(e) => setScheduleStartTime(e.target.value)}
+                    placeholder="e.g. 10:35 AM"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                    End Time
+                  </label>
+                  <input
+                    type="text"
+                    value={scheduleEndTime}
+                    onChange={(e) => setScheduleEndTime(e.target.value)}
+                    placeholder="e.g. 11:30 AM"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Classroom / Hall Number
+                </label>
+                <input
+                  type="text"
+                  value={scheduleClassroom}
+                  onChange={(e) => setScheduleClassroom(e.target.value)}
+                  placeholder="e.g. B-403"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsScheduleModalOpen(false)}
+                  disabled={isSchedulingSession}
+                  className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSchedulingSession}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer flex items-center space-x-1.5 disabled:opacity-60"
+                >
+                  {isSchedulingSession ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Scheduling...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Schedule Class</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: CANCEL SESSION MODAL */}
+      {isCancelModalOpen && cancelTargetSession && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-rose-50/50">
+              <div className="flex items-center space-x-2">
+                <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <Ban className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Cancel Scheduled Class
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {formatDateLong(cancelTargetSession.date)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCancelModalOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCancelSessionSubmit} className="p-5 space-y-3.5">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 space-y-1">
+                <div className="font-bold">Notice:</div>
+                <p>
+                  Marking this session as cancelled distinguishes it from pending classes where attendance was forgotten.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Quick Cancellation Reason
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Faculty on Leave / OD',
+                    'College Holiday / Event',
+                    'Session Rescheduled',
+                    'Technical Issue',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCancelReasonInput(preset)}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold border transition cursor-pointer ${
+                        cancelReasonInput === preset
+                          ? 'bg-rose-100 text-rose-800 border-rose-300'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Reason / Remarks
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  placeholder="Provide brief reason for cancellation..."
+                  value={cancelReasonInput}
+                  onChange={(e) => setCancelReasonInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCancelModalOpen(false)}
+                  disabled={isCancellingSession}
+                  className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
+                >
+                  Keep Class
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCancellingSession}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer flex items-center space-x-1.5 disabled:opacity-60"
+                >
+                  {isCancellingSession ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Cancelling...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="w-3.5 h-3.5" />
+                      <span>Confirm Cancellation</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: CANCELLATION DETAILS MODAL */}
+      {isCancellationDetailModalOpen && cancellationDetailSession && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center space-x-2">
+                <div className="w-7 h-7 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center">
+                  <Info className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Class Cancellation Details
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCancellationDetailModalOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 text-xs">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                <div className="flex justify-between">
+                  <span className="font-semibold text-slate-500">Date:</span>
+                  <span className="font-bold text-slate-900">{formatDateLong(cancellationDetailSession.date)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-slate-500">Time:</span>
+                  <span className="font-bold text-slate-900">{cancellationDetailSession.timeSlot || '10:35 AM - 11:30 AM'}</span>
+                </div>
+                {cancellationDetailSession.classroom && (
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-slate-500">Classroom:</span>
+                    <span className="font-bold text-slate-900">{cancellationDetailSession.classroom}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="font-semibold text-slate-500">Status:</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-200 text-slate-800">
+                    Cancelled
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+                  Cancellation Reason:
+                </div>
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-950 font-semibold">
+                  {cancellationDetailSession.cancellationReason || 'Class cancelled by faculty.'}
+                </div>
+              </div>
+
+              {cancellationDetailSession.cancelledAt && (
+                <div className="text-[11px] text-slate-400 italic">
+                  Cancelled on: {new Date(cancellationDetailSession.cancelledAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end bg-slate-50/50">
+              <button
+                type="button"
+                onClick={() => setIsCancellationDetailModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

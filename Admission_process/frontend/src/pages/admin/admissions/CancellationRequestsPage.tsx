@@ -468,18 +468,18 @@ export const CancellationRequestsPage: React.FC = () => {
         </div>
 
         {/* Requests Table */}
-        <div className="overflow-x-auto border border-neutral-100 dark:border-neutral-800/60 rounded-2xl">
-          <table className="w-full text-left border-collapse text-xs">
+        <div className="overflow-x-auto border border-neutral-100 dark:border-neutral-800/60 rounded-2xl shadow-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[1050px]">
             <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase font-extrabold border-b border-neutral-800">
-              <tr className="border-b border-neutral-800 bg-[#111111] dark:bg-neutral-950 text-white font-black uppercase tracking-wider">
-                <th className="p-4 text-white">Admission No</th>
-                <th className="p-4 text-white">Student Name</th>
-                <th className="p-4 text-white">Branch</th>
-                <th className="p-4 text-white">Admission Type</th>
-                <th className="p-4 text-white">Reason</th>
-                <th className="p-4 text-white">Requested Date</th>
-                <th className="p-4 text-white">Status</th>
-                <th className="p-4 text-right text-white">Actions</th>
+              <tr className="border-b border-neutral-800 bg-[#111111] dark:bg-neutral-950 text-white font-black uppercase tracking-wider text-[10px]">
+                <th className="p-4 text-white min-w-[160px]">Admission No</th>
+                <th className="p-4 text-white min-w-[220px]">Student Name</th>
+                <th className="p-4 text-white min-w-[120px]">Branch</th>
+                <th className="p-4 text-white min-w-[120px]">Admission Type</th>
+                <th className="p-4 text-white min-w-[140px]">Reason</th>
+                <th className="p-4 text-white min-w-[150px]">Requested Date</th>
+                <th className="p-4 text-white min-w-[140px]">Status</th>
+                <th className="p-4 text-right text-white min-w-[120px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/40 text-neutral-700 dark:text-neutral-350 font-semibold">

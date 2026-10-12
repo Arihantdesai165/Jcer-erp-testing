@@ -403,7 +403,7 @@ export const DeanDashboardPage: React.FC = () => {
                     <th className="py-3.5 px-4 font-bold text-white">HOD</th>
                     <th className="py-3.5 px-4 font-bold text-white text-center">Faculty</th>
                     <th className="py-3.5 px-4 font-bold text-white text-center">Students</th>
-                    <th className="py-3.5 px-4 font-bold text-white text-right">Action</th>
+                    <th className="py-3.5 px-4 font-bold text-white text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
@@ -621,7 +621,7 @@ export const DeanDashboardPage: React.FC = () => {
                 <th className="py-3.5 px-4 font-bold">Academic Year</th>
                 <th className="py-3.5 px-4 font-bold">Requested On</th>
                 <th className="py-3.5 px-4 font-bold">Status</th>
-                <th className="py-3.5 px-4 font-bold text-right">Actions</th>
+                <th className="py-3.5 px-4 font-bold text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/80">

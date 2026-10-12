@@ -8,6 +8,8 @@ class Teacher extends Model {
   public userId!: string;
   public departmentId!: string;
   public designation!: string;
+  public middleName!: string | null;
+  public gender!: string | null;
   public cycle!: 'P_CYCLE' | 'C_CYCLE' | string | null;
   public status!: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
   public archivedAt!: Date | null;
@@ -48,6 +50,16 @@ Teacher.init(
     designation: {
       type: DataTypes.STRING(50),
       allowNull: false,
+    },
+    middleName: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      defaultValue: null,
+    },
+    gender: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null,
     },
     cycle: {
       type: DataTypes.STRING(20),

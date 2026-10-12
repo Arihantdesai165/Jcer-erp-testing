@@ -651,7 +651,7 @@ export const HodSubjectsPage: React.FC = () => {
                 <th className="py-3.5 px-4 text-center w-28">CATEGORY</th>
                 <th className="py-3.5 px-4 text-center w-24">CREDITS</th>
                 <th className="py-3.5 px-4 text-center w-28">SCHEME</th>
-                <th className="py-3.5 px-4 text-right w-40">ACTION</th>
+                <th className="py-3.5 px-4 text-center w-40">ACTION</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/80">
