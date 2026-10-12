@@ -282,3 +282,96 @@ export function calculateFinalInternalMarks(
     status: 'READY',
   };
 }
+
+export interface VtuPassingCalculation {
+  cieMarks: number | null;
+  ciePassed: boolean;
+  externalMarks: number | null;
+  seeScaled50: number | null;
+  seePassed: boolean;
+  totalMarks: number | null;
+  aggregatePassed: boolean;
+  status: 'PASS' | 'FAIL' | 'NOT_ENTERED';
+  reason?: string;
+}
+
+/**
+ * Calculates student VTU Pass / Fail status based on Visvesvaraya Technological University (VTU) regulations:
+ * 1. CIE (50M): Must score at least 40% (20 out of 50M) to be eligible and pass CIE.
+ * 2. SEE (evaluated out of 100M, scaled to 50M):
+ *    - Theory Courses: Must score at least 35% of SEE max marks (35 out of 100M, or 18 out of 50M).
+ *    - Practical/Lab Courses: Must score at least 40% of SEE max marks (40 out of 100M, or 20 out of 50M).
+ * 3. Combined Total Aggregate (100M):
+ *    - Sum total of CIE (50M) + SEE scaled (50M) must be at least 40% (40 out of 100M).
+ */
+export function calculateVtuPassingStatus(
+  finalCieMarks: number | null | undefined,
+  rawExternalMarks: number | null | undefined,
+  maxExternalMarks: number = 100,
+  isLabOrPractical: boolean = false
+): VtuPassingCalculation {
+  const cie = finalCieMarks !== null && finalCieMarks !== undefined && !isNaN(Number(finalCieMarks))
+    ? Number(finalCieMarks)
+    : null;
+  const ext = rawExternalMarks !== null && rawExternalMarks !== undefined && !isNaN(Number(rawExternalMarks))
+    ? Number(rawExternalMarks)
+    : null;
+
+  // 1. Continuous Internal Evaluation (CIE) rule: Min 40% of 50M = 20M
+  const ciePassed = cie !== null && cie >= 20;
+
+  if (ext === null) {
+    return {
+      cieMarks: cie,
+      ciePassed,
+      externalMarks: null,
+      seeScaled50: null,
+      seePassed: false,
+      totalMarks: cie,
+      aggregatePassed: false,
+      status: 'NOT_ENTERED',
+      reason: !ciePassed && cie !== null ? 'CIE < 20 (Not eligible for SEE)' : undefined,
+    };
+  }
+
+  // 2. Semester End Examination (SEE) rule:
+  // Theory: Min 35% of SEE max marks (35/100, or 18/50)
+  // Lab / Practical: Min 40% of SEE max marks (40/100, or 20/50)
+  const maxExt = maxExternalMarks > 0 ? maxExternalMarks : 100;
+  const seePercentage = (ext / maxExt) * 100;
+  const seeScaled50 = Math.round(((ext / maxExt) * 50) * 100) / 100;
+
+  const minSeePct = isLabOrPractical ? 40 : 35;
+  const minRawMarks = isLabOrPractical ? (0.40 * maxExt) : (0.35 * maxExt);
+  const seePassed = ext >= minRawMarks || seePercentage >= minSeePct;
+
+  // 3. Combined Total Aggregate rule:
+  // CIE (50M) + SEE scaled (50M) must be >= 40% of 100M = 40M
+  const totalMarks = cie !== null ? Math.round((cie + seeScaled50) * 100) / 100 : seeScaled50;
+  const aggregatePassed = totalMarks >= 40;
+
+  const isPassed = ciePassed && seePassed && aggregatePassed;
+
+  const reasons: string[] = [];
+  if (!ciePassed) {
+    reasons.push(`CIE < 20 (${cie !== null ? Math.round(cie) : 0}/50)`);
+  }
+  if (!seePassed) {
+    reasons.push(`SEE < ${minSeePct}% (${ext}/${maxExt})`);
+  }
+  if (!aggregatePassed) {
+    reasons.push(`Total < 40 (${totalMarks}/100)`);
+  }
+
+  return {
+    cieMarks: cie,
+    ciePassed,
+    externalMarks: ext,
+    seeScaled50,
+    seePassed,
+    totalMarks,
+    aggregatePassed,
+    status: isPassed ? 'PASS' : 'FAIL',
+    reason: reasons.length > 0 ? reasons.join(' • ') : undefined,
+  };
+}

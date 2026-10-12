@@ -862,7 +862,7 @@ export const HodStudentsPage: React.FC = () => {
                 <tr className="border-b border-neutral-800 text-[10px] font-black uppercase tracking-widest text-white">
                   {isSemesterHandling && <th className="py-4 px-4 text-white text-center w-16">Sl No</th>}
                   <th
-                    className="py-4 px-4 text-white cursor-pointer hover:text-blue-400 transition-colors select-none"
+                    className="py-4 px-4 text-white text-center cursor-pointer hover:text-blue-400 transition-colors select-none"
                     onClick={() => {
                       if (sortBy === 'name') {
                         const newOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
@@ -877,7 +877,7 @@ export const HodStudentsPage: React.FC = () => {
                     }}
                     title="Sort by Student Name"
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center justify-center gap-1.5">
                       <span>Student</span>
                       {sortBy === 'name' && (
                         <span className="text-blue-400 text-xs">{sortOrder === 'ASC' ? '↑' : '↓'}</span>
@@ -888,7 +888,7 @@ export const HodStudentsPage: React.FC = () => {
                     <>
                       <th className="py-4 px-4 text-center text-white">Actual Branch</th>
                       <th
-                        className="py-4 px-4 text-white cursor-pointer hover:text-blue-400 transition-colors select-none"
+                        className="py-4 px-4 text-white text-center cursor-pointer hover:text-blue-400 transition-colors select-none"
                         onClick={() => {
                           if (sortBy === 'usn') {
                             const newOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
@@ -903,7 +903,7 @@ export const HodStudentsPage: React.FC = () => {
                         }}
                         title="Sort by USN"
                       >
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           <span>USN / App ID</span>
                           {sortBy === 'usn' && (
                             <span className="text-blue-400 text-xs">{sortOrder === 'ASC' ? '↑' : '↓'}</span>
@@ -913,7 +913,7 @@ export const HodStudentsPage: React.FC = () => {
                     </>
                   ) : (
                     <th
-                      className="py-4 px-4 text-white cursor-pointer hover:text-blue-400 transition-colors select-none"
+                      className="py-4 px-4 text-white text-center cursor-pointer hover:text-blue-400 transition-colors select-none"
                       onClick={() => {
                         if (sortBy === 'usn') {
                           const newOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
@@ -928,7 +928,7 @@ export const HodStudentsPage: React.FC = () => {
                       }}
                       title="Sort by USN"
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1.5">
                         <span>USN / Enrollment</span>
                         {sortBy === 'usn' && (
                           <span className="text-blue-400 text-xs">{sortOrder === 'ASC' ? '↑' : '↓'}</span>
@@ -940,7 +940,7 @@ export const HodStudentsPage: React.FC = () => {
                   <th className="py-4 px-4 text-center text-white">Section</th>
                   {!isSemesterHandling && <th className="py-4 px-4 text-center text-white">Batch</th>}
                   <th className="py-4 px-4 text-center text-white">Status</th>
-                  <th className="py-4 px-4 text-right text-white">Actions</th>
+                  <th className="py-4 px-4 text-center text-white">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/40 text-xs font-semibold">
@@ -956,7 +956,7 @@ export const HodStudentsPage: React.FC = () => {
                     >
                       {/* Sl No for Applied Science */}
                       {isSemesterHandling && (
-                        <td className="py-4 px-4 text-center font-mono font-bold text-neutral-500 dark:text-neutral-400">
+                        <td className="py-4 px-4 text-center font-bold text-neutral-900 dark:text-white text-xs">
                           {slNo}
                         </td>
                       )}
@@ -966,7 +966,7 @@ export const HodStudentsPage: React.FC = () => {
                         <div>
                           <button
                             onClick={() => navigate(`/hod/students/${student.id}`)}
-                            className="font-bold text-neutral-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-left"
+                            className="font-bold text-neutral-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-left text-xs"
                           >
                             {student.name}
                           </button>
@@ -983,15 +983,15 @@ export const HodStudentsPage: React.FC = () => {
                       )}
 
                       {/* USN / Enrollment / App ID */}
-                      <td className="py-4 px-4 font-mono font-black text-sm text-neutral-900 dark:text-white whitespace-nowrap">
+                      <td className="py-4 px-4 font-bold text-neutral-900 dark:text-white whitespace-nowrap text-xs">
                         <button
                           onClick={() => navigate(`/hod/students/${student.id}`)}
-                          className="hover:underline text-left text-sm font-black tracking-wide text-neutral-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400 transition-colors cursor-pointer"
+                          className="hover:underline text-left text-xs font-bold tracking-tight text-neutral-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400 transition-colors cursor-pointer uppercase"
                         >
                           {student.usn ? (
                             <span className="text-neutral-900 dark:text-white">{student.usn}</span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 font-medium text-xs text-neutral-600 dark:text-neutral-300">
+                            <span className="inline-flex items-center gap-1.5 font-bold text-xs text-neutral-600 dark:text-neutral-300">
                               <span>{student.applicationNumber || student.enrollmentNumber || '—'}</span>
                               <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 text-[10px] font-bold">
                                 Pre-USN

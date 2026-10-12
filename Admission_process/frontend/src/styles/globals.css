@@ -990,3 +990,136 @@ table tbody tr:hover {
 .dark table tbody tr:hover {
   background-color: rgba(255, 255, 255, 0.02) !important;
 }
+
+/* ========================================================================= */
+/* HOD, FACULTY & DEAN PORTALS: ALL TABLE HEADER TEXTS CENTER-ALIGNED        */
+/* ========================================================================= */
+body[data-portal="dean"] table thead th,
+body[data-portal="hod"] table thead th,
+body[data-portal="faculty"] table thead th,
+.portal-table-center table thead th,
+[data-portal="dean"] table thead th,
+[data-portal="hod"] table thead th,
+[data-portal="faculty"] table thead th {
+  text-align: center !important;
+}
+
+/* Allow explicit text-left on th when specified */
+body[data-portal="dean"] table thead th.text-left,
+body[data-portal="dean"] table thead th[class*="text-left"],
+body[data-portal="hod"] table thead th.text-left,
+body[data-portal="hod"] table thead th[class*="text-left"],
+body[data-portal="faculty"] table thead th.text-left,
+body[data-portal="faculty"] table thead th[class*="text-left"],
+.portal-table-center table thead th.text-left,
+.portal-table-center table thead th[class*="text-left"],
+[data-portal="dean"] table thead th.text-left,
+[data-portal="hod"] table thead th.text-left,
+[data-portal="faculty"] table thead th.text-left {
+  text-align: left !important;
+}
+
+body[data-portal="dean"] table thead th.text-right,
+body[data-portal="dean"] table thead th[class*="text-right"],
+body[data-portal="hod"] table thead th.text-right,
+body[data-portal="hod"] table thead th[class*="text-right"],
+body[data-portal="faculty"] table thead th.text-right,
+body[data-portal="faculty"] table thead th[class*="text-right"],
+.portal-table-center table thead th.text-right,
+.portal-table-center table thead th[class*="text-right"],
+[data-portal="dean"] table thead th.text-right,
+[data-portal="hod"] table thead th.text-right,
+[data-portal="faculty"] table thead th.text-right {
+  text-align: center !important;
+}
+
+body[data-portal="dean"] table thead th:first-child,
+body[data-portal="hod"] table thead th:first-child,
+body[data-portal="faculty"] table thead th:first-child,
+.portal-table-center table thead th:first-child,
+[data-portal="dean"] table thead th:first-child,
+[data-portal="hod"] table thead th:first-child,
+[data-portal="faculty"] table thead th:first-child {
+  text-align: center !important;
+}
+
+body[data-portal="dean"] table thead th:last-child,
+body[data-portal="hod"] table thead th:last-child,
+body[data-portal="faculty"] table thead th:last-child,
+.portal-table-center table thead th:last-child,
+[data-portal="dean"] table thead th:last-child,
+[data-portal="hod"] table thead th:last-child,
+[data-portal="faculty"] table thead th:last-child {
+  text-align: center !important;
+}
+
+/* Ensure flex containers & sort icons inside table headers are centered */
+body[data-portal="dean"] table thead th div.flex,
+body[data-portal="dean"] table thead th .flex,
+body[data-portal="hod"] table thead th div.flex,
+body[data-portal="hod"] table thead th .flex,
+body[data-portal="faculty"] table thead th div.flex,
+body[data-portal="faculty"] table thead th .flex,
+.portal-table-center table thead th div.flex,
+.portal-table-center table thead th .flex,
+[data-portal="dean"] table thead th div.flex,
+[data-portal="dean"] table thead th .flex,
+[data-portal="hod"] table thead th div.flex,
+[data-portal="hod"] table thead th .flex,
+[data-portal="faculty"] table thead th div.flex,
+[data-portal="faculty"] table thead th .flex {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  width: fit-content !important;
+}
+
+body[data-portal="dean"] table thead th > *,
+body[data-portal="hod"] table thead th > *,
+body[data-portal="faculty"] table thead th > *,
+.portal-table-center table thead th > *,
+[data-portal="dean"] table thead th > *,
+[data-portal="hod"] table thead th > *,
+[data-portal="faculty"] table thead th > * {
+  text-align: center !important;
+}
+
+/* Specific text-left overrides for columns like Faculty Name */
+body[data-portal="dean"] table thead th.text-left div.flex,
+body[data-portal="dean"] table thead th.text-left .flex,
+body[data-portal="hod"] table thead th.text-left div.flex,
+body[data-portal="hod"] table thead th.text-left .flex,
+body[data-portal="faculty"] table thead th.text-left div.flex,
+body[data-portal="faculty"] table thead th.text-left .flex,
+.portal-table-center table thead th.text-left div.flex,
+.portal-table-center table thead th.text-left .flex,
+[data-portal="dean"] table thead th.text-left div.flex,
+[data-portal="hod"] table thead th.text-left div.flex,
+[data-portal="faculty"] table thead th.text-left div.flex {
+  justify-content: flex-start !important;
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  text-align: left !important;
+}
+
+body[data-portal="dean"] table thead th.text-left > *,
+body[data-portal="hod"] table thead th.text-left > *,
+body[data-portal="faculty"] table thead th.text-left > *,
+.portal-table-center table thead th.text-left > *,
+[data-portal="dean"] table thead th.text-left > *,
+[data-portal="hod"] table thead th.text-left > *,
+[data-portal="faculty"] table thead th.text-left > * {
+  text-align: left !important;
+}
+
+table tbody td.text-left,
+table tbody td[class*="text-left"],
+.portal-table-center table tbody td.text-left,
+.portal-table-center table tbody td[class*="text-left"] {
+  text-align: left !important;
+}
+
+

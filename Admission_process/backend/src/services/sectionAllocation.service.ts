@@ -469,7 +469,6 @@ export class SectionAllocationService {
 
     if (isSemHandling) {
       // Applied Science HOD handles Semester 1 & 2 sections
-      where.departmentId = departmentId;
       if (semNum && !isNaN(semNum) && semNum >= 1 && semNum <= 8) {
         where.semester = semNum;
       } else {
@@ -479,7 +478,15 @@ export class SectionAllocationService {
       if (branch && branch !== 'ALL') {
         const cleanBranch = branch.trim();
         const branchCodes = getBranchEquivalents(cleanBranch);
-        where.branch = { [Op.in]: branchCodes };
+        const branchDept = await SectionAllocationService.findDepartmentByBranchCode(cleanBranch);
+        const targetDeptIds = branchDept ? [departmentId, branchDept.id] : [departmentId];
+        where.departmentId = { [Op.in]: targetDeptIds };
+        where[Op.or] = [
+          { branch: { [Op.in]: branchCodes } },
+          ...(branchDept ? [{ branch: null, departmentId: branchDept.id }] : []),
+        ];
+      } else {
+        where.departmentId = departmentId;
       }
     } else {
       // Standard HOD (e.g. CSE HOD, CSE-AIML HOD)

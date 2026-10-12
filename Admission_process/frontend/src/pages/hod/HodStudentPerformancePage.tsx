@@ -169,7 +169,7 @@ export const HodStudentPerformancePage: React.FC = () => {
                 </th>
                 <th className="py-3.5 px-4 text-white">Pass / Fail</th>
                 <th className="py-3.5 px-4 text-white">Bit-Wise Performance (B1 .. B5)</th>
-                <th className="py-3.5 px-4 text-right text-white">Actions</th>
+                <th className="py-3.5 px-4 text-center text-white">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -187,7 +187,7 @@ export const HodStudentPerformancePage: React.FC = () => {
                       {item.name}
                     </td>
 
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-800 dark:text-slate-200">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white uppercase tracking-tight">
                       {item.usn}
                     </td>
 

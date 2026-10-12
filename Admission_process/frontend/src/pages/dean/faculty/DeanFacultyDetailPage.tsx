@@ -71,7 +71,7 @@ export const DeanFacultyDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'details' | 'teaching' | 'attendance' | 'marks' | 'security'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'teaching' | 'attendance' | 'security'>('details');
 
   // Copy States
   const [copiedEmail, setCopiedEmail] = useState<boolean>(false);
@@ -83,7 +83,6 @@ export const DeanFacultyDetailPage: React.FC = () => {
 
   // Sub-table search filters
   const [attendanceSearch, setAttendanceSearch] = useState<string>('');
-  const [marksSearch, setMarksSearch] = useState<string>('');
 
   const fetchProfile = async () => {
     if (!id) return;
@@ -201,7 +200,7 @@ export const DeanFacultyDetailPage: React.FC = () => {
     );
   }
 
-  const { faculty, account, teachingAssignments, historicalAssignments, attendanceHistory, marksHistory } = profile;
+  const { faculty, account, teachingAssignments, historicalAssignments, attendanceHistory } = profile;
   const isArchived = faculty.status === 'ARCHIVED';
 
   const filteredAttendance = attendanceHistory.filter((att) => {
@@ -212,17 +211,6 @@ export const DeanFacultyDetailPage: React.FC = () => {
       att.subjectCode?.toLowerCase().includes(q) ||
       att.section?.toLowerCase().includes(q) ||
       att.date?.toLowerCase().includes(q)
-    );
-  });
-
-  const filteredMarks = marksHistory.filter((m) => {
-    if (!marksSearch.trim()) return true;
-    const q = marksSearch.toLowerCase();
-    return (
-      m.subject?.toLowerCase().includes(q) ||
-      m.subjectCode?.toLowerCase().includes(q) ||
-      m.assessment?.toLowerCase().includes(q) ||
-      m.section?.toLowerCase().includes(q)
     );
   });
 
@@ -354,11 +342,6 @@ export const DeanFacultyDetailPage: React.FC = () => {
             <p className="text-2xl font-black text-neutral-900 dark:text-white">{attendanceHistory.length}</p>
             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mt-0.5">Sessions Logged</p>
           </div>
-          <div className="w-px h-8 bg-neutral-200 dark:bg-neutral-800" />
-          <div className="text-center">
-            <p className="text-2xl font-black text-neutral-900 dark:text-white">{marksHistory.length}</p>
-            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mt-0.5">CIE Evals</p>
-          </div>
         </div>
       </div>
 
@@ -396,16 +379,6 @@ export const DeanFacultyDetailPage: React.FC = () => {
             Attendance Sessions
           </button>
           <button
-            onClick={() => setActiveTab('marks')}
-            className={`px-6 py-2 rounded-full text-xs font-bold transition-all duration-300 cursor-pointer ${
-              activeTab === 'marks'
-                ? 'nav-pill-active shadow-sm'
-                : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
-            }`}
-          >
-            CIE & Marks
-          </button>
-          <button
             onClick={() => setActiveTab('security')}
             className={`px-6 py-2 rounded-full text-xs font-bold transition-all duration-300 cursor-pointer ${
               activeTab === 'security'
@@ -432,10 +405,10 @@ export const DeanFacultyDetailPage: React.FC = () => {
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-4">
                 <FormField label="First Name" value={faculty.firstName || faculty.name.split(' ')[0] || '—'} />
-                <FormField label="Middle Name" value={faculty.name.split(' ').length > 2 ? faculty.name.split(' ').slice(1, -1).join(' ') : '—'} />
+                <FormField label="Middle Name" value={faculty.middleName || (faculty.name.split(' ').length > 2 ? faculty.name.split(' ').slice(1, -1).join(' ') : '—')} />
                 <FormField label="Last Name" value={faculty.lastName || (faculty.name.split(' ').length > 1 ? faculty.name.split(' ').slice(1).join(' ') : '—')} />
                 <FormField label="Full Legal Name" value={faculty.name} />
-                <FormField label="Gender" value="—" />
+                <FormField label="Gender" value={faculty.gender || '—'} />
                 <FormField label="Joining Date" value={faculty.joiningDate ? new Date(faculty.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} />
                 <FormField label="Nationality" value="Indian" />
                 <FormField label="Service Tenure" value={calculateTenure(faculty.joiningDate)} />
@@ -716,98 +689,7 @@ export const DeanFacultyDetailPage: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 4: CIE & Marks */}
-        {activeTab === 'marks' && (
-          <div className="space-y-8">
-
-            {/* Marks Summary Cards */}
-            <div className="space-y-4">
-              <h3 className="text-xs uppercase font-black tracking-widest text-neutral-450 border-l-4 border-violet-500 pl-2 flex items-center gap-2">
-                <ClipboardList size={14} className="text-violet-500" /> Continuous Internal Evaluation (CIE) Overview
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-4">
-                <FormField label="Total Evaluations" value={marksHistory.length} />
-                <FormField label="Academic Year" value={marksHistory[0]?.academicYear || '2026-27'} />
-                <FormField label="Curriculum Scope" value="VTU Under-Graduate" />
-                <FormField label="Evaluation Status" value="Active Faculty" />
-              </div>
-            </div>
-
-            <hr className="border-neutral-100 dark:border-neutral-800" />
-
-            {/* CIE Assessment Table */}
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h3 className="text-xs uppercase font-black tracking-widest text-neutral-450 border-l-4 border-violet-500 pl-2 flex items-center gap-2">
-                  <ClipboardList size={14} className="text-violet-500" /> Internal Assessment Records ({filteredMarks.length})
-                </h3>
-                <div className="relative min-w-[240px]">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-                  <input
-                    type="text"
-                    placeholder="Search assessment..."
-                    value={marksSearch}
-                    onChange={(e) => setMarksSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-neutral-200/90 dark:border-neutral-800 overflow-hidden bg-white dark:bg-neutral-900">
-                <div className="overflow-x-auto">
-                  {filteredMarks.length > 0 ? (
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase tracking-wider font-extrabold text-[10px] border-b border-neutral-800">
-                        <tr>
-                          <th className="py-3.5 px-4 font-bold text-white">Subject & Code</th>
-                          <th className="py-3.5 px-4 font-bold text-white text-center">Section</th>
-                          <th className="py-3.5 px-4 font-bold text-white">Assessment Component</th>
-                          <th className="py-3.5 px-4 font-bold text-white text-center">Max Marks</th>
-                          <th className="py-3.5 px-4 font-bold text-white text-center">Academic Year</th>
-                          <th className="py-3.5 px-4 font-bold text-white text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
-                        {filteredMarks.map((m) => (
-                          <tr key={m.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/30">
-                            <td className="py-3 px-4">
-                              <span className="font-extrabold text-neutral-900 dark:text-white mr-1.5">{m.subject}</span>
-                              <span className="text-[10px] font-mono text-neutral-400 font-bold">({m.subjectCode})</span>
-                            </td>
-                            <td className="py-3 px-4 text-center font-bold">
-                              {m.section}
-                            </td>
-                            <td className="py-3 px-4 font-semibold text-neutral-700 dark:text-neutral-300">
-                              {m.assessment}
-                            </td>
-                            <td className="py-3 px-4 text-center font-bold text-violet-600">
-                              {m.maxMarks}
-                            </td>
-                            <td className="py-3 px-4 text-center text-neutral-500 font-medium">
-                              {m.academicYear}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400">
-                                {m.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div className="py-8 text-center text-neutral-400 text-xs">
-                      No Continuous Internal Evaluation (CIE) or marks records found.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* Tab 5: Login & Security */}
+        {/* Tab 4: Login & Security */}
         {activeTab === 'security' && (
           <div className="space-y-8">
 

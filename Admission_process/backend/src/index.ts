@@ -30,6 +30,18 @@ async function startServer() {
       console.warn('Teachers archive columns migration skipped:', teacherErr.message);
     }
 
+    // Safe migration: Add middleName and gender columns to teachers and users tables
+    try {
+      await sequelize.query(`
+        ALTER TABLE "teachers" ADD COLUMN IF NOT EXISTS "middleName" VARCHAR(50) NULL;
+        ALTER TABLE "teachers" ADD COLUMN IF NOT EXISTS "gender" VARCHAR(20) NULL;
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "middleName" VARCHAR(50) NULL;
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "gender" VARCHAR(20) NULL;
+      `);
+    } catch (colErr: any) {
+      console.warn('Teachers and users middleName/gender migration skipped:', colErr.message);
+    }
+
     // Safe migration: Add faculty transfer & validity period columns to faculty_assignments table
     try {
       await sequelize.query(`
@@ -967,6 +979,48 @@ async function startServer() {
           ) THEN
             ALTER TABLE "attendance_records" ADD COLUMN "attendanceSessionId" UUID REFERENCES "attendance_sessions"("id") ON DELETE CASCADE;
           END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'startTime'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "startTime" VARCHAR(20) DEFAULT '10:35 AM';
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'endTime'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "endTime" VARCHAR(20) DEFAULT '11:30 AM';
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'classroom'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "classroom" VARCHAR(50);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'cancellationReason'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "cancellationReason" TEXT;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'cancelledAt'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "cancelledAt" TIMESTAMP WITH TIME ZONE;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'cancelledById'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "cancelledById" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+          END IF;
         END
         $$;
       `);
@@ -1167,8 +1221,40 @@ async function startServer() {
 
         CREATE INDEX IF NOT EXISTS "idx_marks_backup_jobs_status" ON "marks_backup_jobs"("status", "nextAttemptAt");
         CREATE INDEX IF NOT EXISTS "idx_marks_backup_jobs_subject" ON "marks_backup_jobs"("subjectId", "semester", "academicYear");
+
+        -- Add Assessment Workflow Columns
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "submittedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "submittedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "assignedHodId" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "hodReviewComment" TEXT NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "reviewedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "reviewedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "approvedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "approvedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "isPublished" BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "publishedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "submissionCount" INTEGER NOT NULL DEFAULT 0;
+
+        CREATE TABLE IF NOT EXISTS "assessment_review_history" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "assessmentConfigurationId" UUID NOT NULL REFERENCES "assessment_configurations"("id") ON DELETE CASCADE,
+          "action" VARCHAR(50) NOT NULL,
+          "fromStatus" VARCHAR(50) NULL,
+          "toStatus" VARCHAR(50) NOT NULL,
+          "actorId" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "actorRole" VARCHAR(50) NOT NULL DEFAULT 'FACULTY',
+          "actorName" VARCHAR(255) NULL,
+          "comments" TEXT NULL,
+          "metadata" JSONB NOT NULL DEFAULT '{}'::jsonb,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_review_hist_config_id" ON "assessment_review_history"("assessmentConfigurationId");
+        CREATE INDEX IF NOT EXISTS "idx_review_hist_actor_id" ON "assessment_review_history"("actorId");
       `);
-      console.log('✓ Bitwise Marks tables & relationships verified.');
+      console.log('✓ Bitwise Marks tables, workflow & review history relationships verified.');
     } catch (marksSchemaErr: any) {
       console.warn('Bitwise Marks schema ensure notice:', marksSchemaErr.message);
     }

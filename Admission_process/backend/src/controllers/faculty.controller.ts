@@ -434,5 +434,114 @@ export const getFacultyStudentAttendance = async (
   }
 };
 
+/**
+ * GET /api/faculty/attendance/complete-history/:assignmentId
+ * Retrieves date-wise scheduled, completed, and cancelled attendance history
+ */
+export const getFacultyCompleteAttendanceHistory = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    const assignmentId = req.params.assignmentId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    if (!assignmentId) {
+      return res.status(400).json({ error: 'Assignment ID is required.' });
+    }
+
+    const completeHistory = await facultyService.getFacultyCompleteAttendanceHistory(userId, assignmentId);
+    return res.json({
+      success: true,
+      data: completeHistory,
+    });
+  } catch (error: any) {
+    logger.error('GET_FACULTY_COMPLETE_ATTENDANCE_HISTORY_ERROR:', error);
+    return res.status(400).json({ error: error.message || 'Failed to load complete attendance history.' });
+  }
+};
+
+/**
+ * POST /api/faculty/attendance/schedule-session/:assignmentId
+ * Schedules a class session (Pending status)
+ */
+export const scheduleFacultyClassSession = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    const assignmentId = req.params.assignmentId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    if (!assignmentId) {
+      return res.status(400).json({ error: 'Assignment ID is required.' });
+    }
+
+    const { date, startTime, endTime, classroom } = req.body;
+    const newSession = await facultyService.scheduleFacultyClassSession(userId, assignmentId, {
+      date,
+      startTime,
+      endTime,
+      classroom,
+    });
+
+    return res.json({
+      success: true,
+      data: newSession,
+      message: 'Class session scheduled successfully.',
+    });
+  } catch (error: any) {
+    logger.error('SCHEDULE_FACULTY_CLASS_SESSION_ERROR:', error);
+    return res.status(400).json({ error: error.message || 'Failed to schedule class session.' });
+  }
+};
+
+/**
+ * POST /api/faculty/attendance/cancel-session/:sessionId
+ * Explicitly marks a scheduled class session as Cancelled
+ */
+export const cancelFacultyClassSession = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    const sessionId = req.params.sessionId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required.' });
+    }
+
+    const { reason } = req.body;
+    const cancelledSession = await facultyService.cancelFacultyClassSession(userId, sessionId, {
+      reason,
+    });
+
+    return res.json({
+      success: true,
+      data: cancelledSession,
+      message: 'Class session cancelled successfully.',
+    });
+  } catch (error: any) {
+    logger.error('CANCEL_FACULTY_CLASS_SESSION_ERROR:', error);
+    return res.status(400).json({ error: error.message || 'Failed to cancel class session.' });
+  }
+};
+
 
 

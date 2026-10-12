@@ -24,6 +24,7 @@ import {
   calculateStudentCieMarks,
   calculateStudentAssignmentMarks,
   calculateFinalInternalMarks,
+  calculateVtuPassingStatus,
 } from '../utils/bitwiseCalculation.util';
 import bitwiseMarksExcelService from './bitwiseMarksExcel.service';
 import bitwiseMarksBackupQueueService from './bitwiseMarksBackupQueue.service';
@@ -554,6 +555,14 @@ export const bitwiseMarksService = {
       attemptRules: config?.attemptRules || defaultAttemptRules,
       configurationVersion: config?.configurationVersion || 1,
       status: config?.status || 'DRAFT',
+      workflowStatus: config?.status || 'DRAFT',
+      assignedHodId: config?.assignedHodId || null,
+      hodReviewComment: config?.hodReviewComment || null,
+      reviewedAt: config?.reviewedAt || null,
+      approvedAt: config?.approvedAt || null,
+      isPublished: config?.isPublished || false,
+      publishedAt: config?.publishedAt || null,
+      submissionCount: config?.submissionCount || 0,
       hasExistingMarks,
       existingMarksCount,
     };
@@ -830,6 +839,10 @@ export const bitwiseMarksService = {
     const config = await this.getAssessmentConfiguration(userId, subjectId, semester, assessmentType, academicYear);
     if (!config.id) {
       throw new Error('Assessment configuration not found. Please configure the question pattern first.');
+    }
+
+    if (['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'PUBLISHED'].includes(config.workflowStatus || '')) {
+      throw new Error(`Assessment is locked for editing because its status is ${config.workflowStatus}. If corrections are required, wait for HOD to return it.`);
     }
 
     // Build quick lookup for subquestion max marks
@@ -1496,7 +1509,7 @@ export const bitwiseMarksService = {
   },
 
   /**
-   * 13. PAGE 7: Get External Examination Marks
+   * 13. PAGE 7: Get External Examination Marks with VTU Passing Status
    */
   async getExternalMarksWorkspace(
     userId: string,
@@ -1511,6 +1524,74 @@ export const bitwiseMarksService = {
     const subject = await Subject.findByPk(subjectId);
     const department = await Department.findByPk(departmentId);
     const students = await this.getConsolidatedStudentRoster(departmentId, semester, academicYear);
+
+    const isLabOrPractical = Boolean(
+      subject?.type?.toUpperCase().includes('LAB') ||
+      subject?.type?.toUpperCase().includes('PRACTICAL') ||
+      subject?.code?.toUpperCase().includes('L') ||
+      subject?.name?.toUpperCase().includes('LAB') ||
+      subject?.name?.toUpperCase().includes('PRACTICAL')
+    );
+
+    // 1. Fetch Final Internal Marks (CIE out of 50M)
+    const finalRecords = await FinalInternalMarks.findAll({
+      where: {
+        academicYear: { [Op.in]: ayVariants },
+        departmentId,
+        semester,
+        subjectId,
+      },
+    });
+    const finalMap = new Map<string, number | null>();
+    let isInternalFinalized = false;
+    if (finalRecords.length > 0) {
+      isInternalFinalized = finalRecords.every((r) => r.status === 'FINALIZED');
+      for (const r of finalRecords) {
+        if (r.finalInternalMarks !== null && r.finalInternalMarks !== undefined) {
+          finalMap.set(r.studentId, Number(r.finalInternalMarks));
+        }
+      }
+    }
+
+    // Fallback: If FinalInternalMarks hasn't been generated for some students, calculate from Assessment Summaries
+    if (finalMap.size < students.length) {
+      const cie1Cfg = await AssessmentConfiguration.findOne({
+        where: { academicYear: { [Op.in]: ayVariants }, departmentId, semester, subjectId, assessmentType: 'CIE1' },
+      });
+      const cie2Cfg = await AssessmentConfiguration.findOne({
+        where: { academicYear: { [Op.in]: ayVariants }, departmentId, semester, subjectId, assessmentType: 'CIE2' },
+      });
+      const assignCfg = await AssignmentConfiguration.findOne({
+        where: { academicYear: { [Op.in]: ayVariants }, departmentId, semester, subjectId },
+      });
+
+      const cie1Sums = cie1Cfg ? await StudentAssessmentSummary.findAll({ where: { assessmentConfigurationId: cie1Cfg.id } }) : [];
+      const cie2Sums = cie2Cfg ? await StudentAssessmentSummary.findAll({ where: { assessmentConfigurationId: cie2Cfg.id } }) : [];
+      const assignSums = assignCfg ? await StudentAssignmentSummary.findAll({ where: { assignmentConfigurationId: assignCfg.id } }) : [];
+
+      const c1Map = new Map<string, number>();
+      for (const s of cie1Sums) if (s.finalCieMarks !== null) c1Map.set(s.studentId, Number(s.finalCieMarks));
+
+      const c2Map = new Map<string, number>();
+      for (const s of cie2Sums) if (s.finalCieMarks !== null) c2Map.set(s.studentId, Number(s.finalCieMarks));
+
+      const aMap = new Map<string, number>();
+      for (const s of assignSums) if (s.scaledTotal !== null) aMap.set(s.studentId, Number(s.scaledTotal));
+
+      for (const s of students) {
+        if (!finalMap.has(s.id)) {
+          const c1 = c1Map.get(s.id) ?? null;
+          const c2 = c2Map.get(s.id) ?? null;
+          const a = aMap.get(s.id) ?? null;
+          if (c1 !== null || c2 !== null || a !== null) {
+            const cieAvg = c1 !== null && c2 !== null ? (c1 + c2) / 2 : c1 ?? c2 ?? 0;
+            const scaledCie = (cieAvg / 50) * 25;
+            const finalCie = Math.min(Math.round(scaledCie + (a ?? 0)), 50);
+            finalMap.set(s.id, finalCie);
+          }
+        }
+      }
+    }
 
     const extRecords = await ExternalExaminationMarks.findAll({
       where: {
@@ -1528,15 +1609,28 @@ export const bitwiseMarksService = {
 
     const studentRows = students.map((s, idx) => {
       const rec = extMap.get(s.id);
+      const finalCie = finalMap.get(s.id) ?? null;
+      const rawExt = rec?.externalMarks !== null && rec?.externalMarks !== undefined ? Number(rec.externalMarks) : null;
+      const maxExt = rec?.maximumMarks !== undefined ? Number(rec.maximumMarks) : 100;
+
+      const vtuCalc = calculateVtuPassingStatus(finalCie, rawExt, maxExt, isLabOrPractical);
+
       return {
         serialNumber: idx + 1,
         studentId: s.id,
         usn: s.usn,
         studentName: s.studentName,
         section: s.section,
-        externalMarks: rec?.externalMarks !== null && rec?.externalMarks !== undefined ? Number(rec.externalMarks) : null,
-        maximumMarks: rec?.maximumMarks !== undefined ? Number(rec.maximumMarks) : 100,
-        status: rec?.status || 'DRAFT',
+        finalInternalMarks: finalCie,
+        externalMarks: rawExt,
+        maximumMarks: maxExt,
+        seeScaled50: vtuCalc.seeScaled50,
+        totalMarks: vtuCalc.totalMarks,
+        status: vtuCalc.status,
+        reason: vtuCalc.reason,
+        ciePassed: vtuCalc.ciePassed,
+        seePassed: vtuCalc.seePassed,
+        aggregatePassed: vtuCalc.aggregatePassed,
       };
     });
 
@@ -1550,6 +1644,9 @@ export const bitwiseMarksService = {
         subjectId,
         subjectCode: subject?.code || 'SUB001',
         subjectName: subject?.name || 'Assigned Subject',
+        subjectType: subject?.type || 'CC',
+        isLabOrPractical,
+        isInternalFinalized,
         defaultMaxMarks: 100,
       },
       students: studentRows,
@@ -1557,7 +1654,7 @@ export const bitwiseMarksService = {
   },
 
   /**
-   * 14. PAGE 7: Save External Examination Marks
+   * 14. PAGE 7: Save External Examination Marks with VTU Pass/Fail Status
    */
   async saveExternalMarks(
     userId: string,
@@ -1574,13 +1671,41 @@ export const bitwiseMarksService = {
   ) {
     const { departmentId } = await this.verifyFacultySubjectAuthorization(userId, subjectId, semester, academicYear);
     const cleanAY = normalizeAY(academicYear);
+    const ayVariants = getAYVariants(academicYear);
     const maxMarks = payload.maximumMarks || 100;
+
+    const subject = await Subject.findByPk(subjectId);
+    const isLabOrPractical = Boolean(
+      subject?.type?.toUpperCase().includes('LAB') ||
+      subject?.type?.toUpperCase().includes('PRACTICAL') ||
+      subject?.code?.toUpperCase().includes('L') ||
+      subject?.name?.toUpperCase().includes('LAB') ||
+      subject?.name?.toUpperCase().includes('PRACTICAL')
+    );
+
+    // Fetch Final Internal Marks for VTU calculation
+    const finalRecords = await FinalInternalMarks.findAll({
+      where: {
+        academicYear: { [Op.in]: ayVariants },
+        departmentId,
+        semester,
+        subjectId,
+      },
+    });
+    const finalCieMap = new Map<string, number | null>();
+    for (const r of finalRecords) {
+      if (r.finalInternalMarks !== null && r.finalInternalMarks !== undefined) {
+        finalCieMap.set(r.studentId, Number(r.finalInternalMarks));
+      }
+    }
 
     const t = await db.transaction();
 
     try {
       for (const entry of payload.marks) {
         const parsed = parseAndValidateMark(entry.externalMarks, maxMarks, 'External Examination Mark');
+        const studentCie = finalCieMap.get(entry.studentId) ?? null;
+        const vtuCalc = calculateVtuPassingStatus(studentCie, parsed, maxMarks, isLabOrPractical);
 
         await ExternalExaminationMarks.upsert(
           {
@@ -1591,7 +1716,7 @@ export const bitwiseMarksService = {
             studentId: entry.studentId,
             externalMarks: parsed,
             maximumMarks: maxMarks,
-            status: parsed !== null ? 'SAVED' : 'DRAFT',
+            status: vtuCalc.status, // 'PASS' | 'FAIL' | 'NOT_ENTERED'
             updatedBy: userId,
           },
           { transaction: t }
@@ -1611,7 +1736,7 @@ export const bitwiseMarksService = {
 
       return {
         success: true,
-        message: 'External examination marks saved successfully.',
+        message: 'External examination marks saved and VTU pass/fail status updated.',
       };
     } catch (err: any) {
       await t.rollback();

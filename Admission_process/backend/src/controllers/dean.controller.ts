@@ -1972,7 +1972,7 @@ export const rejectHodSubjectRequest = async (req: AuthenticatedRequest, res: Re
 export const createFaculty = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   const t = await sequelize.transaction();
   try {
-    const { firstName, lastName, email, phone, designation, joiningDate, coreDepartmentId } = req.body;
+    const { firstName, middleName, lastName, gender, email, phone, designation, joiningDate, coreDepartmentId } = req.body;
 
     if (!firstName?.trim() || !lastName?.trim() || !email?.trim()) {
       await t.rollback();
@@ -2008,7 +2008,9 @@ export const createFaculty = async (req: AuthenticatedRequest, res: Response, ne
     const newUser = await User.create(
       {
         firstName: firstName.trim(),
+        middleName: middleName ? middleName.trim() : null,
         lastName: lastName.trim(),
+        gender: gender ? gender.trim() : null,
         email: email.toLowerCase().trim(),
         phone: phone ? phone.trim() : null,
         role: 'TEACHER',
@@ -2024,6 +2026,8 @@ export const createFaculty = async (req: AuthenticatedRequest, res: Response, ne
       {
         userId: newUser.id,
         departmentId: coreDept.id,
+        middleName: middleName ? middleName.trim() : null,
+        gender: gender ? gender.trim() : null,
         designation: designation?.trim() || 'Assistant Professor',
         joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
       },
@@ -2092,7 +2096,9 @@ export const downloadBulkFacultyTemplate = async (req: AuthenticatedRequest, res
 
     worksheet.columns = [
       { header: 'First Name *', key: 'firstName', width: 18 },
+      { header: 'Middle Name', key: 'middleName', width: 18 },
       { header: 'Last Name *', key: 'lastName', width: 18 },
+      { header: 'Gender *', key: 'gender', width: 14 },
       { header: 'Faculty College Email *', key: 'email', width: 32 },
       { header: 'Phone Number', key: 'phone', width: 18 },
       { header: 'Academic Designation *', key: 'designation', width: 26 },
@@ -2111,7 +2117,29 @@ export const downloadBulkFacultyTemplate = async (req: AuthenticatedRequest, res
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
     headerRow.height = 26;
 
-    // 2. Reference Sheet for Dropdown Validation
+    // 2. Reference Sheet for Gender Dropdown Validation
+    const genderSheet = workbook.addWorksheet('GendersRef');
+    genderSheet.state = 'hidden';
+    genderSheet.columns = [{ header: 'GenderOption', key: 'opt', width: 20 }];
+    const genderOptions = ['Male', 'Female', 'Other'];
+    genderOptions.forEach((opt) => {
+      genderSheet.addRow({ opt });
+    });
+    const genderFormulaRef = `GendersRef!$A$2:$A$${genderOptions.length + 1}`;
+
+    // Apply Gender validation dropdown (Column D / 4)
+    for (let i = 2; i <= 500; i++) {
+      worksheet.getCell(`D${i}`).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [genderFormulaRef],
+        showErrorMessage: true,
+        errorTitle: 'Invalid Gender',
+        error: 'Please select a valid Gender (Male, Female, Other) from the dropdown list.',
+      };
+    }
+
+    // 3. Reference Sheet for Department Dropdown Validation
     const refSheet = workbook.addWorksheet('DepartmentsRef');
     refSheet.state = 'hidden';
     refSheet.columns = [{ header: 'DeptOption', key: 'opt', width: 45 }];
@@ -2121,31 +2149,10 @@ export const downloadBulkFacultyTemplate = async (req: AuthenticatedRequest, res
       refSheet.addRow({ opt });
     });
 
-    // Add example rows
-    worksheet.addRow({
-      firstName: 'Ramesh',
-      lastName: 'Kumar',
-      email: 'ramesh.kumar@jcer.edu.in',
-      phone: '9876543210',
-      designation: 'Assistant Professor',
-      joiningDate: '2026-06-01',
-      coreDepartment: deptOptions[0] || 'CSE — Computer Science & Engineering',
-    });
-
-    worksheet.addRow({
-      firstName: 'Sneha',
-      lastName: 'Patil',
-      email: 'sneha.patil@jcer.edu.in',
-      phone: '9876543211',
-      designation: 'Associate Professor',
-      joiningDate: '2026-06-01',
-      coreDepartment: deptOptions[1] || 'AS — Applied Science',
-    });
-
-    // Apply Core Department validation dropdown (Column G / 7)
+    // Apply Core Department validation dropdown (Column I / 9)
     const formulaRef = `DepartmentsRef!$A$2:$A$${deptOptions.length + 1}`;
     for (let i = 2; i <= 500; i++) {
-      worksheet.getCell(`G${i}`).dataValidation = {
+      worksheet.getCell(`I${i}`).dataValidation = {
         type: 'list',
         allowBlank: false,
         formulae: [formulaRef],
@@ -2236,8 +2243,12 @@ export const validateBulkFaculty = async (req: AuthenticatedRequest, res: Respon
       const normalized = text.replace(/[*()\-–—_]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
       if (normalized.includes('first name') || normalized === 'first') {
         colMap.firstName = colNumber;
+      } else if (normalized.includes('middle name') || normalized === 'middle') {
+        colMap.middleName = colNumber;
       } else if (normalized.includes('last name') || normalized === 'last') {
         colMap.lastName = colNumber;
+      } else if (normalized.includes('gender') || normalized === 'sex') {
+        colMap.gender = colNumber;
       } else if (normalized.includes('email')) {
         colMap.email = colNumber;
       } else if (normalized.includes('phone') || normalized.includes('mobile') || normalized.includes('contact')) {
@@ -2284,16 +2295,18 @@ export const validateBulkFaculty = async (req: AuthenticatedRequest, res: Respon
       if (rowNumber === 1) return; // skip header
 
       const firstName = getVal(row, 'firstName', 1);
-      const lastName = getVal(row, 'lastName', 2);
-      const rawEmail = getVal(row, 'email', 3);
+      const middleName = getVal(row, 'middleName', 2);
+      const lastName = getVal(row, 'lastName', 3);
+      const genderRaw = getVal(row, 'gender', 4);
+      const rawEmail = getVal(row, 'email', 5);
       const email = rawEmail.toLowerCase();
-      const phone = getVal(row, 'phone', 4);
-      const designation = getVal(row, 'designation', 5);
-      const joiningDateStr = getVal(row, 'joiningDate', 6);
-      const coreDeptRaw = getVal(row, 'coreDepartment', 7);
+      const phone = getVal(row, 'phone', 6);
+      const designation = getVal(row, 'designation', 7);
+      const joiningDateStr = getVal(row, 'joiningDate', 8);
+      const coreDeptRaw = getVal(row, 'coreDepartment', 9);
 
       // If entire row is blank, skip
-      if (!firstName && !lastName && !rawEmail && !phone && !designation && !joiningDateStr && !coreDeptRaw) {
+      if (!firstName && !middleName && !lastName && !genderRaw && !rawEmail && !phone && !designation && !joiningDateStr && !coreDeptRaw) {
         return;
       }
 
@@ -2309,7 +2322,22 @@ export const validateBulkFaculty = async (req: AuthenticatedRequest, res: Respon
         rowErrors.push('Last Name is required.');
       }
 
-      // 3. Faculty College Email
+      // 3. Gender (Optional or Required depending on presence of values; validated if provided or requested)
+      let normalizedGender = '';
+      if (genderRaw) {
+        const g = genderRaw.trim().toLowerCase();
+        if (g === 'male' || g === 'm') {
+          normalizedGender = 'Male';
+        } else if (g === 'female' || g === 'f') {
+          normalizedGender = 'Female';
+        } else if (g === 'other' || g === 'o') {
+          normalizedGender = 'Other';
+        } else {
+          rowErrors.push(`Invalid Gender "${genderRaw}". Must be Male, Female, or Other.`);
+        }
+      }
+
+      // 4. Faculty College Email
       if (!email) {
         rowErrors.push('Faculty College Email is required.');
       } else {
@@ -2323,12 +2351,12 @@ export const validateBulkFaculty = async (req: AuthenticatedRequest, res: Respon
         }
       }
 
-      // 4. Academic Designation
+      // 5. Academic Designation
       if (!designation) {
         rowErrors.push('Academic Designation is required.');
       }
 
-      // 5. Joining Date
+      // 6. Joining Date
       let formattedJoiningDate = '';
       if (!joiningDateStr) {
         rowErrors.push('Joining Date is required.');
@@ -2341,7 +2369,7 @@ export const validateBulkFaculty = async (req: AuthenticatedRequest, res: Respon
         }
       }
 
-      // 6. Core Department Resolution
+      // 7. Core Department Resolution
       let resolvedDept: Department | null = null;
       if (!coreDeptRaw) {
         rowErrors.push('Core Department is required.');
@@ -2360,10 +2388,15 @@ export const validateBulkFaculty = async (req: AuthenticatedRequest, res: Respon
         seenFileEmails.add(email);
       }
 
+      const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+
       const rowResult = {
         rowNumber,
         firstName,
+        middleName: middleName || null,
         lastName,
+        gender: normalizedGender || (genderRaw ? genderRaw.trim() : null),
+        fullName,
         email,
         phone: phone || null,
         designation: designation || 'Assistant Professor',
@@ -2469,7 +2502,9 @@ export const importBulkFaculty = async (req: AuthenticatedRequest, res: Response
       const newUser = await User.create(
         {
           firstName: rec.firstName.trim(),
+          middleName: rec.middleName ? String(rec.middleName).trim() : null,
           lastName: rec.lastName.trim(),
+          gender: rec.gender ? String(rec.gender).trim() : null,
           email,
           phone: rec.phone ? String(rec.phone).trim() : null,
           role: 'TEACHER',
@@ -2484,6 +2519,8 @@ export const importBulkFaculty = async (req: AuthenticatedRequest, res: Response
         {
           userId: newUser.id,
           departmentId: resolvedDept.id,
+          middleName: rec.middleName ? String(rec.middleName).trim() : null,
+          gender: rec.gender ? String(rec.gender).trim() : null,
           designation: rec.designation ? String(rec.designation).trim() : 'Assistant Professor',
           joiningDate: rec.joiningDate ? new Date(rec.joiningDate) : new Date(),
         },
@@ -2494,8 +2531,10 @@ export const importBulkFaculty = async (req: AuthenticatedRequest, res: Response
         teacherId: newTeacher.id,
         userId: newUser.id,
         firstName: newUser.firstName,
+        middleName: rec.middleName ? String(rec.middleName).trim() : null,
         lastName: newUser.lastName,
-        name: `${newUser.firstName} ${newUser.lastName}`,
+        gender: rec.gender ? String(rec.gender).trim() : null,
+        name: [newUser.firstName, rec.middleName, newUser.lastName].filter(Boolean).join(' ').trim(),
         email: newUser.email,
         temporaryPassword: rawTempPassword,
         designation: newTeacher.designation,
@@ -2793,7 +2832,7 @@ export const getFacultyProfile = async (req: AuthenticatedRequest, res: Response
         {
           model: User,
           as: 'user',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage', 'status', 'mustChangePassword', 'createdAt'],
+          attributes: ['id', 'firstName', 'middleName', 'lastName', 'gender', 'email', 'phone', 'profileImage', 'status', 'mustChangePassword', 'createdAt'],
         },
         {
           model: Department,
@@ -2876,6 +2915,10 @@ export const getFacultyProfile = async (req: AuthenticatedRequest, res: Response
       ? `${teacher.archivedByUser.firstName || ''} ${teacher.archivedByUser.lastName || ''}`.trim() || teacher.archivedByUser.email
       : null;
 
+    const facultyMiddleName = teacher.middleName || (teacher.user as any)?.middleName || null;
+    const facultyGender = teacher.gender || (teacher.user as any)?.gender || null;
+    const facultyFullName = [teacher.user?.firstName, facultyMiddleName, teacher.user?.lastName].filter(Boolean).join(' ').trim() || `${teacher.user?.firstName || ''} ${teacher.user?.lastName || ''}`.trim();
+
     return res.json({
       success: true,
       data: {
@@ -2883,8 +2926,10 @@ export const getFacultyProfile = async (req: AuthenticatedRequest, res: Response
           id: teacher.id,
           userId: teacher.userId,
           firstName: teacher.user?.firstName || '',
+          middleName: facultyMiddleName,
           lastName: teacher.user?.lastName || '',
-          name: `${teacher.user?.firstName || ''} ${teacher.user?.lastName || ''}`.trim(),
+          gender: facultyGender,
+          name: facultyFullName,
           email: teacher.user?.email || '',
           phone: teacher.user?.phone || null,
           profileImage: teacher.user?.profileImage || null,

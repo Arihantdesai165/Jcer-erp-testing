@@ -43,7 +43,29 @@ class AssessmentConfiguration extends Model {
   public maximumMarks!: number;
   public questionPattern!: MainQuestionDef[];
   public attemptRules!: AttemptRulesDef;
-  public status!: 'DRAFT' | 'CONFIGURED' | 'SAVED' | 'FINALIZED';
+  public status!:
+    | 'DRAFT'
+    | 'CONFIGURED'
+    | 'SAVED'
+    | 'FINALIZED'
+    | 'SUBMITTED'
+    | 'UNDER_REVIEW'
+    | 'RETURNED'
+    | 'RESUBMITTED'
+    | 'APPROVED'
+    | 'PUBLISHED';
+  public submittedAt!: Date | null;
+  public submittedBy!: string | null;
+  public assignedHodId!: string | null;
+  public hodReviewComment!: string | null;
+  public reviewedAt!: Date | null;
+  public reviewedBy!: string | null;
+  public approvedAt!: Date | null;
+  public approvedBy!: string | null;
+  public isPublished!: boolean;
+  public publishedAt!: Date | null;
+  public publishedBy!: string | null;
+  public submissionCount!: number;
   public createdBy!: string | null;
   public updatedBy!: string | null;
   public readonly createdAt!: Date;
@@ -53,6 +75,12 @@ class AssessmentConfiguration extends Model {
   public subject?: Subject;
   public creator?: User;
   public updater?: User;
+  public submitter?: User;
+  public assignedHod?: User;
+  public reviewer?: User;
+  public approver?: User;
+  public publisher?: User;
+  public reviewHistory?: any[];
 }
 
 AssessmentConfiguration.init(
@@ -118,6 +146,81 @@ AssessmentConfiguration.init(
       allowNull: false,
       defaultValue: 'DRAFT',
     },
+    submittedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    submittedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      onDelete: 'SET NULL',
+    },
+    assignedHodId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      onDelete: 'SET NULL',
+    },
+    hodReviewComment: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    reviewedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    reviewedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      onDelete: 'SET NULL',
+    },
+    approvedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    approvedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      onDelete: 'SET NULL',
+    },
+    isPublished: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    publishedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    publishedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      onDelete: 'SET NULL',
+    },
+    submissionCount: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
     createdBy: {
       type: DataTypes.UUID,
       allowNull: true,
@@ -150,6 +253,9 @@ AssessmentConfiguration.init(
       { fields: ['subjectId'] },
       { fields: ['departmentId'] },
       { fields: ['academicYear'] },
+      { fields: ['status'] },
+      { fields: ['isPublished'] },
+      { fields: ['assignedHodId'] },
     ],
   }
 );
@@ -158,5 +264,11 @@ AssessmentConfiguration.belongsTo(Department, { as: 'department', foreignKey: 'd
 AssessmentConfiguration.belongsTo(Subject, { as: 'subject', foreignKey: 'subjectId' });
 AssessmentConfiguration.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 AssessmentConfiguration.belongsTo(User, { as: 'updater', foreignKey: 'updatedBy' });
+AssessmentConfiguration.belongsTo(User, { as: 'submitter', foreignKey: 'submittedBy' });
+AssessmentConfiguration.belongsTo(User, { as: 'assignedHod', foreignKey: 'assignedHodId' });
+AssessmentConfiguration.belongsTo(User, { as: 'reviewer', foreignKey: 'reviewedBy' });
+AssessmentConfiguration.belongsTo(User, { as: 'approver', foreignKey: 'approvedBy' });
+AssessmentConfiguration.belongsTo(User, { as: 'publisher', foreignKey: 'publishedBy' });
 
+export { AssessmentConfiguration };
 export default AssessmentConfiguration;

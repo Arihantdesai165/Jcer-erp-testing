@@ -20,6 +20,7 @@ import HodSubjectHandlingRequest from '../models/HodSubjectHandlingRequest';
 import AttendanceRecord from '../models/AttendanceRecord';
 import AttendanceSession from '../models/AttendanceSession';
 import AttendanceBackupFile from '../models/AttendanceBackupFile';
+import AttendanceBackupJob from '../models/AttendanceBackupJob';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import AuditLog from '../models/AuditLog';
@@ -3197,7 +3198,11 @@ export const deleteFacultyAssignment = async (req: AuthenticatedRequest, res: Re
     });
   } catch (error: any) {
     if (transaction && !(transaction as any).finished) {
-      await transaction.rollback();
+      try {
+        await transaction.rollback();
+      } catch (rbErr) {
+        // transaction may already have resolved
+      }
     }
     logger.error('HOD_UNALLOCATE_ASSIGNMENT_ERROR:', error);
     return next(error);

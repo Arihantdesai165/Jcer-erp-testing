@@ -56,6 +56,13 @@ export const FacultyLayout: React.FC = () => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    document.body.dataset.portal = 'faculty';
+    return () => {
+      delete document.body.dataset.portal;
+    };
+  }, []);
+
   const { showRefreshModal, setShowRefreshModal, confirmRefresh } = usePwa();
 
   const handleLogout = () => {
@@ -114,7 +121,10 @@ export const FacultyLayout: React.FC = () => {
   // Dedicated Full-Screen workspace mode for Bitwise Marks & Assignment Entry Grids
   if (isFullScreenGrid) {
     return (
-      <div className="h-screen w-screen max-w-full overflow-hidden bg-slate-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans">
+      <div
+        data-portal="faculty"
+        className="portal-table-center h-screen w-screen max-w-full overflow-hidden bg-slate-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans"
+      >
         <Outlet />
       </div>
     );
@@ -143,7 +153,10 @@ export const FacultyLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen max-w-full overflow-x-hidden flex text-neutral-900 dark:text-neutral-100 transition-colors duration-300 font-sans pb-6 pr-6">
+    <div
+      data-portal="faculty"
+      className="portal-table-center min-h-screen max-w-full overflow-x-hidden flex text-neutral-900 dark:text-neutral-100 transition-colors duration-300 font-sans pb-6 pr-6"
+    >
       
       {/* ── MOBILE BACKDROP ── */}
       {mobileMenuOpen && (

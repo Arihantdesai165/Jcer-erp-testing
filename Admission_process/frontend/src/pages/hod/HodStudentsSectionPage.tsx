@@ -1514,19 +1514,19 @@ export const HodStudentsSectionPage: React.FC = () => {
                               )}
                             </button>
                           </td>
-                          <td className="py-3 px-4 font-bold text-neutral-500">
+                          <td className="py-3 px-4 font-bold text-neutral-900 dark:text-white text-xs">
                             {index + 1}
                           </td>
                           <td className="py-3 px-4 text-neutral-600 dark:text-neutral-400">
                             {st.rollNumber || '—'}
                           </td>
-                          <td className="py-3 px-4 font-mono font-bold text-neutral-700 dark:text-neutral-300">
+                          <td className="py-3 px-4 font-bold text-neutral-900 dark:text-white text-xs uppercase tracking-tight">
                             {st.usn || '—'}
                           </td>
-                          <td className="py-3 px-4 font-mono text-neutral-600 dark:text-neutral-400">
+                          <td className="py-3 px-4 font-bold text-neutral-900 dark:text-white text-xs">
                             {st.enrollmentNumber || '—'}
                           </td>
-                          <td className="py-3 px-4 font-black text-neutral-900 dark:text-white">
+                          <td className="py-3 px-4 font-bold text-neutral-900 dark:text-white text-xs">
                             {st.name}
                           </td>
                           <td className="py-3 px-4 text-neutral-600 dark:text-neutral-400 font-semibold uppercase text-[11px]">
@@ -1747,7 +1747,7 @@ export const HodStudentsSectionPage: React.FC = () => {
                             <th className="py-3.5 px-4 text-neutral-900 dark:text-white font-black">STUDENT NAME</th>
                             <th className="py-3.5 px-4 text-neutral-900 dark:text-white font-black">SEMESTER</th>
                             <th className="py-3.5 px-4 text-neutral-900 dark:text-white font-black">STATUS</th>
-                            <th className="py-3.5 px-4 text-neutral-900 dark:text-white font-black text-right">ACTIONS</th>
+                            <th className="py-3.5 px-4 text-neutral-900 dark:text-white font-black text-center">ACTIONS</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium">
@@ -1755,9 +1755,9 @@ export const HodStudentsSectionPage: React.FC = () => {
                             const slNo = (viewCurrentPage - 1) * viewPageSize + index + 1;
                             return (
                               <tr key={st.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors">
-                                <td className="py-3 px-4 text-center font-bold text-neutral-500">{slNo}</td>
-                                <td className="py-3 px-4 font-mono font-bold text-neutral-700 dark:text-neutral-300">{st.enrollmentNumber || '—'}</td>
-                                <td className="py-3 px-4 font-black text-neutral-900 dark:text-white">{st.name}</td>
+                                <td className="py-3 px-4 text-center font-bold text-neutral-900 dark:text-white text-xs">{slNo}</td>
+                                <td className="py-3 px-4 font-bold text-neutral-900 dark:text-white text-xs uppercase tracking-tight">{st.enrollmentNumber || '—'}</td>
+                                <td className="py-3 px-4 font-bold text-neutral-900 dark:text-white text-xs">{st.name}</td>
                                 <td className="py-3 px-4 font-bold text-neutral-700 dark:text-neutral-300">
                                   {st.semester ? `Sem ${st.semester}` : `Sem ${selectedSemester || 1}`}
                                 </td>

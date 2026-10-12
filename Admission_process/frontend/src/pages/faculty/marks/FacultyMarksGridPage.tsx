@@ -22,6 +22,10 @@ import {
   Calendar,
   Layers,
   Award,
+  Send,
+  MessageSquare,
+  Info,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -84,41 +88,202 @@ export const FacultyMarksGridPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [retryingSync, setRetryingSync] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [submitModalOpen, setSubmitModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Local Edits state: key `${studentId}___${qId}___${subId}` => value string
   const [cellValues, setCellValues] = useState<Record<string, string>>({});
   const [dirtyCellKeys, setDirtyCellKeys] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  const fetchWorkspace = async () => {
+  // Background Auto-Save Refs to avoid race conditions and stale closures
+  const cellValuesRef = useRef<Record<string, string>>({});
+  const dirtyCellKeysRef = useRef<Set<string>>(new Set());
+  const isSavingRef = useRef<boolean>(false);
+  const pendingSaveRef = useRef<boolean>(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const workspaceRef = useRef<BitwiseMarksWorkspaceData | null>(null);
+
+  useEffect(() => {
+    cellValuesRef.current = cellValues;
+  }, [cellValues]);
+
+  useEffect(() => {
+    dirtyCellKeysRef.current = dirtyCellKeys;
+  }, [dirtyCellKeys]);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  // Prevent accidental tab closure while unsaved marks are pending
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyCellKeysRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const fetchWorkspace = async (silent: boolean = false) => {
     if (!subjectId) return;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await facultyService.getBitwiseMarksWorkspace(subjectId, semester, assessmentType, academicYear);
       setWorkspace(data);
+      workspaceRef.current = data;
 
-      // Initialize local cell values from server data
-      const initialMap: Record<string, string> = {};
-      for (const s of data.students) {
-        for (const [key, val] of Object.entries(s.marks)) {
-          const fullKey = `${s.studentId}___${key}`;
-          initialMap[fullKey] = val !== null && val !== undefined ? String(val) : '';
+      // Only reinitialize local inputs on initial load or non-silent refresh to avoid clobbering active input focus
+      if (!silent) {
+        const initialMap: Record<string, string> = {};
+        for (const s of data.students) {
+          for (const [key, val] of Object.entries(s.marks)) {
+            const fullKey = `${s.studentId}___${key}`;
+            initialMap[fullKey] = val !== null && val !== undefined ? String(val) : '';
+          }
         }
+        setCellValues(initialMap);
+        cellValuesRef.current = initialMap;
+        setDirtyCellKeys(new Set());
+        dirtyCellKeysRef.current = new Set();
+        setLastSavedAt(new Date());
       }
-      setCellValues(initialMap);
-      setDirtyCellKeys(new Set());
-      setLastSavedAt(new Date());
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to load bitwise marks workspace.');
+      if (!silent) {
+        toast.error(err.response?.data?.error || 'Failed to load bitwise marks workspace.');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchWorkspace();
   }, [subjectId, semester, assessmentType, academicYear]);
+
+  // Background Auto-Save execution (Authoritative: directly updates DB calculations & queues Google Drive backup)
+  const performAutoSave = async () => {
+    const ws = workspaceRef.current;
+    if (!ws || dirtyCellKeysRef.current.size === 0) {
+      return;
+    }
+
+    if (isSavingRef.current) {
+      // Another save is already in-flight; queue a subsequent run with latest values
+      pendingSaveRef.current = true;
+      return;
+    }
+
+    isSavingRef.current = true;
+    setAutoSaveStatus('saving');
+
+    const keysBeingSaved = new Set(dirtyCellKeysRef.current);
+    const snapshotValues = { ...cellValuesRef.current };
+
+    try {
+      const marksPayload: Array<{
+        studentId: string;
+        questionId: string;
+        subquestionId: string;
+        marksObtained: number | null;
+      }> = [];
+
+      for (const student of ws.students) {
+        for (const q of ws.configuration.questionPattern) {
+          for (const sub of q.subquestions) {
+            const key = `${q.id}___${sub.id}`;
+            const fullKey = `${student.studentId}___${key}`;
+            const rawVal = snapshotValues[fullKey];
+            const parsed = rawVal !== undefined && rawVal.trim() !== '' ? parseFloat(rawVal) : null;
+
+            marksPayload.push({
+              studentId: student.studentId,
+              questionId: q.id,
+              subquestionId: sub.id,
+              marksObtained: parsed,
+            });
+          }
+        }
+      }
+
+      await facultyService.saveBitwiseMarks({
+        subjectId,
+        semester,
+        assessmentType,
+        marks: marksPayload,
+        isDraft: false, // Authoritative: directly updates DB calculations and queues Google Drive backup
+        academicYear,
+      });
+
+      // Remove successfully saved keys from dirty tracking
+      setDirtyCellKeys((prev) => {
+        const next = new Set<string>();
+        for (const k of prev) {
+          if (!keysBeingSaved.has(k)) {
+            next.add(k);
+          }
+        }
+        dirtyCellKeysRef.current = next;
+        return next;
+      });
+
+      setLastSavedAt(new Date());
+      setAutoSaveStatus('saved');
+
+      // Silently update workspace summary sync status so the cloud badge reflects current sync
+      setWorkspace((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          summary: {
+            ...prev.summary,
+            syncStatus: 'SYNCED',
+            lastSyncedAt: new Date().toISOString(),
+          },
+        };
+      });
+    } catch (err: any) {
+      console.error('Auto-save bitwise marks failed:', err);
+      setAutoSaveStatus('error');
+    } finally {
+      isSavingRef.current = false;
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        performAutoSave();
+      }
+    }
+  };
+
+  const scheduleAutoSave = () => {
+    setAutoSaveStatus('saving');
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 1000);
+  };
+
+  // Immediate save on cell blur (loss of focus / navigation to next cell)
+  const handleCellBlur = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (dirtyCellKeysRef.current.size > 0) {
+      performAutoSave();
+    }
+  };
 
   // Handle cell input change
   const handleCellChange = (studentId: string, qId: string, subId: string, value: string, maxMarks: number) => {
@@ -141,12 +306,19 @@ export const FacultyMarksGridPage: React.FC = () => {
       }
     }
 
-    setCellValues((prev) => ({ ...prev, [fullKey]: value }));
+    setCellValues((prev) => {
+      const next = { ...prev, [fullKey]: value };
+      cellValuesRef.current = next;
+      return next;
+    });
     setDirtyCellKeys((prev) => {
       const next = new Set(prev);
       next.add(fullKey);
+      dirtyCellKeysRef.current = next;
       return next;
     });
+
+    scheduleAutoSave();
   };
 
   // Keyboard navigation between table inputs
@@ -264,6 +436,10 @@ export const FacultyMarksGridPage: React.FC = () => {
   // Save Marks (Draft or Authoritative)
   const handleSaveMarks = async (isDraft: boolean) => {
     if (!workspace) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
     try {
       setSaving(true);
       const marksPayload: Array<{
@@ -300,10 +476,12 @@ export const FacultyMarksGridPage: React.FC = () => {
         academicYear,
       });
 
-      toast.success(res.message || (isDraft ? 'Draft saved.' : 'Marks saved & synchronized.'));
+      toast.success(res.message || (isDraft ? 'Draft saved.' : 'Marks saved & synchronized to Dashboard and Drive.'));
       setDirtyCellKeys(new Set());
+      dirtyCellKeysRef.current = new Set();
       setLastSavedAt(new Date());
-      fetchWorkspace();
+      setAutoSaveStatus('saved');
+      fetchWorkspace(true);
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to save marks.');
     } finally {
@@ -345,6 +523,26 @@ export const FacultyMarksGridPage: React.FC = () => {
       toast.error(err.response?.data?.error || 'Failed to queue sync retry.');
     } finally {
       setRetryingSync(false);
+    }
+  };
+
+  // Submit for HOD Review
+  const handleSubmitForHodReview = async () => {
+    if (!workspace?.configuration.id) return;
+    try {
+      setSubmitting(true);
+      // Auto-save any pending changes first
+      if (dirtyCellKeysRef.current.size > 0) {
+        await handleSaveMarks(false);
+      }
+      const res = await facultyService.submitAssessmentForHodReview(workspace.configuration.id);
+      toast.success(res.message || 'Assessment successfully submitted to HOD for review.');
+      setSubmitModalOpen(false);
+      fetchWorkspace();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to submit assessment to HOD.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -398,6 +596,9 @@ export const FacultyMarksGridPage: React.FC = () => {
     });
   });
 
+  const workflowStatus = workspace.configuration.workflowStatus || workspace.configuration.status || 'DRAFT';
+  const isLocked = ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'PUBLISHED'].includes(workflowStatus);
+
   return (
     <div className="h-screen w-screen max-w-full flex flex-col bg-slate-100 dark:bg-neutral-950 overflow-hidden font-sans">
       {/* ── COMPACT TOP HEADER ── */}
@@ -405,7 +606,16 @@ export const FacultyMarksGridPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-0.5">
             <button
-              onClick={() => navigate(`/faculty/marks/semesters/${semester}`)}
+              onClick={async () => {
+                if (debounceTimerRef.current) {
+                  clearTimeout(debounceTimerRef.current);
+                  debounceTimerRef.current = null;
+                }
+                if (dirtyCellKeysRef.current.size > 0 && !isLocked) {
+                  await performAutoSave();
+                }
+                navigate(`/faculty/marks/semesters/${semester}`);
+              }}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800 dark:border-neutral-200 border-2 border-slate-800 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer mb-0.5"
             >
               <ArrowLeft className="w-4 h-4 text-slate-700 dark:text-neutral-200" />
@@ -419,6 +629,31 @@ export const FacultyMarksGridPage: React.FC = () => {
               <span className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 font-extrabold text-[11px]">
                 Max: {workspace.configuration.maximumMarks} Marks
               </span>
+
+              {/* Assessment Workflow Status Badge */}
+              <span
+                className={`px-2.5 py-0.5 rounded-full font-extrabold text-[11px] uppercase tracking-wider inline-flex items-center gap-1 ${
+                  workflowStatus === 'PUBLISHED' || workflowStatus === 'APPROVED'
+                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                    : workflowStatus === 'SUBMITTED' || workflowStatus === 'UNDER_REVIEW'
+                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                    : workflowStatus === 'RETURNED'
+                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
+                    : 'bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-neutral-300 border border-slate-200 dark:border-neutral-700'
+                }`}
+              >
+                {isLocked ? <Lock className="w-3 h-3" /> : null}
+                <span>
+                  {workflowStatus === 'PUBLISHED' || workflowStatus === 'APPROVED'
+                    ? 'Approved & Published'
+                    : workflowStatus === 'SUBMITTED' || workflowStatus === 'UNDER_REVIEW'
+                    ? 'Under HOD Review'
+                    : workflowStatus === 'RETURNED'
+                    ? 'Returned for Correction'
+                    : 'Draft Marks'}
+                </span>
+              </span>
+
               <span className="text-[11px] text-neutral-500 dark:text-neutral-400 font-medium hidden md:inline">
                 • {workspace.configuration.subjectName} • Semester {semester} • {workspace.configuration.departmentCode} • AY {academicYear}
               </span>
@@ -427,17 +662,26 @@ export const FacultyMarksGridPage: React.FC = () => {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() =>
-                navigate(
-                  `/faculty/marks/config?subjectId=${subjectId}&semester=${semester}&assessmentType=${assessmentType}`
-                )
-              }
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 text-neutral-700 dark:text-neutral-300 font-bold text-xs shadow-xs transition-colors"
-            >
-              <Settings className="w-3.5 h-3.5 text-neutral-500" />
-              <span>Edit Pattern</span>
-            </button>
+            {!isLocked && (
+              <button
+                onClick={async () => {
+                  if (debounceTimerRef.current) {
+                    clearTimeout(debounceTimerRef.current);
+                    debounceTimerRef.current = null;
+                  }
+                  if (dirtyCellKeysRef.current.size > 0) {
+                    await performAutoSave();
+                  }
+                  navigate(
+                    `/faculty/marks/config?subjectId=${subjectId}&semester=${semester}&assessmentType=${assessmentType}`
+                  );
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 text-neutral-700 dark:text-neutral-300 font-bold text-xs shadow-xs transition-colors"
+              >
+                <Settings className="w-3.5 h-3.5 text-neutral-500" />
+                <span>Edit Pattern</span>
+              </button>
+            )}
 
             <button
               onClick={handleExportExcel}
@@ -448,26 +692,76 @@ export const FacultyMarksGridPage: React.FC = () => {
               <span>Export Excel</span>
             </button>
 
-            <button
-              onClick={() => handleSaveMarks(true)}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 text-neutral-700 dark:text-neutral-300 font-bold text-xs shadow-xs transition-colors"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save Draft</span>
-            </button>
+            {!isLocked && (
+              <>
+                <button
+                  onClick={() => handleSaveMarks(true)}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 text-neutral-700 dark:text-neutral-300 font-bold text-xs shadow-xs transition-colors"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save Draft</span>
+                </button>
 
-            <button
-              onClick={() => handleSaveMarks(false)}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-sm hover:shadow transition-all"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Save Marks</span>
-            </button>
+                <button
+                  onClick={() => handleSaveMarks(false)}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-sm hover:shadow transition-all"
+                >
+                  {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>{saving ? 'Saving...' : 'Save Marks'}</span>
+                </button>
+              </>
+            )}
+
+            {/* Submit to HOD / Resubmit Button */}
+            {!isLocked && (
+              <button
+                onClick={() => setSubmitModalOpen(true)}
+                disabled={submitting || saving}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm hover:shadow transition-all"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{workflowStatus === 'RETURNED' ? 'Resubmit to HOD' : 'Submit for Review'}</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
+
+      {/* ── WORKFLOW STATUS BANNER ── */}
+      {isLocked && (
+        <div className="bg-indigo-50 dark:bg-indigo-950/50 border-b border-indigo-200 dark:border-indigo-800 px-4 py-2 sm:px-6 flex items-center justify-between text-xs text-indigo-900 dark:text-indigo-200">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+            <span>
+              {workflowStatus === 'PUBLISHED' || workflowStatus === 'APPROVED'
+                ? '✅ This assessment has been approved and published. Marks are official and locked against direct modification.'
+                : '⏳ Marks have been submitted and are locked pending HOD verification and approval.'}
+            </span>
+          </div>
+          <span className="font-semibold text-[11px] text-indigo-600 dark:text-indigo-400">Read-Only View</span>
+        </div>
+      )}
+
+      {workflowStatus === 'RETURNED' && (
+        <div className="bg-rose-50 dark:bg-rose-950/50 border-b border-rose-200 dark:border-rose-800 px-4 py-2 sm:px-6 flex items-center justify-between gap-3 text-xs text-rose-900 dark:text-rose-200">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-extrabold">Returned for Correction by HOD: </span>
+              <span>{workspace.configuration.hodReviewComment || 'Please verify student scores and resubmit.'}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setSubmitModalOpen(true)}
+            className="flex-shrink-0 px-3.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Resubmit Assessment</span>
+          </button>
+        </div>
+      )}
 
       {/* ── STATUS & SEARCH BAR ── */}
       <div className="bg-neutral-100/90 dark:bg-neutral-850 border-b border-neutral-200 dark:border-neutral-800 px-4 py-1.5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-shrink-0 text-xs">
@@ -483,19 +777,41 @@ export const FacultyMarksGridPage: React.FC = () => {
           />
         </div>
 
-        {/* Metric Counters & Drive Sync */}
-        <div className="flex flex-wrap items-center gap-4 text-neutral-600 dark:text-neutral-300 text-xs">
+        {/* Metric Counters & Real-time Auto-save & Drive Sync */}
+        <div className="flex flex-wrap items-center gap-3 text-neutral-600 dark:text-neutral-300 text-xs">
           <span>
             Students: <strong className="text-neutral-900 dark:text-white">{workspace.students.length}</strong>
           </span>
-          <span>
-            Unsaved:{' '}
-            <strong className={dirtyCellKeys.size > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-emerald-600 font-bold'}>
-              {dirtyCellKeys.size}
-            </strong>
-          </span>
+
+          {/* Auto-save Real-Time Indicator */}
+          {autoSaveStatus === 'saving' || dirtyCellKeys.size > 0 ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] font-bold">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600 dark:text-amber-400" />
+              <span>Auto-saving to Dashboard & Drive...</span>
+            </span>
+          ) : autoSaveStatus === 'saved' || dirtyCellKeys.size === 0 ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Saved to Dashboard & Drive</span>
+            </span>
+          ) : autoSaveStatus === 'error' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-bold">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+              <span>Auto-save issue • Click Save Marks</span>
+            </span>
+          ) : null}
+
+          {dirtyCellKeys.size > 0 && (
+            <span>
+              Unsaved:{' '}
+              <strong className="text-amber-600 dark:text-amber-400 font-extrabold">
+                {dirtyCellKeys.size}
+              </strong>
+            </span>
+          )}
+
           {lastSavedAt && (
-            <span className="text-neutral-400">
+            <span className="text-neutral-400 hidden md:inline">
               Last saved: {lastSavedAt.toLocaleTimeString()}
             </span>
           )}
@@ -508,12 +824,12 @@ export const FacultyMarksGridPage: React.FC = () => {
                 title={workspace.summary.lastSyncedAt ? `Last synced to Google Drive: ${new Date(workspace.summary.lastSyncedAt).toLocaleString()}` : 'Google Drive Synced'}
               >
                 <Cloud className="w-3.5 h-3.5" />
-                <span>Synced</span>
+                <span>Drive Synced</span>
               </span>
             ) : workspace.summary.syncStatus === 'PENDING' ? (
               <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 font-bold text-xs" title="Synchronizing to Google Drive...">
                 <Clock className="w-3.5 h-3.5 animate-spin" />
-                <span>Syncing...</span>
+                <span>Syncing Drive...</span>
               </span>
             ) : workspace.summary.syncStatus === 'ERROR' ? (
               <div className="flex items-center gap-1.5">
@@ -532,7 +848,7 @@ export const FacultyMarksGridPage: React.FC = () => {
             ) : (
               <span className="inline-flex items-center gap-1 text-neutral-500 font-medium text-xs">
                 <Cloud className="w-3.5 h-3.5 text-neutral-400" />
-                <span>Synced</span>
+                <span>Drive Synced</span>
               </span>
             )}
           </div>
@@ -640,12 +956,12 @@ export const FacultyMarksGridPage: React.FC = () => {
                   className="hover:bg-blue-50/40 dark:hover:bg-neutral-800/60 transition-colors"
                 >
                   {/* Fixed Sl. No */}
-                  <td className="sticky left-0 z-20 bg-white dark:bg-neutral-900 w-12 min-w-[48px] max-w-[48px] px-3 py-2 text-center text-neutral-600 dark:text-neutral-400 border-r border-neutral-200 dark:border-neutral-800 font-mono font-bold text-xs">
+                  <td className="sticky left-0 z-20 bg-white dark:bg-neutral-900 w-12 min-w-[48px] max-w-[48px] px-3 py-2 text-center font-bold text-xs text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-neutral-800">
                     {rIdx + 1}
                   </td>
 
                   {/* Fixed USN */}
-                  <td className="sticky left-[48px] z-20 bg-white dark:bg-neutral-900 w-40 min-w-[160px] max-w-[160px] px-3 py-2 font-mono font-black text-sm tracking-wide text-neutral-950 dark:text-white border-r border-neutral-200 dark:border-neutral-800">
+                  <td className="sticky left-[48px] z-20 bg-white dark:bg-neutral-900 w-40 min-w-[160px] max-w-[160px] px-3 py-2 font-bold text-xs uppercase tracking-tight text-neutral-900 dark:text-white border-r border-neutral-200 dark:border-neutral-800">
                     {row.usn}
                   </td>
 
@@ -673,13 +989,18 @@ export const FacultyMarksGridPage: React.FC = () => {
                               <input
                                 id={`cell_${rIdx}_${currentColIdx}`}
                                 type="text"
+                                disabled={isLocked}
+                                readOnly={isLocked}
                                 value={rawVal}
                                 onChange={(e) =>
                                   handleCellChange(row.studentId, q.id, sub.id, e.target.value, sub.maxMarks)
                                 }
+                                onBlur={handleCellBlur}
                                 onKeyDown={(e) => handleKeyDown(e, rIdx, currentColIdx)}
                                 className={`w-16 h-8 px-2 py-1 text-center rounded-lg font-bold text-xs transition-all shadow-xs ${
-                                  isDirty
+                                  isLocked
+                                    ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-200 dark:border-neutral-700'
+                                    : isDirty
                                     ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-400 ring-1 ring-amber-400'
                                     : rawVal !== ''
                                     ? 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white border border-neutral-300 dark:border-neutral-600'
@@ -727,6 +1048,77 @@ export const FacultyMarksGridPage: React.FC = () => {
         <span>Use <strong>Arrow Keys</strong>, <strong>Tab</strong>, or <strong>Enter</strong> to navigate quickly between student cells.</span>
         <span>Consolidated Continuous Roster • <strong>{workspace.students.length}</strong> Students</span>
       </footer>
+
+      {/* ── SUBMIT FOR HOD REVIEW CONFIRMATION MODAL ── */}
+      {submitModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="size-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center font-bold flex-shrink-0">
+                <Send className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-neutral-900 dark:text-white text-base">
+                  {workflowStatus === 'RETURNED' ? 'Resubmit to HOD' : 'Submit for HOD Review'}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {workspace.configuration.subjectCode} • {assessmentType === 'CIE1' ? 'CIE-1' : 'CIE-2'} Assessment
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-neutral-50 dark:bg-neutral-850 rounded-xl p-3.5 space-y-2 text-xs border border-neutral-200 dark:border-neutral-800">
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Subject:</span>
+                <span className="font-bold text-neutral-800 dark:text-neutral-200">{workspace.configuration.subjectName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Semester & Dept:</span>
+                <span className="font-bold text-neutral-800 dark:text-neutral-200">Sem {semester} • {workspace.configuration.departmentCode}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Academic Year:</span>
+                <span className="font-bold text-neutral-800 dark:text-neutral-200">{academicYear}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Eligible Students:</span>
+                <span className="font-bold text-neutral-800 dark:text-neutral-200">{workspace.students.length} Students</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Maximum Marks:</span>
+                <span className="font-bold text-neutral-800 dark:text-neutral-200">{workspace.configuration.maximumMarks} Marks</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300">
+              <p className="font-bold">⚠️ Submission Lock Notice:</p>
+              <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">
+                Once submitted, marks editing will be locked. The assessment will route to the authoritative HOD (Semester 1–2 $\rightarrow$ Applied Science; Semesters 3–8 $\rightarrow$ Departmental HOD) for review, approval, and eventual publication.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setSubmitModalOpen(false)}
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitForHodReview}
+                disabled={submitting}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm flex items-center gap-1.5 transition-all"
+              >
+                {submitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span>{submitting ? 'Submitting...' : workflowStatus === 'RETURNED' ? 'Confirm Resubmission' : 'Confirm & Submit'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

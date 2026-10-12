@@ -557,7 +557,7 @@ export const HodSectionDetailPage: React.FC = () => {
                   <th className="py-3 px-4 text-white">STUDENT NAME</th>
                   <th className="py-3 px-4 text-white">SEMESTER</th>
                   <th className="py-3 px-4 text-white">STATUS</th>
-                  <th className="py-3 px-4 text-right text-white">ACTIONS</th>
+                  <th className="py-3 px-4 text-center text-white">ACTIONS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60 text-xs">

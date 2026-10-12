@@ -966,7 +966,7 @@ export const HodSectionAllocatePage: React.FC = () => {
                   <th className="py-3 px-4 text-white">Student Name</th>
                   <th className="py-3 px-3 text-white">Admission</th>
                   <th className="py-3 px-3 text-center text-white">Current Section</th>
-                  <th className="py-3 px-3 text-right text-white">Status</th>
+                  <th className="py-3 px-3 text-center text-white">Status</th>
                   {activeTab === 'THIS_SECTION' && (
                     <th className="py-3 px-3 text-center text-white">Action</th>
                   )}
@@ -1031,7 +1031,7 @@ export const HodSectionAllocatePage: React.FC = () => {
                       )}
 
                       {/* USN */}
-                      <td className="py-3 px-3 font-mono font-bold text-neutral-800 dark:text-neutral-200">
+                      <td className="py-3 px-3 font-bold text-neutral-900 dark:text-white uppercase tracking-tight">
                         {s.usn || <span className="text-neutral-300 dark:text-neutral-600">—</span>}
                       </td>
 

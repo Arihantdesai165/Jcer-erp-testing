@@ -17,7 +17,13 @@ class AttendanceSession extends Model {
   public academicYear!: string;
   public attendanceDate!: string;
   public sessionPeriod!: number;
-  public status!: 'DRAFT' | 'SUBMITTED' | 'LOCKED';
+  public status!: 'DRAFT' | 'SUBMITTED' | 'LOCKED' | 'PENDING' | 'CANCELLED';
+  public startTime!: string | null;
+  public endTime!: string | null;
+  public classroom!: string | null;
+  public cancellationReason!: string | null;
+  public cancelledAt!: Date | null;
+  public cancelledById!: string | null;
   public totalStudents!: number;
   public presentCount!: number;
   public absentCount!: number;
@@ -91,9 +97,39 @@ AttendanceSession.init(
       defaultValue: 1,
     },
     status: {
-      type: DataTypes.ENUM('DRAFT', 'SUBMITTED', 'LOCKED'),
+      type: DataTypes.STRING(20),
       allowNull: false,
       defaultValue: 'SUBMITTED',
+    },
+    startTime: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: '10:35 AM',
+    },
+    endTime: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: '11:30 AM',
+    },
+    classroom: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    cancellationReason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    cancelledAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    cancelledById: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
     },
     totalStudents: {
       type: DataTypes.INTEGER,

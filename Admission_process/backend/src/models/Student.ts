@@ -233,4 +233,5 @@ User.hasOne(Student, { as: 'student', foreignKey: 'userId' });
 Student.hasOne(Admission, { as: 'admission', foreignKey: 'userId', sourceKey: 'userId' });
 Admission.belongsTo(Student, { as: 'student', foreignKey: 'userId', targetKey: 'userId' });
 
+export { Student };
 export default Student;

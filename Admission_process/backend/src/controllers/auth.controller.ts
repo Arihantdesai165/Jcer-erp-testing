@@ -103,14 +103,32 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     const normalizedEmail = email.trim().toLowerCase();
     logger.info(`LOGIN_ATTEMPT: Email received: ${normalizedEmail}`);
 
-    // Query user by email
+    // Query user by email, username, or student USN
     let user = await User.findOne({ where: { email: normalizedEmail } });
     if (!user) {
       user = await User.findOne({ where: { email } });
     }
+    if (!user) {
+      user = await User.findOne({ where: { username: normalizedEmail } });
+    }
+    if (!user) {
+      user = await User.findOne({ where: { username: email.trim() } });
+    }
+    if (!user) {
+      const trimmedId = email.trim();
+      const studentMatch = await Student.findOne({
+        where: sequelize.where(
+          sequelize.fn('LOWER', sequelize.col('usn')),
+          trimmedId.toLowerCase()
+        ),
+      });
+      if (studentMatch && studentMatch.userId) {
+        user = await User.findByPk(studentMatch.userId);
+      }
+    }
 
     if (!user) {
-      logger.warn(`LOGIN_FAILED: User not found for email: ${normalizedEmail}`);
+      logger.warn(`LOGIN_FAILED: User not found for identifier: ${normalizedEmail}`);
       securityEvents.loginFailure(req, email, 'User not found');
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -523,35 +541,78 @@ export const sendForgotPasswordOtp = async (req: Request, res: Response, next: N
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ error: 'Email address is required.' });
+      return res.status(400).json({ error: 'Email address or User ID/USN is required.' });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedInput = email.trim();
+    const normalizedInput = trimmedInput.toLowerCase();
 
-    const user = await User.findOne({ where: { email: normalizedEmail } });
+    // Query user by email, username, student USN, or admission application number
+    let user = await User.findOne({ where: { email: normalizedInput } });
+    if (!user) {
+      user = await User.findOne({ where: { email: trimmedInput } });
+    }
+    if (!user) {
+      user = await User.findOne({ where: { username: normalizedInput } });
+    }
+    if (!user) {
+      user = await User.findOne({ where: { username: trimmedInput } });
+    }
+    if (!user) {
+      const studentMatch = await Student.findOne({
+        where: sequelize.where(
+          sequelize.fn('LOWER', sequelize.col('usn')),
+          normalizedInput
+        ),
+      });
+      if (studentMatch && studentMatch.userId) {
+        user = await User.findByPk(studentMatch.userId);
+      }
+    }
+    if (!user) {
+      const admissionMatch = await Admission.findOne({
+        where: {
+          [Op.or]: [
+            { applicationNumber: trimmedInput },
+            { cetNumber: trimmedInput },
+          ],
+        },
+      });
+      if (admissionMatch && admissionMatch.userId) {
+        user = await User.findByPk(admissionMatch.userId);
+      }
+    }
+
+    // Do not reveal account absence to prevent enumeration
     if (!user || user.status !== 'ACTIVE') {
-      return res.status(404).json({ error: 'No active account found registered with this email address.' });
+      return res.status(200).json({
+        success: true,
+        message: 'If an active account exists registered with this email or ID, a 6-digit verification code has been sent.',
+      });
     }
 
-    const genResult = await otpService.generateAndSaveOtp(normalizedEmail, 'FORGOT_PASSWORD');
+    const targetEmail = user.email.toLowerCase();
+    const genResult = await otpService.generateAndSaveOtp(targetEmail, 'FORGOT_PASSWORD');
     if (!genResult.success || !genResult.otp) {
       return res.status(400).json({ error: genResult.error || 'Failed to generate OTP verification code.' });
     }
 
+    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Student';
     const emailSent = await emailService.sendForgotPasswordOTP(
-      normalizedEmail,
-      `${user.firstName} ${user.lastName}`,
+      targetEmail,
+      fullName,
       genResult.otp,
       user.role
     );
 
     if (!emailSent) {
-      logger.warn(`Failed to send Forgot Password OTP email to ${normalizedEmail}`);
+      logger.warn(`Failed to send Forgot Password OTP email to ${targetEmail}`);
     }
 
     return res.status(200).json({
       success: true,
-      message: 'A 6-digit verification code has been sent to your email address.',
+      email: targetEmail,
+      message: 'A 6-digit verification code has been sent to your registered email address.',
     });
   } catch (error) {
     return next(error);
@@ -566,15 +627,49 @@ export const verifyForgotPasswordOtp = async (req: Request, res: Response, next:
       return res.status(400).json({ error: 'Email address and OTP code are required.' });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedInput = email.trim();
+    let targetEmail = trimmedInput.toLowerCase();
 
-    const verifyResult = await otpService.verifyOtp(normalizedEmail, otp, 'FORGOT_PASSWORD');
+    // If identifier was not an email, resolve to user's registered email
+    if (!targetEmail.includes('@')) {
+      let user = await User.findOne({ where: { username: targetEmail } });
+      if (!user) {
+        const studentMatch = await Student.findOne({
+          where: sequelize.where(
+            sequelize.fn('LOWER', sequelize.col('usn')),
+            targetEmail
+          ),
+        });
+        if (studentMatch && studentMatch.userId) {
+          user = await User.findByPk(studentMatch.userId);
+        }
+      }
+      if (!user) {
+        const admissionMatch = await Admission.findOne({
+          where: {
+            [Op.or]: [
+              { applicationNumber: trimmedInput },
+              { cetNumber: trimmedInput },
+            ],
+          },
+        });
+        if (admissionMatch && admissionMatch.userId) {
+          user = await User.findByPk(admissionMatch.userId);
+        }
+      }
+      if (user) {
+        targetEmail = user.email.toLowerCase();
+      }
+    }
+
+    const verifyResult = await otpService.verifyOtp(targetEmail, otp, 'FORGOT_PASSWORD');
     if (!verifyResult.success) {
       return res.status(400).json({ error: verifyResult.error || 'OTP verification failed.' });
     }
 
     return res.status(200).json({
       success: true,
+      email: targetEmail,
       message: 'OTP verified successfully. You may now enter your new password.',
     });
   } catch (error) {
@@ -598,13 +693,50 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
       return res.status(400).json({ error: 'Passwords do not match.' });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedInput = email.trim();
+    let targetEmail = trimmedInput.toLowerCase();
+
+    // Resolve user by email, username, USN, or application number
+    let user = await User.findOne({ where: { email: targetEmail } });
+    if (!user) {
+      user = await User.findOne({ where: { username: targetEmail } });
+    }
+    if (!user) {
+      const studentMatch = await Student.findOne({
+        where: sequelize.where(
+          sequelize.fn('LOWER', sequelize.col('usn')),
+          targetEmail
+        ),
+      });
+      if (studentMatch && studentMatch.userId) {
+        user = await User.findByPk(studentMatch.userId);
+      }
+    }
+    if (!user) {
+      const admissionMatch = await Admission.findOne({
+        where: {
+          [Op.or]: [
+            { applicationNumber: trimmedInput },
+            { cetNumber: trimmedInput },
+          ],
+        },
+      });
+      if (admissionMatch && admissionMatch.userId) {
+        user = await User.findByPk(admissionMatch.userId);
+      }
+    }
+
+    if (!user) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    targetEmail = user.email.toLowerCase();
 
     // Check if OTP was verified for FORGOT_PASSWORD in past 15 minutes
     const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
     const verifiedOtp = await Otp.findOne({
       where: {
-        email: normalizedEmail,
+        email: targetEmail,
         purpose: 'FORGOT_PASSWORD',
         verified: true,
         updatedAt: {
@@ -618,20 +750,17 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
       return res.status(403).json({ error: 'Password reset unauthorized. OTP verification required.' });
     }
 
-    // Find user
-    const user = await User.findOne({ where: { email: normalizedEmail } });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found.' });
-    }
-
-    // Hash new password
+    // Hash new password using bcrypt
     const salt = await bcrypt.genSalt(10);
     const newPasswordHash = await bcrypt.hash(newPassword, salt);
 
-    // Update user password
-    await user.update({ passwordHash: newPasswordHash });
+    // Update user password and invalidate previous sessions by bumping tokenVersion
+    await user.update({
+      passwordHash: newPasswordHash,
+      tokenVersion: (user.tokenVersion || 0) + 1,
+    });
 
-    logger.info(`Password successfully reset for user ${normalizedEmail}`);
+    logger.info(`Password successfully reset for user ${targetEmail} (ID: ${user.id}, Role: ${user.role})`);
 
     return res.status(200).json({
       success: true,

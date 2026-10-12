@@ -982,21 +982,21 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse min-w-[1260px]">
               <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase tracking-wider font-extrabold border-b border-neutral-800">
                 <tr className="border-b border-neutral-800 text-[10px] font-black uppercase tracking-widest text-white">
                   <th className="py-4 px-3 text-center w-12 text-white">Sl No</th>
-                  <th className="py-4 px-3 text-white">App No / USN</th>
-                  <th className="py-4 px-3 text-white">Student Name</th>
-                  <th className="py-4 px-3 text-white">Branch</th>
-                  <th className="py-4 px-3 text-center text-white">Semester</th>
-                  <th className="py-4 px-3 text-white">Type</th>
-                  <th className="py-4 px-3 text-white">Qual</th>
-                  <th className="py-4 px-3 text-white">Mobile Number</th>
-                  <th className="py-4 px-3 text-white">Status</th>
-                  <th className="py-4 px-3 text-white">Submitted Date</th>
-                  <th className="py-4 px-3 text-white">Last Updated</th>
-                  <th className="py-4 px-3 text-right text-white">Actions</th>
+                  <th className="py-4 px-3 text-white min-w-[160px]">App No / USN</th>
+                  <th className="py-4 px-4 text-white min-w-[220px]">Student Name</th>
+                  <th className="py-4 px-3 text-center text-white min-w-[90px]">Branch</th>
+                  <th className="py-4 px-3 text-center text-white min-w-[90px]">Semester</th>
+                  <th className="py-4 px-3 text-white min-w-[110px]">Type</th>
+                  <th className="py-4 px-3 text-white min-w-[100px]">Qual</th>
+                  <th className="py-4 px-3 text-white min-w-[140px]">Mobile Number</th>
+                  <th className="py-4 px-3 text-white min-w-[120px]">Status</th>
+                  <th className="py-4 px-3 text-white min-w-[160px]">Submitted Date</th>
+                  <th className="py-4 px-3 text-white min-w-[160px]">Last Updated</th>
+                  <th className="py-4 px-3 text-right text-white min-w-[120px] pr-5">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/40 text-xs font-semibold">
@@ -1008,15 +1008,15 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                       <td className="py-4 px-3 text-center text-neutral-400 font-bold">
                         {(page - 1) * 10 + idx + 1}
                       </td>
-                      <td className="py-4 px-3 font-bold whitespace-nowrap">
+                      <td className="py-4 px-3 font-bold whitespace-nowrap min-w-[160px]">
                         <button
                           onClick={() => handleViewStudent(app.id)}
-                          className="hover:underline text-left text-neutral-800 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors"
+                          className="hover:underline text-left text-neutral-800 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors font-mono"
                         >
                           {app.applicationStatus === 'ENROLLED' ? app.user?.student?.enrollmentNumber || app.applicationNumber : app.applicationNumber}
                         </button>
                       </td>
-                      <td className="py-4 px-3 font-bold whitespace-nowrap">
+                      <td className="py-4 px-4 font-bold whitespace-nowrap min-w-[220px]">
                         <button
                           onClick={() => handleViewStudent(app.id)}
                           className="hover:underline text-left text-neutral-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 transition-colors"
