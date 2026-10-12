@@ -22,7 +22,7 @@ import {
   X,
   Printer,
   Search,
-  ShieldAlert,
+  Archive,
   Loader2
 } from 'lucide-react';
 import deanService, { FacultyProfileResponse } from '../../../services/dean.service';
@@ -78,22 +78,6 @@ export const DeanFacultyDetailPage: React.FC = () => {
   const [copiedPhone, setCopiedPhone] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<boolean>(false);
 
-  // Password Regeneration Modal State
-  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState<boolean>(false);
-  const [regenerateInputText, setRegenerateInputText] = useState<string>('');
-  const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
-  const [regeneratedCredentials, setRegeneratedCredentials] = useState<{
-    facultyName: string;
-    loginEmail: string;
-    temporaryPassword: string;
-  } | null>(null);
-  const [copiedPassword, setCopiedPassword] = useState<boolean>(false);
-
-  // Archive / Soft Delete Modal State
-  const [showArchiveConfirm, setShowArchiveConfirm] = useState<boolean>(false);
-  const [archiveInputText, setArchiveInputText] = useState<string>('');
-  const [isArchiving, setIsArchiving] = useState<boolean>(false);
-
   // Restore State
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
 
@@ -138,75 +122,6 @@ export const DeanFacultyDetailPage: React.FC = () => {
       setCopiedId(true);
       toast.success('Faculty ID copied');
       setTimeout(() => setCopiedId(false), 2000);
-    }
-  };
-
-  // Password Regeneration Handlers
-  const handleConfirmRegenerate = async () => {
-    if (!id || regenerateInputText !== 'REGENERATE') return;
-
-    try {
-      setIsRegenerating(true);
-      const res = await deanService.regenerateFacultyPassword(id);
-      setRegeneratedCredentials(res);
-      setShowRegenerateConfirm(false);
-      setRegenerateInputText('');
-      toast.success('Password regenerated successfully.');
-    } catch (err: any) {
-      const errMsg = err.response?.data?.error || err.message || 'Failed to regenerate password.';
-      toast.error(errMsg);
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
-
-  const handleCopyPassword = () => {
-    if (!regeneratedCredentials?.temporaryPassword) return;
-    navigator.clipboard.writeText(regeneratedCredentials.temporaryPassword);
-    setCopiedPassword(true);
-    toast.success('Temporary password copied to clipboard!');
-    setTimeout(() => setCopiedPassword(false), 2500);
-  };
-
-  const handleDownloadCredentials = () => {
-    if (!regeneratedCredentials) return;
-    const content =
-      `JCER ERP - FACULTY CREDENTIALS\n` +
-      `----------------------------------------\n` +
-      `Faculty Name: ${regeneratedCredentials.facultyName}\n` +
-      `Login Email: ${regeneratedCredentials.loginEmail}\n` +
-      `Temporary Password: ${regeneratedCredentials.temporaryPassword}\n` +
-      `Generated Date: ${new Date().toLocaleString()}\n` +
-      `Security Notice: Faculty must change this temporary password upon first login.\n`;
-
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Credentials_${regeneratedCredentials.loginEmail.split('@')[0]}.txt`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success('Credentials downloaded successfully.');
-  };
-
-  // Archive / Soft Delete
-  const handleConfirmArchive = async () => {
-    if (!id || archiveInputText !== 'DELETE') return;
-
-    try {
-      setIsArchiving(true);
-      await deanService.archiveFaculty(id);
-      toast.success('Faculty archived successfully.');
-      setShowArchiveConfirm(false);
-      setArchiveInputText('');
-      await fetchProfile();
-    } catch (err: any) {
-      const errMsg = err.response?.data?.error || err.message || 'Failed to archive faculty.';
-      toast.error(errMsg);
-    } finally {
-      setIsArchiving(false);
     }
   };
 
@@ -344,10 +259,7 @@ export const DeanFacultyDetailPage: React.FC = () => {
           {!isArchived && (
             <button
               type="button"
-              onClick={() => {
-                setShowRegenerateConfirm(true);
-                setRegenerateInputText('');
-              }}
+              onClick={() => navigate(`/dean/faculty/${faculty.id}/regenerate-password`)}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2 shadow-md cursor-pointer"
             >
               <KeyRound size={14} /> Regenerate Password
@@ -367,13 +279,10 @@ export const DeanFacultyDetailPage: React.FC = () => {
           ) : (
             <button
               type="button"
-              onClick={() => {
-                setShowArchiveConfirm(true);
-                setArchiveInputText('');
-              }}
+              onClick={() => navigate(`/dean/faculty/${id}/archive`)}
               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2 shadow-md cursor-pointer"
             >
-              <Trash2 size={14} /> Archive Faculty
+              <Archive size={14} /> Archive Faculty
             </button>
           )}
 
@@ -935,10 +844,7 @@ export const DeanFacultyDetailPage: React.FC = () => {
 
                 {!isArchived ? (
                   <button
-                    onClick={() => {
-                      setShowRegenerateConfirm(true);
-                      setRegenerateInputText('');
-                    }}
+                    onClick={() => navigate(`/dean/faculty/${faculty.id}/regenerate-password`)}
                     className="inline-flex items-center justify-center space-x-2 px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all cursor-pointer shrink-0"
                   >
                     <KeyRound className="w-4 h-4" />
@@ -956,236 +862,6 @@ export const DeanFacultyDetailPage: React.FC = () => {
         )}
 
       </div>
-
-      {/* ── REGENERATE PASSWORD CONFIRMATION MODAL ── */}
-      {showRegenerateConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl p-6 space-y-5">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="p-3 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/60">
-                  <KeyRound className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-neutral-900 dark:text-white">Regenerate Password?</h3>
-                  <p className="text-xs text-neutral-500">Security credential refresh protocol</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowRegenerateConfirm(false);
-                  setRegenerateInputText('');
-                }}
-                disabled={isRegenerating}
-                className="p-1 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-neutral-600 dark:text-neutral-300">
-              <p>
-                This will invalidate the faculty's current password and generate a new temporary password.
-              </p>
-              <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200/60 dark:border-neutral-700/60 space-y-1">
-                <p><strong>Faculty:</strong> {faculty.name}</p>
-                <p><strong>Login Email:</strong> {account.email}</p>
-              </div>
-
-              <div className="pt-2 space-y-1.5">
-                <label className="block text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
-                  Type <span className="font-extrabold text-amber-600 tracking-wider">REGENERATE</span> to confirm:
-                </label>
-                <input
-                  type="text"
-                  value={regenerateInputText}
-                  onChange={(e) => setRegenerateInputText(e.target.value)}
-                  placeholder="Type REGENERATE to confirm"
-                  disabled={isRegenerating}
-                  className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end space-x-3 pt-2">
-              <button
-                onClick={() => {
-                  setShowRegenerateConfirm(false);
-                  setRegenerateInputText('');
-                }}
-                disabled={isRegenerating}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmRegenerate}
-                disabled={regenerateInputText !== 'REGENERATE' || isRegenerating}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-md ${
-                  regenerateInputText === 'REGENERATE' && !isRegenerating
-                    ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20 cursor-pointer'
-                    : 'bg-neutral-400 dark:bg-neutral-700 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
-                <span>{isRegenerating ? 'Regenerating...' : 'Regenerate Password'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── REGENERATE PASSWORD RESULT CARD / MODAL ── */}
-      {regeneratedCredentials && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-neutral-900 border border-emerald-500/30 dark:border-emerald-500/30 shadow-2xl p-6 space-y-5">
-            <div className="flex items-center space-x-3">
-              <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/60">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-extrabold text-neutral-900 dark:text-white">Password Regenerated</h3>
-                <p className="text-xs text-neutral-500">New temporary credentials generated</p>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200/80 dark:border-neutral-700/80 space-y-3 text-xs">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-neutral-400 block">Faculty Name</span>
-                <span className="font-extrabold text-neutral-900 dark:text-white text-sm">{regeneratedCredentials.facultyName}</span>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-neutral-400 block">Login Email</span>
-                <span className="font-semibold text-neutral-800 dark:text-neutral-200">{regeneratedCredentials.loginEmail}</span>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-neutral-400 block">New Temporary Password</span>
-                <div className="mt-1 flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-neutral-900 border border-emerald-500/40">
-                  <span className="font-mono text-sm font-extrabold text-emerald-600 dark:text-emerald-400 tracking-wider">
-                    {regeneratedCredentials.temporaryPassword}
-                  </span>
-                  <button
-                    onClick={handleCopyPassword}
-                    className="p-1.5 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-neutral-700 hover:text-emerald-600 transition-colors cursor-pointer"
-                    title="Copy Password"
-                  >
-                    {copiedPassword ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Please share these temporary credentials securely with the faculty member. They will be required to change this password on their first login.
-            </p>
-
-            <div className="flex items-center justify-between pt-2">
-              <button
-                onClick={handleDownloadCredentials}
-                className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-bold text-xs transition-colors cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download Credentials</span>
-              </button>
-              <button
-                onClick={() => setRegeneratedCredentials(null)}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── ARCHIVE CONFIRMATION MODAL ── */}
-      {showArchiveConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl p-6 space-y-5">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="p-3 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60">
-                  <ShieldAlert className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-extrabold text-neutral-900 dark:text-white">Archive Faculty?</h3>
-                  <p className="text-xs text-neutral-500">Non-destructive soft-delete & archive protocol</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowArchiveConfirm(false);
-                  setArchiveInputText('');
-                }}
-                disabled={isArchiving}
-                className="p-1 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-neutral-600 dark:text-neutral-300">
-              <p>
-                You are about to remove <strong className="text-neutral-900 dark:text-white font-bold">{faculty.name}</strong> ({faculty.email}) from the active Faculty Directory.
-              </p>
-              <p className="text-neutral-500 dark:text-neutral-400">
-                This will deactivate login access and exclude them from new curriculum teaching allocations.
-              </p>
-
-              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 text-amber-900 dark:text-amber-300 space-y-2">
-                <div className="flex items-center space-x-1.5 font-bold text-amber-800 dark:text-amber-200">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-                  <span>Academic History is Preserved</span>
-                </div>
-                <p className="text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-300/90">
-                  All teaching assignments, attendance sessions, and CIE evaluation records will remain permanently intact and safe.
-                </p>
-              </div>
-
-              <div className="pt-2 space-y-2">
-                <label className="block text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
-                  To confirm removal, type <span className="font-extrabold text-rose-600 dark:text-rose-400 tracking-wider">DELETE</span> in the box below:
-                </label>
-                <input
-                  type="text"
-                  value={archiveInputText}
-                  onChange={(e) => setArchiveInputText(e.target.value)}
-                  placeholder="Type DELETE to confirm"
-                  disabled={isArchiving}
-                  className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end space-x-3 pt-2">
-              <button
-                onClick={() => {
-                  setShowArchiveConfirm(false);
-                  setArchiveInputText('');
-                }}
-                disabled={isArchiving}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmArchive}
-                disabled={archiveInputText !== 'DELETE' || isArchiving}
-                className={`inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all shadow-md ${
-                  archiveInputText === 'DELETE' && !isArchiving
-                    ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 cursor-pointer'
-                    : 'bg-neutral-400 dark:bg-neutral-700 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>{isArchiving ? 'Archiving Faculty...' : 'Archive Faculty'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

@@ -27,6 +27,7 @@ import {
   History,
   Calendar,
   ArrowLeft,
+  UserX,
 } from 'lucide-react';
 import { RootState } from '../../store';
 import hodService, {
@@ -160,6 +161,14 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
   } | null>(null);
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
+
+  // Safe Unallocation Modal State
+  const [unallocateTarget, setUnallocateTarget] = useState<{
+    allocation: HodFacultyAssignmentItem;
+    subject: HodSubjectItem;
+    teachingDepartment?: string;
+  } | null>(null);
+  const [unallocating, setUnallocating] = useState<boolean>(false);
 
   // Auto-dismiss notification timer
   useEffect(() => {
@@ -507,24 +516,56 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
     }
   };
 
-  // Handle unassigning a section allocation
-  const handleUnassignSection = async (assignmentId: string, sectionCode: string) => {
-    if (!window.confirm(`Are you sure you want to unassign Section ${sectionCode}?`)) return;
+  // Safe Unallocation Handlers
+  const handleOpenUnallocateModal = (
+    alloc: HodFacultyAssignmentItem,
+    subject: HodSubjectItem,
+    teachingDepartment?: string
+  ) => {
+    setUnallocateTarget({ allocation: alloc, subject, teachingDepartment });
+  };
 
+  const handleCloseUnallocateModal = () => {
+    if (unallocating) return; // Prevent closing while processing
+    setUnallocateTarget(null);
+  };
+
+  const handleConfirmUnallocate = async () => {
+    if (!unallocateTarget || unallocating) return;
+    setUnallocating(true);
     try {
-      await hodService.deleteFacultyAssignment(assignmentId);
+      const res = await hodService.unallocateFacultyAssignment(unallocateTarget.allocation.id);
       setNotification({
         type: 'success',
-        message: `Section ${sectionCode} allocation removed successfully.`,
+        message:
+          res?.message ||
+          `Faculty ${unallocateTarget.allocation.facultyName} unallocated from Section ${unallocateTarget.allocation.section || 'A'}.`,
       });
+      setUnallocateTarget(null);
       await loadData();
     } catch (err: any) {
       setNotification({
         type: 'error',
-        message: err.response?.data?.error || 'Failed to remove allocation.',
+        message:
+          err.response?.data?.error ||
+          err.message ||
+          'Failed to unallocate faculty member.',
       });
+    } finally {
+      setUnallocating(false);
     }
   };
+
+  // Keyboard shortcut to close unallocation modal on Escape without confirming
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && unallocateTarget && !unallocating) {
+        handleCloseUnallocateModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [unallocateTarget, unallocating]);
 
   // Transfer Modal Handlers & Computed Lists
   const handleOpenTransferModal = (alloc: HodFacultyAssignmentItem, subject: HodSubjectItem) => {
@@ -1118,9 +1159,10 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => handleUnassignSection(alloc.id, alloc.section || 'A')}
-                                        className="text-slate-400 hover:text-rose-600 p-0.5 transition cursor-pointer"
-                                        title={`Unassign ${alloc.branch || ''} Section ${alloc.section}`}
+                                        onClick={() => handleOpenUnallocateModal(alloc, subject, deptKey)}
+                                        className="text-slate-400 hover:text-rose-600 p-0.5 hover:bg-rose-50 rounded transition cursor-pointer flex items-center justify-center"
+                                        title={`Unallocate ${alloc.facultyName} from ${deptKey || alloc.branch || ''} Section ${alloc.section}`}
+                                        aria-label={`Unallocate faculty from section ${alloc.section}`}
                                       >
                                         <X className="w-3.5 h-3.5" />
                                       </button>
@@ -1411,18 +1453,32 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
                                               Assigned to {assignedFac}
                                             </span>
                                             {matchingAlloc && (
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  handleCloseModal();
-                                                  handleOpenTransferModal(matchingAlloc, activeModalSubject);
-                                                }}
-                                                className="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer border border-indigo-200/80 flex items-center space-x-1"
-                                                title={`Change Faculty for ${sec.name}`}
-                                              >
-                                                <ArrowRightLeft className="w-3 h-3" />
-                                                <span>Change Faculty</span>
-                                              </button>
+                                              <div className="flex items-center space-x-1.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    handleCloseModal();
+                                                    handleOpenTransferModal(matchingAlloc, activeModalSubject);
+                                                  }}
+                                                  className="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer border border-indigo-200/80 flex items-center space-x-1"
+                                                  title={`Change Faculty for ${sec.name}`}
+                                                >
+                                                  <ArrowRightLeft className="w-3 h-3" />
+                                                  <span>Change Faculty</span>
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    handleCloseModal();
+                                                    handleOpenUnallocateModal(matchingAlloc, activeModalSubject, dCode);
+                                                  }}
+                                                  className="text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer border border-rose-200/80 flex items-center space-x-1"
+                                                  title={`Unallocate Faculty for ${sec.name}`}
+                                                >
+                                                  <UserX className="w-3 h-3" />
+                                                  <span>Unallocate</span>
+                                                </button>
+                                              </div>
                                             )}
                                           </div>
                                         </div>
@@ -1798,6 +1854,139 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
                   className="px-4 py-2 border border-slate-200 rounded-xl text-slate-700 text-xs font-semibold hover:bg-slate-100 transition cursor-pointer"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* SAFE UNALLOCATE FACULTY CONFIRMATION MODAL */}
+      {unallocateTarget &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
+            onClick={handleCloseUnallocateModal}
+          >
+            <div
+              className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="p-5 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-white tracking-wide flex items-center space-x-2">
+                    <UserX className="w-5 h-5 text-rose-400" />
+                    <span>UNALLOCATE FACULTY</span>
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Safe faculty unallocation from teaching section
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseUnallocateModal}
+                  disabled={unallocating}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition cursor-pointer disabled:opacity-50"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4 bg-slate-50/50">
+                {/* Details Card */}
+                <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3 shadow-xs">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Subject
+                    </label>
+                    <p className="text-sm font-bold text-slate-900">
+                      {unallocateTarget.subject.name}
+                    </p>
+                    <span className="text-xs font-mono font-semibold text-slate-500">
+                      {unallocateTarget.subject.code} • Semester {selectedSemester}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                        Teaching Department
+                      </label>
+                      <span className="inline-block mt-0.5 px-2.5 py-1 bg-slate-100 text-slate-800 font-bold text-xs rounded-lg border border-slate-200">
+                        {unallocateTarget.teachingDepartment ||
+                          unallocateTarget.allocation.branch ||
+                          unallocateTarget.allocation.departmentCode ||
+                          deptCode}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                        Section
+                      </label>
+                      <span className="inline-block mt-0.5 px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200/60">
+                        Section {unallocateTarget.allocation.section || 'A'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Currently Assigned Faculty
+                    </label>
+                    <p className="text-xs font-bold text-slate-800 mt-1 flex items-center space-x-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                      <span>{unallocateTarget.allocation.facultyName}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Safe Preservation Notice / Warning */}
+                <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl flex items-start space-x-3 text-amber-900">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold leading-relaxed">
+                      Are you sure you want to unallocate this faculty member from this section?
+                      The section will become available for reassignment. Existing student attendance,
+                      marks, and historical records will be preserved.
+                    </p>
+                    <p className="text-[11px] text-amber-700 font-medium">
+                      Warning: The active faculty assignment will be ended. Students and attendance records will not be deleted.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={handleCloseUnallocateModal}
+                  disabled={unallocating}
+                  className="px-4 py-2.5 border border-slate-200 rounded-xl text-slate-700 text-xs font-semibold hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmUnallocate}
+                  disabled={unallocating}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {unallocating ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Unallocating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserX className="w-3.5 h-3.5" />
+                      <span>Confirm Unallocation</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

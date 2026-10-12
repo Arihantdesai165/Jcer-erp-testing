@@ -170,6 +170,12 @@ export const DeanLayout: React.FC = () => {
     if (location.pathname.startsWith('/dean/hods/') && location.pathname !== '/dean/hods/create' && location.pathname !== '/dean/hods/assignments' && location.pathname !== '/dean/hods/history') {
       return 'HOD Profile & History';
     }
+    if (location.pathname.includes('/archive')) {
+      return 'Archive Faculty Confirmation';
+    }
+    if (location.pathname.includes('/regenerate-password')) {
+      return 'Regenerate Faculty Password';
+    }
     if (location.pathname.startsWith('/dean/faculty/') && !['create', 'bulk-import', 'archived', 'authorizations', 'assignments'].some(segment => location.pathname.startsWith(`/dean/faculty/${segment}`))) {
       return 'Faculty Profile & Academic Record';
     }

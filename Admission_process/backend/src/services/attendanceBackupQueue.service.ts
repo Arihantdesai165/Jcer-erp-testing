@@ -7,6 +7,7 @@ import googleDriveService from './googleDrive.service';
 import semesterAttendanceConsolidationService from './semesterAttendanceConsolidation.service';
 import logger from '../utils/logger.util';
 import { Op } from 'sequelize';
+import { getSectionVariants, getAcademicYearVariants } from './faculty.service';
 
 let isWorkerRunning = false;
 let workerInterval: NodeJS.Timeout | null = null;
@@ -128,13 +129,15 @@ export const attendanceBackupQueueService = {
       );
 
       // 3. Find or create AttendanceBackupFile database mapping
+      const secVariants = getSectionVariants(metadata.section);
+      const ayVariants = getAcademicYearVariants(metadata.academicYear);
       let backupFile = await AttendanceBackupFile.findOne({
         where: {
-          academicYear: metadata.academicYear,
           departmentId: metadata.departmentId,
           semester: metadata.semester,
-          section: metadata.section,
           subjectId: metadata.subjectId,
+          ...(secVariants.length > 0 ? { section: { [Op.in]: secVariants } } : { section: metadata.section }),
+          ...(ayVariants.length > 0 ? { academicYear: { [Op.in]: ayVariants } } : { academicYear: metadata.academicYear }),
         },
       });
 

@@ -150,33 +150,6 @@ export interface HodStudentItem {
   updatedAt?: string;
 }
 
-export interface SemesterTransitionSummary {
-  academicYear: string;
-  totalSem2Students: number;
-  readyForTransition: number;
-  alreadyTransitioned: number;
-  branchBreakdown: Array<{
-    departmentId: string;
-    branchCode: string;
-    branchName: string;
-    sem2Count: number;
-    readyCount: number;
-    transitionedCount: number;
-    students: Array<{
-      id: string;
-      slNo: number;
-      usn: string | null;
-      applicationNumber: string | null;
-      name: string;
-      email: string | null;
-      phone: string | null;
-      semester: number;
-      currentSection: string;
-      branch: string;
-    }>;
-  }>;
-}
-
 export interface HodSectionItem {
   id: string;
   code?: string;
@@ -956,6 +929,13 @@ export const hodService = {
     return res.data;
   },
 
+  unallocateFacultyAssignment: async (assignmentId: string, reason?: string): Promise<any> => {
+    const res = await API.delete(`/hod/faculty/assignment/${assignmentId}`, {
+      data: reason ? { reason } : undefined,
+    });
+    return res.data;
+  },
+
   deleteFacultyAssignment: async (assignmentId: string, facultyId?: string): Promise<any> => {
     if (facultyId) {
       try {
@@ -1137,22 +1117,7 @@ export const hodService = {
     return res.data.data;
   },
 
-  // 7. Special Applied Science: Semester Transition
-  getSemesterTransitionSummary: async (academicYear?: string): Promise<SemesterTransitionSummary> => {
-    const res = await API.get('/hod/semester-transition/summary', { params: { academicYear } });
-    return res.data.data;
-  },
-
-  executeSemesterTransition: async (data: {
-    studentIds?: string[];
-    branch?: string;
-    academicYear?: string;
-  }): Promise<{ success: boolean; message: string; transitionedCount: number }> => {
-    const res = await API.post('/hod/semester-transition/execute', data);
-    return res.data;
-  },
-
-  // 8. Reports & Settings
+  // 7. Reports & Settings
   getReports: async (): Promise<any> => {
     const res = await API.get('/hod/reports');
     return res.data.data;

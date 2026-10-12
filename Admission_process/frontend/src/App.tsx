@@ -63,6 +63,8 @@ import FacultyAuthorizationPage from './pages/dean/faculty/FacultyAuthorizationP
 import FacultyReviewPage from './pages/dean/faculty/FacultyReviewPage';
 import FacultyAssignmentsPage from './pages/dean/faculty/FacultyAssignmentsPage';
 import DeanFacultyDetailPage from './pages/dean/faculty/DeanFacultyDetailPage';
+import DeanFacultyRegeneratePasswordPage from './pages/dean/faculty/DeanFacultyRegeneratePasswordPage';
+import DeanArchiveFacultyPage from './pages/dean/faculty/DeanArchiveFacultyPage';
 import DeanProfilePage from './pages/dean/DeanProfilePage';
 import DeanGoogleDriveBackupPage from './pages/dean/settings/DeanGoogleDriveBackupPage';
 
@@ -86,7 +88,6 @@ import HodBitwiseAnalysisPage from './pages/hod/HodBitwiseAnalysisPage';
 import HodStudentPerformancePage from './pages/hod/HodStudentPerformancePage';
 import HodReportsPage from './pages/hod/HodReportsPage';
 import HodSettingsPage from './pages/hod/HodSettingsPage';
-import HodSemesterTransitionPage from './pages/hod/HodSemesterTransitionPage';
 
 // ─── Admission Portal ─────────────────────────────────────────────────────────
 import { AuthProvider as AdmissionAuthProvider } from './pages/admission/src/context/AuthContext';
@@ -381,6 +382,10 @@ export const App: React.FC = () => (
               <Route path="faculty/authorizations/:id" element={<FacultyReviewPage />} />
               <Route path="faculty/assignments" element={<FacultyAssignmentsPage />} />
               <Route path="faculty/:id" element={<DeanFacultyDetailPage />} />
+              <Route path="faculty/:id/archive" element={<DeanArchiveFacultyPage />} />
+              <Route path="faculty/:facultyId/archive" element={<DeanArchiveFacultyPage />} />
+              <Route path="faculty/:id/regenerate-password" element={<DeanFacultyRegeneratePasswordPage />} />
+              <Route path="faculty/:facultyId/regenerate-password" element={<DeanFacultyRegeneratePasswordPage />} />
 
               {/* Profile & Account Settings */}
               <Route path="profile" element={<DeanProfilePage />} />
@@ -432,9 +437,6 @@ export const App: React.FC = () => (
               <Route path="reports" element={<HodReportsPage />} />
               <Route path="settings" element={<HodSettingsPage />} />
               <Route path="profile" element={<HodSettingsPage />} />
-
-              {/* Special Applied Science */}
-              <Route path="semester-transition" element={<HodSemesterTransitionPage />} />
             </Route>
 
             {/* ── Faculty Portal ── */}

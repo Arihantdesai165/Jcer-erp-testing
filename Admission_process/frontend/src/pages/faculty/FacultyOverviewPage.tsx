@@ -60,6 +60,31 @@ export const FacultyOverviewPage: React.FC = () => {
     return true;
   });
 
+  // 1. Assigned Subjects: Count distinct subjects assigned to the logged-in faculty member using stable subjectId
+  const assignedSubjectsCount = React.useMemo(() => {
+    const distinctSubjectIds = new Set<string>();
+    filteredAssignments.forEach((a) => {
+      if (a.status === 'ACTIVE') {
+        const sid = a.subjectId || a.subjectCode;
+        if (sid) distinctSubjectIds.add(String(sid));
+      }
+    });
+    return distinctSubjectIds.size;
+  }, [filteredAssignments]);
+
+  // 2. Attendance Courses: Count distinct active section-level teaching allocations with attendance access
+  const attendanceCoursesCount = React.useMemo(() => {
+    const uniqueAllocations = new Set<string>();
+    filteredAssignments.forEach((a) => {
+      if (a.status === 'ACTIVE' && a.attendanceAccess) {
+        const normSec = a.normalizedSection || (a.section ? String(a.section).trim().toUpperCase() : '');
+        const allocKey = `${a.subjectId || a.subjectCode}_${normSec}_${a.semester}_${a.academicYear}_${a.departmentId}`;
+        uniqueAllocations.add(allocKey);
+      }
+    });
+    return uniqueAllocations.size;
+  }, [filteredAssignments]);
+
   return (
     <div className="space-y-6">
       {/* ── Welcome Banner (Dark Shiny Navy Blue Style) ────────────────────── */}
@@ -115,7 +140,7 @@ export const FacultyOverviewPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-black text-neutral-900 dark:text-white mt-2">
-            {data?.stats?.totalAssignments ?? 0}
+            {assignedSubjectsCount}
           </div>
           <p className="text-[11px] text-neutral-400 mt-1">Teaching allocations from HOD</p>
         </div>
@@ -131,7 +156,7 @@ export const FacultyOverviewPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-black text-neutral-900 dark:text-white mt-2">
-            {data?.stats?.attendanceCoursesCount ?? 0}
+            {attendanceCoursesCount}
           </div>
           <p className="text-[11px] text-neutral-400 mt-1">Section-wise active rosters</p>
         </div>

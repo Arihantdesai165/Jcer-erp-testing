@@ -19,7 +19,8 @@ export const getFacultyDashboard = async (
     }
 
     const academicYear = req.query.academicYear as string;
-    const dashboard = await facultyService.getFacultyDashboard(userId, academicYear);
+    const semester = req.query.semester as string;
+    const dashboard = await facultyService.getFacultyDashboard(userId, academicYear, semester);
     return res.json({
       success: true,
       data: dashboard,

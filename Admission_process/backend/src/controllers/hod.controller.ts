@@ -3046,49 +3046,165 @@ export const assignFacultySubject = async (req: AuthenticatedRequest, res: Respo
 };
 
 /**
+ * Safely unallocates a teaching allocation from a faculty member.
+ * Preserves historical records, student attendance, marks, and section data.
+ * Marks the allocation status as ENDED with an endDate.
+ *
  * DELETE /api/hod/faculty/assignment/:assignmentId
- * Removes a teaching allocation from a faculty member
+ * DELETE /api/hod/faculty/:id/assignment/:assignmentId
+ * POST /api/hod/faculty/assignment/:assignmentId/unallocate
+ * POST /api/hod/teaching-allocations/:assignmentId/unallocate
  */
 export const deleteFacultyAssignment = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
+  const transaction = await sequelize.transaction();
   try {
-    const departmentId = req.departmentId;
-    const { assignmentId, id } = req.params;
-    const targetId = assignmentId || id;
+    const { assignmentId, allocationId, id } = req.params;
+    const targetId = assignmentId || allocationId || id;
 
-    const department = departmentId ? await Department.findByPk(departmentId) : null;
-    const isAppliedScience = Boolean(
-      req.isSemesterHandling ||
-      department?.type === 'SEMESTER_HANDLING' ||
-      department?.code === 'AS'
-    );
+    if (!targetId) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, error: 'Faculty assignment identifier is required.' });
+    }
 
-    const assignment = await FacultyAssignment.findByPk(targetId);
+    // 1. Fetch assignment within transaction
+    const assignment = await FacultyAssignment.findByPk(targetId, {
+      transaction,
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+        { model: Subject, as: 'subject', attributes: ['id', 'name', 'code', 'semester', 'departmentId'] },
+        { model: Department, as: 'department', attributes: ['id', 'name', 'code'] },
+      ],
+    });
 
     if (!assignment) {
-      return res.status(404).json({ error: 'Faculty assignment not found.' });
+      await transaction.rollback();
+      return res.status(404).json({ success: false, error: 'Faculty assignment not found.' });
     }
 
-    if (!isAppliedScience && assignment.departmentId !== departmentId) {
-      return res.status(403).json({ error: 'Faculty assignment not found in your department scope.' });
+    // 2. Validate active status
+    if (assignment.status !== 'ACTIVE') {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        error: `Cannot unallocate assignment with status "${assignment.status}". Only active allocations can be unallocated.`,
+      });
     }
 
-    await assignment.destroy();
+    // 3. Resolve HOD Department Scope & Permissions
+    let departmentId = req.departmentId;
+    if (!departmentId && req.user?.id) {
+      const hodRec = await HOD.findOne({ where: { userId: req.user.id, isActive: true }, transaction });
+      departmentId = hodRec?.departmentId || (req.user as any)?.departmentId;
+    }
 
-    await logAudit(req, 'HOD_REMOVE_FACULTY_ASSIGNMENT', {
-      assignmentId: targetId,
+    const hodDept = departmentId ? await Department.findByPk(departmentId, { transaction }) : null;
+    const isAppliedScience = Boolean(
+      req.isSemesterHandling ||
+      (req.user as any)?.departmentCode === 'AS' ||
+      hodDept?.code === 'AS' ||
+      hodDept?.type === 'SEMESTER_HANDLING'
+    );
+
+    const isElevated =
+      req.user?.role === 'ADMIN' ||
+      req.user?.role === 'SUPER_ADMIN' ||
+      req.user?.role === 'DEAN';
+
+    let isAuthorized = false;
+    if (isElevated) {
+      isAuthorized = true;
+    } else if (isAppliedScience) {
+      // Applied Science HOD manages 1st year (Semesters 1 and 2) across departments, or allocations in AS department, or allocations created by this HOD
+      isAuthorized = Boolean(
+        assignment.semester === 1 ||
+        assignment.semester === 2 ||
+        (departmentId && assignment.departmentId === departmentId) ||
+        assignment.createdByHODId === req.user?.id
+      );
+    } else {
+      // Core engineering departments (CSE, CSE-AIML, ECE, ME, CV): strictly within their department scope
+      isAuthorized = Boolean(
+        (departmentId && assignment.departmentId === departmentId) ||
+        assignment.createdByHODId === req.user?.id
+      );
+    }
+
+    if (!isAuthorized) {
+      await transaction.rollback();
+      return res.status(403).json({
+        success: false,
+        error: 'You are not authorized to unallocate this teaching allocation.',
+      });
+    }
+
+    // 4. Safe deactivation: End allocation without destroying any academic records
+    const todayStr = new Date().toISOString().split('T')[0];
+    const startDate =
+      assignment.startDate ||
+      (assignment.createdAt ? assignment.createdAt.toISOString().split('T')[0] : todayStr);
+
+    assignment.status = 'ENDED';
+    assignment.startDate = startDate;
+    assignment.endDate = todayStr;
+    assignment.transferReason = req.body?.reason || 'UNALLOCATED';
+    assignment.transferredAt = new Date();
+    assignment.transferredByHODId = req.user?.id || null;
+    await assignment.save({ transaction });
+
+    await transaction.commit();
+
+    // 5. Audit Logging
+    const rawAssignment = assignment as any;
+    const facultyName = `${rawAssignment.user?.firstName || ''} ${rawAssignment.user?.lastName || ''}`.trim() || 'Faculty';
+    const subjectName = rawAssignment.subject?.name || 'Subject';
+    const subjectCode = rawAssignment.subject?.code || '';
+
+    await logAudit(req, 'HOD_UNALLOCATE_FACULTY_ASSIGNMENT', {
+      assignmentId: assignment.id,
       facultyUserId: assignment.userId,
+      facultyName,
       subjectId: assignment.subjectId,
+      subjectName,
+      subjectCode,
+      section: assignment.section,
+      semester: assignment.semester,
+      academicYear: assignment.academicYear,
+      departmentId: assignment.departmentId,
+      branch: assignment.branch,
+      endDate: todayStr,
+      status: 'ENDED',
+      reason: req.body?.reason || 'UNALLOCATED',
     });
+
+    logger.info(
+      `[Faculty Unallocation] Section ${assignment.section} of ${subjectName} (${subjectCode}) unallocated from ${facultyName} by HOD ${req.user?.id || ''}.`
+    );
 
     return res.json({
       success: true,
-      message: 'Teaching allocation removed successfully.',
+      message: `Faculty ${facultyName} successfully unallocated from Section ${assignment.section}. The section is now available for reassignment.`,
+      data: {
+        id: assignment.id,
+        subjectId: assignment.subjectId,
+        subjectName,
+        subjectCode,
+        section: assignment.section,
+        semester: assignment.semester,
+        academicYear: assignment.academicYear,
+        status: 'ENDED',
+        endDate: todayStr,
+      },
     });
   } catch (error: any) {
-    logger.error('HOD_DELETE_ASSIGNMENT_ERROR:', error);
+    if (transaction && !(transaction as any).finished) {
+      await transaction.rollback();
+    }
+    logger.error('HOD_UNALLOCATE_ASSIGNMENT_ERROR:', error);
     return next(error);
   }
 };
+
+export const unallocateFacultyAssignment = deleteFacultyAssignment;
 
 /**
  * PUT /api/hod/faculty/:id/assignment

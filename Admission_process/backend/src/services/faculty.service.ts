@@ -57,20 +57,54 @@ export const getAcademicYearVariants = (ay?: string | null): string[] => {
   return Array.from(variants);
 };
 
+// Helper to get section name variants ('A', 'Section A', 'Sec A', 'Division A', etc.)
+export const getSectionVariants = (sec?: string | null): string[] => {
+  if (!sec) return [];
+  const clean = normalizeSection(sec);
+  const raw = sec.trim();
+  const variants = new Set<string>([
+    clean,
+    raw,
+    `Section ${clean}`,
+    `Sec ${clean}`,
+    `Sec. ${clean}`,
+    `Division ${clean}`,
+    `Div ${clean}`,
+  ]);
+  return Array.from(variants).filter(Boolean);
+};
+
 // Helper to build cohort where clause for an assignment to maintain attendance continuity across faculty transfers
 export const buildAssignmentCohortWhere = (assignment: any): any => {
   const cohortCondition: any[] = [{ facultyAssignmentId: assignment.id }];
-  if (assignment.subjectId && assignment.semester && assignment.academicYear) {
+
+  if (assignment.previousFacultyAssignmentId) {
+    cohortCondition.push({ facultyAssignmentId: assignment.previousFacultyAssignmentId });
+  }
+
+  if (assignment.subjectId && assignment.semester) {
     const cohortFilter: any = {
       subjectId: assignment.subjectId,
       semester: assignment.semester,
-      academicYear: assignment.academicYear,
     };
-    if (assignment.section) {
-      cohortFilter.section = assignment.section;
+
+    if (assignment.departmentId) {
+      cohortFilter.departmentId = assignment.departmentId;
     }
+
+    if (assignment.academicYear) {
+      const ayVariants = getAcademicYearVariants(assignment.academicYear);
+      cohortFilter.academicYear = ayVariants.length > 0 ? { [Op.in]: ayVariants } : assignment.academicYear;
+    }
+
+    if (assignment.section) {
+      const secVariants = getSectionVariants(assignment.section);
+      cohortFilter.section = secVariants.length > 0 ? { [Op.in]: secVariants } : assignment.section;
+    }
+
     cohortCondition.push(cohortFilter);
   }
+
   return cohortCondition.length > 1 ? { [Op.or]: cohortCondition } : { facultyAssignmentId: assignment.id };
 };
 
@@ -352,19 +386,61 @@ export const facultyService = {
   /**
    * Retrieves dashboard overview statistics for the faculty workspace
    */
-  async getFacultyDashboard(userId: string, academicYear?: string) {
+  async getFacultyDashboard(userId: string, academicYear?: string, semester?: string) {
     const profile = await this.getFacultyProfile(userId);
     const assignments = await this.getFacultyAssignments(userId, academicYear);
 
-    const attendanceCourses = assignments.filter((a) => a.attendanceAccess);
-    const marksCourses = assignments.filter((a) => a.marksAccess);
+    // Apply semester filter if explicitly specified
+    let relevantAssignments = assignments;
+    if (semester && semester !== 'ALL') {
+      const semNum = parseInt(semester, 10);
+      if (!isNaN(semNum)) {
+        relevantAssignments = relevantAssignments.filter((a) => a.semester === semNum);
+      }
+    }
+
+    // 1. Assigned Subjects: Count distinct subjects assigned to the logged-in faculty member using stable subjectId
+    const distinctSubjectIds = new Set<string>();
+    for (const a of relevantAssignments) {
+      if (a.status === 'ACTIVE') {
+        const sId = a.subjectId || a.subject?.id;
+        if (sId) {
+          distinctSubjectIds.add(String(sId));
+        }
+      }
+    }
+    const assignedSubjectsCount = distinctSubjectIds.size;
+
+    // 2. Attendance Courses: Count distinct active section-level teaching allocations for which the faculty member has attendance access
+    // Deduplicates any duplicate records for the same allocation identity
+    const uniqueAttendanceAllocations = new Set<string>();
+    for (const a of relevantAssignments) {
+      if (a.status === 'ACTIVE' && a.attendanceAccess) {
+        const normSec = a.normalizedSection || (a.section ? String(a.section).trim().toUpperCase() : '');
+        const allocKey = `${a.subjectId}_${normSec}_${a.semester}_${a.academicYear}_${a.departmentId}`;
+        uniqueAttendanceAllocations.add(allocKey);
+      }
+    }
+    const attendanceCoursesCount = uniqueAttendanceAllocations.size;
+
+    // Distinct active section-level teaching allocations with marks access
+    const uniqueMarksAllocations = new Set<string>();
+    for (const a of relevantAssignments) {
+      if (a.status === 'ACTIVE' && a.marksAccess) {
+        const normSec = a.normalizedSection || (a.section ? String(a.section).trim().toUpperCase() : '');
+        const allocKey = `${a.subjectId}_${normSec}_${a.semester}_${a.academicYear}_${a.departmentId}`;
+        uniqueMarksAllocations.add(allocKey);
+      }
+    }
+    const marksCoursesCount = uniqueMarksAllocations.size;
 
     return {
       profile,
       stats: {
-        totalAssignments: assignments.length,
-        attendanceCoursesCount: attendanceCourses.length,
-        marksCoursesCount: marksCourses.length,
+        totalAssignments: assignedSubjectsCount,
+        assignedSubjectsCount,
+        attendanceCoursesCount,
+        marksCoursesCount,
       },
       assignments,
     };
@@ -424,8 +500,12 @@ export const facultyService = {
     });
 
     // Fetch all attendance records for this assignment/cohort
+    const sessionIds = sessions.map((s) => s.id);
+    const recordsWhere = sessionIds.length > 0
+      ? { [Op.or]: [{ attendanceSessionId: { [Op.in]: sessionIds } }, cohortWhere] }
+      : cohortWhere;
     const attendanceRecords = await AttendanceRecord.findAll({
-      where: cohortWhere,
+      where: recordsWhere,
       order: [['date', 'ASC'], ['sessionPeriod', 'ASC']],
     });
 
@@ -604,18 +684,48 @@ export const facultyService = {
     // 4. Transactional Attendance Save (REQUIREMENT 7, 13, 35)
     const transaction = await db.transaction();
     try {
-      // Check existing session & session status
-      let session = await AttendanceSession.findOne({
+      // Check existing session across cohort to avoid duplicate sessions and unauthorized overwrites
+      const secVariants = getSectionVariants(assignment.section);
+      const ayVariants = getAcademicYearVariants(assignment.academicYear);
+      const existingCohortSession = await AttendanceSession.findOne({
         where: {
-          facultyAssignmentId: assignment.id,
+          subjectId: assignment.subjectId,
+          semester: assignment.semester,
           attendanceDate: sessionDate,
           sessionPeriod,
+          ...(secVariants.length > 0 ? { section: { [Op.in]: secVariants } } : {}),
+          ...(ayVariants.length > 0 ? { academicYear: { [Op.in]: ayVariants } } : {}),
         },
         transaction,
       });
 
-      if (session && session.status === 'LOCKED') {
-        throw new Error('Attendance session is locked and cannot be edited directly.');
+      let session: AttendanceSession | null = null;
+      if (existingCohortSession) {
+        if (existingCohortSession.status === 'LOCKED') {
+          throw new Error('Attendance session is locked and cannot be edited directly.');
+        }
+        if (
+          existingCohortSession.facultyAssignmentId !== assignment.id &&
+          existingCohortSession.submittedById &&
+          existingCohortSession.submittedById !== userId
+        ) {
+          throw new Error(
+            `Attendance for date ${sessionDate} (Period ${sessionPeriod}) was already recorded by previous faculty member. It cannot be overwritten.`
+          );
+        }
+        session = existingCohortSession;
+      } else {
+        session = await AttendanceSession.findOne({
+          where: {
+            facultyAssignmentId: assignment.id,
+            attendanceDate: sessionDate,
+            sessionPeriod,
+          },
+          transaction,
+        });
+        if (session && session.status === 'LOCKED') {
+          throw new Error('Attendance session is locked and cannot be edited directly.');
+        }
       }
 
       const totalStudents = payload.records.length;
@@ -858,6 +968,9 @@ export const facultyService = {
     const cohortWhere = buildAssignmentCohortWhere(assignment);
     const sessions = await AttendanceSession.findAll({
       where: cohortWhere,
+      include: [
+        { model: User, as: 'submittedBy', attributes: ['id', 'firstName', 'lastName', 'email'] },
+      ],
       order: [
         ['attendanceDate', 'DESC'],
         ['sessionPeriod', 'DESC'],
@@ -870,6 +983,11 @@ export const facultyService = {
       const present = s.presentCount || 0;
       const absent = s.absentCount || 0;
       const pct = total > 0 ? Number(((present / total) * 100).toFixed(1)) : 100.0;
+      const rawUser = (s as any).submittedBy;
+      const submittedByName = rawUser
+        ? `${rawUser.firstName || ''} ${rawUser.lastName || ''}`.trim() || rawUser.email
+        : undefined;
+      const canEdit = s.status !== 'LOCKED' && (s.submittedById === userId);
 
       return {
         id: s.id,
@@ -881,6 +999,9 @@ export const facultyService = {
         absentCount: absent,
         percentage: pct,
         submittedAt: s.submittedAt || s.createdAt,
+        submittedById: s.submittedById,
+        submittedByFacultyName: submittedByName,
+        canEdit,
       };
     });
 
@@ -912,6 +1033,7 @@ export const facultyService = {
         { model: FacultyAssignment, as: 'facultyAssignment' },
         { model: Subject, as: 'subject' },
         { model: Department, as: 'department' },
+        { model: User, as: 'submittedBy', attributes: ['id', 'firstName', 'lastName', 'email'] },
       ],
     });
 
@@ -927,6 +1049,8 @@ export const facultyService = {
       isOwner = true;
     } else {
       // Check if user is current active faculty for this subject/section cohort
+      const secVariants = getSectionVariants(session.section);
+      const ayVariants = getAcademicYearVariants(session.academicYear);
       const activeAssignment = await FacultyAssignment.findOne({
         where: {
           [Op.or]: [
@@ -935,9 +1059,9 @@ export const facultyService = {
           ],
           subjectId: session.subjectId,
           semester: session.semester,
-          academicYear: session.academicYear,
-          ...(session.section ? { section: session.section } : {}),
           status: 'ACTIVE',
+          ...(secVariants.length > 0 ? { section: { [Op.in]: secVariants } } : {}),
+          ...(ayVariants.length > 0 ? { academicYear: { [Op.in]: ayVariants } } : {}),
         },
         include: [
           { model: Subject, as: 'subject' },
@@ -953,6 +1077,18 @@ export const facultyService = {
     if (!isOwner || !assignment) {
       throw new Error('Unauthorized: You do not have permission to view or correct this attendance session.');
     }
+
+    const user = await User.findByPk(userId);
+    const isPrivileged = Boolean(user && ['HOD', 'DEAN', 'PRINCIPAL', 'ADMIN', 'SUPER_ADMIN'].includes(user.role));
+    const isOriginalSubmittingFaculty = Boolean(
+      (session.submittedById && session.submittedById === userId) ||
+      (rawSession.facultyAssignment && (rawSession.facultyAssignment.userId === userId || (teacherId && rawSession.facultyAssignment.teacherId === teacherId)))
+    );
+    const canEdit = (isOriginalSubmittingFaculty || isPrivileged) && session.status !== 'LOCKED';
+    const rawSubmittedBy = (session as any).submittedBy;
+    const submittedByFacultyName = rawSubmittedBy
+      ? `${rawSubmittedBy.firstName || ''} ${rawSubmittedBy.lastName || ''}`.trim() || rawSubmittedBy.email
+      : undefined;
 
     // Fetch authoritative section students
     const { students } = await getEnrolledStudentsForAssignment(assignment);
@@ -1028,6 +1164,10 @@ export const facultyService = {
         absentCount,
         percentage: pct,
         isLocked: session.status === 'LOCKED',
+        canEdit,
+        isEditable: canEdit,
+        submittedById: session.submittedById,
+        submittedByFacultyName,
       },
       assignment: {
         id: assignment.id,
@@ -1092,6 +1232,8 @@ export const facultyService = {
       isOwner = true;
     } else {
       // Check if user is current active faculty for this subject/section cohort
+      const secVariants = getSectionVariants(session.section);
+      const ayVariants = getAcademicYearVariants(session.academicYear);
       const activeAssignment = await FacultyAssignment.findOne({
         where: {
           [Op.or]: [
@@ -1100,9 +1242,9 @@ export const facultyService = {
           ],
           subjectId: session.subjectId,
           semester: session.semester,
-          academicYear: session.academicYear,
-          ...(session.section ? { section: session.section } : {}),
           status: 'ACTIVE',
+          ...(secVariants.length > 0 ? { section: { [Op.in]: secVariants } } : {}),
+          ...(ayVariants.length > 0 ? { academicYear: { [Op.in]: ayVariants } } : {}),
         },
       });
       if (activeAssignment) {
@@ -1113,6 +1255,17 @@ export const facultyService = {
 
     if (!isOwner || !assignment) {
       throw new Error('Unauthorized: You do not have permission to correct attendance for this session.');
+    }
+
+    const user = await User.findByPk(userId);
+    const isPrivileged = Boolean(user && ['HOD', 'DEAN', 'PRINCIPAL', 'ADMIN', 'SUPER_ADMIN'].includes(user.role));
+    const isOriginalSubmittingFaculty = Boolean(
+      (session.submittedById && session.submittedById === userId) ||
+      (rawSession.facultyAssignment && (rawSession.facultyAssignment.userId === userId || (teacherId && rawSession.facultyAssignment.teacherId === teacherId)))
+    );
+
+    if (!isOriginalSubmittingFaculty && !isPrivileged) {
+      throw new Error('Unauthorized: You cannot modify historical attendance recorded by another faculty member.');
     }
 
     const facultyUser = await User.findByPk(userId);

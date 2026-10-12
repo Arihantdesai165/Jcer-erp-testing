@@ -16,7 +16,8 @@ import {
   UserCheck,
   UserX,
   Calendar,
-  Layers
+  Layers,
+  Building2
 } from 'lucide-react';
 import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
 import { getStudentCohort } from '../../../utils/batchCohort.util';
@@ -343,6 +344,23 @@ export const AdminPromotionPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Special Applied Science to Parent Department Handover Banner */}
+            {fromSemNum === 2 && targetSemester === 3 && (
+              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-3xl p-5 flex items-start gap-3.5 shadow-sm">
+                <div className="p-2.5 bg-amber-100 dark:bg-amber-900/50 rounded-2xl text-amber-700 dark:text-amber-400 shrink-0">
+                  <Building2 size={22} />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-xs font-black text-amber-900 dark:text-amber-200 uppercase tracking-wider">
+                    Applied Science to Parent Department Handover
+                  </h4>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed font-medium">
+                    Students completing Semester 2 transition out of First Year Applied Science handling to their respective parent departmental HODs (CSE, CSE-AIML, ECE, ME, CV). Sections will be reset to Unassigned so parent departmental HODs can assign Semester 3 sections.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Main Details Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
@@ -371,7 +389,14 @@ export const AdminPromotionPage: React.FC = () => {
                             </div>
                             <div>
                               <p className="text-xs font-bold text-slate-900 dark:text-white leading-tight">{st.name}</p>
-                              <p className="text-[10px] font-mono text-slate-400 mt-0.5">{st.usn || 'USN Pending'}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <p className="text-[10px] font-mono text-slate-400">{st.usn || 'USN Pending'}</p>
+                                {st.departmentCode && (
+                                  <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 text-[9px] font-black rounded border border-blue-200/60 dark:border-blue-900">
+                                    {st.departmentCode}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="text-right">
@@ -518,6 +543,15 @@ export const AdminPromotionPage: React.FC = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {fromSemNum === 2 && targetSemester === 3 && (
+            <div className="max-w-xl mx-auto p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-2xl text-left flex items-start gap-3">
+              <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-800 dark:text-blue-300 font-medium leading-relaxed">
+                <span className="font-bold">Parent Departmental HOD Handover Complete:</span> Students have entered Semester 3 under their respective parent departments with unassigned sections. Respective departmental HODs (CSE, CSE-AIML, ECE, ME, CV) can now allocate them to sections via their Teaching Allocation &amp; Section Allocation dashboards.
+              </p>
             </div>
           )}
 

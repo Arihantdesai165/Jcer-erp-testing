@@ -46,6 +46,7 @@ export interface FacultyDashboardData {
   };
   stats: {
     totalAssignments: number;
+    assignedSubjectsCount?: number;
     attendanceCoursesCount: number;
     marksCoursesCount: number;
   };
@@ -115,6 +116,9 @@ export interface AttendanceHistorySessionItem {
   absentCount: number;
   percentage: number;
   submittedAt: string | null;
+  submittedById?: string;
+  submittedByFacultyName?: string;
+  canEdit?: boolean;
 }
 
 export interface AttendanceHistoryData {
@@ -169,6 +173,10 @@ export interface AttendanceSessionDetailData {
     absentCount: number;
     percentage: number;
     isLocked: boolean;
+    canEdit?: boolean;
+    isEditable?: boolean;
+    submittedById?: string;
+    submittedByFacultyName?: string;
   };
   assignment: {
     id: string;
@@ -270,9 +278,10 @@ export const facultyService = {
   /**
    * Fetches full dashboard overview data
    */
-  async getDashboard(academicYear?: string): Promise<FacultyDashboardData> {
+  async getDashboard(academicYear?: string, semester?: string): Promise<FacultyDashboardData> {
     const params = new URLSearchParams();
     if (academicYear && academicYear !== 'ALL') params.append('academicYear', academicYear);
+    if (semester && semester !== 'ALL') params.append('semester', semester);
     const qs = params.toString() ? `?${params.toString()}` : '';
     const res = await axios.get(`${API_BASE_URL}/faculty/dashboard${qs}`, getAuthHeaders());
     return res.data.data;

@@ -4,9 +4,10 @@ import FacultyAssignment from '../models/FacultyAssignment';
 import Subject from '../models/Subject';
 import Department from '../models/Department';
 import User from '../models/User';
+import Student from '../models/Student';
 import AttendanceSession from '../models/AttendanceSession';
 import AttendanceRecord from '../models/AttendanceRecord';
-import { getEnrolledStudentsForAssignment } from './faculty.service';
+import { getEnrolledStudentsForAssignment, buildAssignmentCohortWhere } from './faculty.service';
 
 /**
  * Normalizes section string to remove "Section " prefix
@@ -97,26 +98,55 @@ export const attendanceExcelService = {
     });
 
     // Fetch attendance sessions and records chronologically across transfer lineage
-    const cohortCondition: any[] = [{ facultyAssignmentId: assignment.id }];
-    if (assignment.subjectId && assignment.semester && assignment.academicYear) {
-      cohortCondition.push({
-        subjectId: assignment.subjectId,
-        semester: assignment.semester,
-        academicYear: assignment.academicYear,
-        ...(assignment.section ? { section: assignment.section } : {}),
-      });
-    }
-    const cohortWhere = cohortCondition.length > 1 ? { [Op.or]: cohortCondition } : { facultyAssignmentId: assignment.id };
+    const cohortWhere = buildAssignmentCohortWhere(assignment);
 
     const sessions = await AttendanceSession.findAll({
       where: cohortWhere,
       order: [['attendanceDate', 'ASC'], ['sessionPeriod', 'ASC']],
     });
 
+    const sessionIds = sessions.map((s) => s.id);
+    const recordsWhere = sessionIds.length > 0
+      ? { [Op.or]: [{ attendanceSessionId: { [Op.in]: sessionIds } }, cohortWhere] }
+      : cohortWhere;
+
     const attendanceRecords = await AttendanceRecord.findAll({
-      where: cohortWhere,
+      where: recordsWhere,
       order: [['date', 'ASC'], ['sessionPeriod', 'ASC']],
     });
+
+    // Ensure all students who have historical attendance records are included in the roster
+    const existingStudentIds = new Set(students.map((s: any) => s.id));
+    const missingStudentIds = Array.from(new Set(attendanceRecords.map((r: any) => r.studentId))).filter(
+      (id) => !existingStudentIds.has(id)
+    );
+    if (missingStudentIds.length > 0) {
+      const extraStudents = await Student.findAll({
+        where: { id: { [Op.in]: missingStudentIds } },
+        include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }],
+      });
+      students.push(...extraStudents);
+      // Re-sort students deterministically
+      students.sort((a: any, b: any) => {
+        if (isSemester1) {
+          const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim().toLowerCase();
+          const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim().toLowerCase();
+          const cmp = nameA.localeCompare(nameB);
+          if (cmp !== 0) return cmp;
+          const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
+          const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
+          return usnA.localeCompare(usnB);
+        } else {
+          const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
+          const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
+          const cmp = usnA.localeCompare(usnB);
+          if (cmp !== 0) return cmp;
+          const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim().toLowerCase();
+          const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim().toLowerCase();
+          return nameA.localeCompare(nameB);
+        }
+      });
+    }
 
     // Map unique sessions with distinct date / period columns
     interface FormattedSession {
@@ -130,14 +160,35 @@ export const attendanceExcelService = {
     const sessionList: FormattedSession[] = [];
 
     if (sessions.length > 0) {
+      // Deduplicate distinct date & period combinations (preserves idempotency on retries)
+      const uniqueSessionMap = new Map<string, typeof sessions[0]>();
+      sessions.forEach((s) => {
+        const dStr = typeof s.attendanceDate === 'string' ? s.attendanceDate : String(s.attendanceDate);
+        const p = s.sessionPeriod || 1;
+        const key = `${dStr}___${p}`;
+        if (!uniqueSessionMap.has(key)) {
+          uniqueSessionMap.set(key, s);
+        } else {
+          const existing = uniqueSessionMap.get(key)!;
+          if (s.facultyAssignmentId === assignment.id || (s.updatedAt && existing.updatedAt && s.updatedAt > existing.updatedAt)) {
+            uniqueSessionMap.set(key, s);
+          }
+        }
+      });
+      const uniqueSessions = Array.from(uniqueSessionMap.values()).sort((a, b) => {
+        const dComp = String(a.attendanceDate).localeCompare(String(b.attendanceDate));
+        if (dComp !== 0) return dComp;
+        return (a.sessionPeriod || 1) - (b.sessionPeriod || 1);
+      });
+
       // Count periods per date to format headers
       const datePeriodCounts: Record<string, number> = {};
-      sessions.forEach((s) => {
+      uniqueSessions.forEach((s) => {
         const dStr = typeof s.attendanceDate === 'string' ? s.attendanceDate : String(s.attendanceDate);
         datePeriodCounts[dStr] = (datePeriodCounts[dStr] || 0) + 1;
       });
 
-      sessions.forEach((s) => {
+      uniqueSessions.forEach((s) => {
         const dStr = typeof s.attendanceDate === 'string' ? s.attendanceDate : String(s.attendanceDate);
         // Format YYYY-MM-DD -> DD-MM-YYYY
         const parts = dStr.split('-');

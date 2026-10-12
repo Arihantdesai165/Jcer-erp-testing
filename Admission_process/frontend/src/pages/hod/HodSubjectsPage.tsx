@@ -378,7 +378,7 @@ export const HodSubjectsPage: React.FC = () => {
   const activeSchemeLabel = schemeData?.activeSchemeId ? `${schemeData.activeSchemeId} Scheme` : '2025 Scheme';
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12 font-sans text-neutral-800 dark:text-neutral-100">
+    <div className="space-y-6 w-full pb-12 font-sans text-neutral-800 dark:text-neutral-100">
       {/* ── Return to Cohort Breadcrumb ────────────────────────────────────── */}
       {searchParams.get('semester') && searchParams.get('semester') !== 'ALL' && (
         <div className="flex items-center justify-between">
@@ -393,7 +393,7 @@ export const HodSubjectsPage: React.FC = () => {
       )}
       
       {/* ── 1. Page Header with Clean Material Styling ──────────────────────── */}
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5">
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5 w-full">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
             <span>Academic Control</span>
@@ -404,7 +404,7 @@ export const HodSubjectsPage: React.FC = () => {
           </div>
           
           {/* Department Context Badges */}
-          <div className="flex items-center gap-2 flex-wrap mt-3">
+          <div className="flex items-center gap-2.5 flex-wrap mt-3">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-700/60">
               <span className="text-neutral-400 font-normal">Dept:</span>
               <strong className="text-neutral-900 dark:text-white">{schemeData?.departmentCode || 'AS'}</strong>
@@ -439,7 +439,7 @@ export const HodSubjectsPage: React.FC = () => {
         <div className="flex items-center gap-3 flex-wrap self-start md:self-auto">
           <button
             onClick={() => fetchSubjects()}
-            className="px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 text-xs font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors shadow-xs flex items-center gap-2"
+            className="px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 text-xs font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors shadow-xs flex items-center gap-2 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-neutral-500 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
@@ -447,7 +447,7 @@ export const HodSubjectsPage: React.FC = () => {
 
           <button
             onClick={openCreateModal}
-            className="px-5 py-2.5 rounded-xl bg-[#0a1931] hover:bg-[#071224] dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-sm flex items-center gap-2 transition-all transform hover:-translate-y-0.5 active:translate-y-0 border border-blue-900/30"
+            className="px-5 py-2.5 rounded-xl bg-[#0a1931] hover:bg-[#071224] dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-sm flex items-center gap-2 transition-all transform hover:-translate-y-0.5 active:translate-y-0 border border-blue-900/30 cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
             <span>+ Add Master Subject</span>
@@ -457,19 +457,19 @@ export const HodSubjectsPage: React.FC = () => {
 
       {/* ── 2. Applied Science 2-Level Filter UI ────────────────────────────── */}
       {isAppliedScience ? (
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4">
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 sm:p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4 w-full">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="space-y-3">
               {/* Level 1: Curriculum Cycle */}
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 w-24">
+                <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 w-28 sm:w-32">
                   Curriculum Cycle:
                 </span>
                 <div className="inline-flex p-1 bg-neutral-100 dark:bg-neutral-800 rounded-xl border border-neutral-200/80 dark:border-neutral-700/80">
                   <button
                     type="button"
                     onClick={() => setSelectedCycle('P_CYCLE')}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       selectedCycle === 'P_CYCLE'
                         ? 'bg-[#0a1931] text-white shadow-xs dark:bg-blue-600'
                         : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white'
@@ -480,7 +480,7 @@ export const HodSubjectsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setSelectedCycle('C_CYCLE')}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       selectedCycle === 'C_CYCLE'
                         ? 'bg-[#0a1931] text-white shadow-xs dark:bg-blue-600'
                         : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white'
@@ -493,7 +493,7 @@ export const HodSubjectsPage: React.FC = () => {
 
               {/* Level 2: Semester (Sem 1 / Sem 2) */}
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 w-24">
+                <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 w-28 sm:w-32">
                   Semester:
                 </span>
                 <div className="inline-flex p-1 bg-neutral-100 dark:bg-neutral-800 rounded-xl border border-neutral-200/80 dark:border-neutral-700/80">
@@ -505,7 +505,7 @@ export const HodSubjectsPage: React.FC = () => {
                       p.set('semester', '1');
                       setSearchParams(p, { replace: true });
                     }}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       selectedAsSemester === 1
                         ? 'bg-blue-700 text-white shadow-xs'
                         : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white'
@@ -521,7 +521,7 @@ export const HodSubjectsPage: React.FC = () => {
                       p.set('semester', '2');
                       setSearchParams(p, { replace: true });
                     }}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       selectedAsSemester === 2
                         ? 'bg-blue-700 text-white shadow-xs'
                         : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white'
@@ -534,27 +534,27 @@ export const HodSubjectsPage: React.FC = () => {
             </div>
 
             {/* Search Input and Counter */}
-            <div className="flex items-center gap-3">
-              <div className="relative w-full sm:w-64">
-                <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <div className="flex items-center gap-3 w-full lg:w-auto">
+              <div className="relative w-full sm:w-72 md:w-80">
+                <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search subjects..."
+                  placeholder="Search by code, title, or type..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-9 pr-8 py-2.5 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 shadow-xs"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              <div className="px-3.5 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-xs font-bold text-neutral-600 dark:text-neutral-300 shrink-0">
+              <div className="px-4 py-2.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-xs font-bold text-neutral-600 dark:text-neutral-300 shrink-0 border border-neutral-200/50 dark:border-neutral-700/50">
                 <span className="text-neutral-900 dark:text-white font-black">{displayedSubjects.length}</span> subjects
               </div>
             </div>
@@ -562,7 +562,7 @@ export const HodSubjectsPage: React.FC = () => {
         </div>
       ) : (
         /* Standard Department Semester Filter */
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 border border-neutral-200/80 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 sm:p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 w-full">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-neutral-500 uppercase tracking-wider mr-2">
               Semester:
@@ -574,7 +574,7 @@ export const HodSubjectsPage: React.FC = () => {
                 p.delete('semester');
                 setSearchParams(p, { replace: true });
               }}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 selectedStandardSemester === 'ALL'
                   ? 'bg-[#0a1931] text-white shadow-xs'
                   : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200'
@@ -592,7 +592,7 @@ export const HodSubjectsPage: React.FC = () => {
                   p.set('semester', val);
                   setSearchParams(p, { replace: true });
                 }}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   selectedStandardSemester === String(s)
                     ? 'bg-[#0a1931] text-white shadow-xs'
                     : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200'
@@ -603,26 +603,34 @@ export const HodSubjectsPage: React.FC = () => {
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative w-full sm:w-60">
-              <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="flex items-center gap-3 w-full lg:w-auto">
+            <div className="relative w-full sm:w-72 md:w-80">
+              <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search subjects..."
+                placeholder="Search by code, title, or type..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 shadow-xs"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-            <div className="px-3 py-1.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-xs font-bold text-neutral-600 dark:text-neutral-300 shrink-0">
-              {displayedSubjects.length} subjects
+            <div className="px-4 py-2.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-xs font-bold text-neutral-600 dark:text-neutral-300 shrink-0 border border-neutral-200/50 dark:border-neutral-700/50">
+              <span className="text-neutral-900 dark:text-white font-black">{displayedSubjects.length}</span> subjects
             </div>
           </div>
         </div>
       )}
 
       {/* ── 3. Material Table Display ────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs overflow-hidden">
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs overflow-hidden w-full">
         
         {/* Table Header / Context Banner */}
         <div className="px-6 py-4 border-b border-neutral-200/70 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 flex items-center justify-between">
@@ -642,16 +650,16 @@ export const HodSubjectsPage: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[760px]">
             <thead className="bg-neutral-100/70 dark:bg-neutral-800/60 text-neutral-600 dark:text-neutral-300 uppercase tracking-wider font-extrabold border-b border-neutral-200 dark:border-neutral-800">
               <tr>
-                <th className="py-3.5 px-4 text-center w-12">SL</th>
-                <th className="py-3.5 px-4 text-center w-32">COURSE CODE</th>
-                <th className="py-3.5 px-4 text-center">SUBJECT NAME</th>
-                <th className="py-3.5 px-4 text-center w-28">CATEGORY</th>
-                <th className="py-3.5 px-4 text-center w-24">CREDITS</th>
-                <th className="py-3.5 px-4 text-center w-28">SCHEME</th>
-                <th className="py-3.5 px-4 text-right w-40">ACTION</th>
+                <th className="py-4 px-4 text-center w-14">SL</th>
+                <th className="py-4 px-4 text-center w-36">COURSE CODE</th>
+                <th className="py-4 px-6 text-left">SUBJECT NAME</th>
+                <th className="py-4 px-4 text-center w-28">CATEGORY</th>
+                <th className="py-4 px-4 text-center w-24">CREDITS</th>
+                <th className="py-4 px-4 text-center w-28">SCHEME</th>
+                <th className="py-4 px-6 text-right w-44">ACTION</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/80">
@@ -692,56 +700,60 @@ export const HodSubjectsPage: React.FC = () => {
                     key={sub.id}
                     className="hover:bg-blue-50/20 dark:hover:bg-neutral-800/40 transition-colors"
                   >
-                    <td className="py-3.5 px-4 text-center font-bold text-neutral-400">
+                    <td className="py-4 px-4 text-center font-bold text-neutral-400">
                       {idx + 1}
                     </td>
 
-                    <td className="py-3.5 px-4 text-center font-bold text-neutral-900 dark:text-white">
+                    <td className="py-4 px-4 text-center font-mono font-bold text-xs sm:text-sm text-neutral-900 dark:text-white">
                       {sub.code}
                     </td>
 
-                    <td className="py-3.5 px-4 text-center">
-                      <div className="font-bold text-neutral-900 dark:text-white text-xs text-center">
+                    <td className="py-4 px-6 text-left min-w-[280px]">
+                      <div className="font-bold text-neutral-900 dark:text-white text-sm leading-snug">
                         {sub.name}
                       </div>
                       {sub.assignedFaculty && sub.assignedFaculty.length > 0 ? (
-                        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 flex items-center justify-center gap-1.5 flex-wrap text-center">
-                          <span className="text-neutral-400">Faculty:</span>
+                        <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5 flex items-center gap-1.5 flex-wrap">
+                          <span className="text-neutral-400 font-medium">Faculty:</span>
                           {sub.assignedFaculty.map((f, i) => (
-                            <span key={i} className="font-semibold text-neutral-700 dark:text-neutral-300">
-                              {f.facultyName} (Sec {f.section}){i < sub.assignedFaculty.length - 1 ? ',' : ''}
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 font-semibold text-[11px] border border-neutral-200/60 dark:border-neutral-700/60"
+                            >
+                              <span>{f.facultyName}</span>
+                              <span className="text-blue-600 dark:text-blue-400 font-bold">(Sec {f.section})</span>
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-1 text-center">
+                        <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/60 px-2 py-0.5 rounded-md mt-1.5">
                           Unassigned
                         </div>
                       )}
                     </td>
 
-                    <td className="py-3.5 px-4 text-center">
-                      <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-700/60">
+                    <td className="py-4 px-4 text-center">
+                      <span className="inline-flex px-2.5 py-1 rounded-md text-xs font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-700/60">
                         {sub.type || 'ASC'}
                       </span>
                     </td>
 
-                    <td className="py-3.5 px-4 text-center font-bold text-neutral-800 dark:text-neutral-200">
+                    <td className="py-4 px-4 text-center font-bold text-neutral-800 dark:text-neutral-200 text-sm">
                       {sub.credits}
                     </td>
 
-                    <td className="py-3.5 px-4 text-center">
-                      <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border border-neutral-200/50">
+                    <td className="py-4 px-4 text-center">
+                      <span className="inline-flex px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 shadow-xs">
                         {sub.schemeId || '2025'}
                       </span>
                     </td>
 
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                    <td className="py-4 px-6 text-right">
+                      <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => handleEditSubject(sub)}
-                          className="px-2.5 py-1 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-semibold flex items-center gap-1 transition-colors"
+                          className="px-2.5 py-1.5 rounded-lg text-neutral-600 dark:text-neutral-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-blue-800/60"
                           title="Edit master subject"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -752,7 +764,7 @@ export const HodSubjectsPage: React.FC = () => {
                           type="button"
                           onClick={() => handleInitiateDelete(sub)}
                           disabled={deletingId === sub.id}
-                          className="px-2.5 py-1 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                          className="px-2.5 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 disabled:opacity-50"
                           title="Delete master subject"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

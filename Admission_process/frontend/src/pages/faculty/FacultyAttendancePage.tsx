@@ -1475,6 +1475,11 @@ export const FacultyAttendancePage: React.FC = () => {
                                   {s.percentage}%
                                 </span>
                               </div>
+                              {s.submittedByFacultyName && (
+                                <div className="text-[10px] text-slate-500 font-medium pt-0.5">
+                                  Recorded by: <span className="font-semibold text-slate-700">{s.submittedByFacultyName}</span>
+                                </div>
+                              )}
                             </div>
 
                             <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
@@ -1482,6 +1487,11 @@ export const FacultyAttendancePage: React.FC = () => {
                                 <span className="inline-flex items-center space-x-1 text-[11px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded">
                                   <Lock className="w-3 h-3" />
                                   <span>Locked</span>
+                                </span>
+                              ) : s.canEdit === false ? (
+                                <span className="inline-flex items-center space-x-1 text-[11px] text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded">
+                                  <Lock className="w-3 h-3" />
+                                  <span>Read-Only</span>
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center space-x-1 text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
@@ -1493,10 +1503,12 @@ export const FacultyAttendancePage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => handleSelectSessionForCorrection(s.id)}
-                                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded-lg transition shadow-2xs flex items-center space-x-1 cursor-pointer"
+                                className={`px-3 py-1 text-white text-[11px] font-bold rounded-lg transition shadow-2xs flex items-center space-x-1 cursor-pointer ${
+                                  s.canEdit === false ? 'bg-slate-700 hover:bg-slate-800' : 'bg-amber-500 hover:bg-amber-600'
+                                }`}
                               >
                                 <Edit3 className="w-3 h-3" />
-                                <span>Correct Session &rarr;</span>
+                                <span>{s.canEdit === false ? 'View Session \u2192' : 'Correct Session \u2192'}</span>
                               </button>
                             </div>
                           </div>
@@ -1523,15 +1535,21 @@ export const FacultyAttendancePage: React.FC = () => {
                       </button>
 
                       <div className="flex items-center space-x-2">
-                        {correctionSessionData.session.isLocked && (
+                        {correctionSessionData.session.isLocked ? (
                           <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 text-[11px] font-bold rounded-full flex items-center space-x-1">
                             <Lock className="w-3 h-3" />
                             <span>Session Locked</span>
                           </span>
+                        ) : correctionSessionData.session.canEdit === false ? (
+                          <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded-full flex items-center space-x-1">
+                            <Lock className="w-3 h-3" />
+                            <span>Read-Only ({correctionSessionData.session.submittedByFacultyName || 'Previous Faculty'})</span>
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 text-[11px] font-bold rounded-full">
+                            Correction Mode
+                          </span>
                         )}
-                        <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 text-[11px] font-bold rounded-full">
-                          Correction Mode
-                        </span>
                       </div>
                     </div>
 
@@ -1604,7 +1622,7 @@ export const FacultyAttendancePage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleInitiateBulkCorrection('PRESENT')}
-                        disabled={selectedStudentIdsForCorrection.length === 0 || correctionSessionData.session.isLocked}
+                        disabled={selectedStudentIdsForCorrection.length === 0 || correctionSessionData.session.isLocked || correctionSessionData.session.canEdit === false}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-2xs disabled:opacity-50 cursor-pointer flex items-center space-x-1"
                       >
                         <Check className="w-3.5 h-3.5" />
@@ -1614,7 +1632,7 @@ export const FacultyAttendancePage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleInitiateBulkCorrection('ABSENT')}
-                        disabled={selectedStudentIdsForCorrection.length === 0 || correctionSessionData.session.isLocked}
+                        disabled={selectedStudentIdsForCorrection.length === 0 || correctionSessionData.session.isLocked || correctionSessionData.session.canEdit === false}
                         className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition shadow-2xs disabled:opacity-50 cursor-pointer flex items-center space-x-1"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -1694,7 +1712,11 @@ export const FacultyAttendancePage: React.FC = () => {
 
                                 {/* Correction Action Button */}
                                 <td className="py-2 px-4 text-right">
-                                  {isPresent ? (
+                                  {correctionSessionData.session.canEdit === false ? (
+                                    <span className="text-[11px] font-semibold text-slate-400 italic">
+                                      Read-Only
+                                    </span>
+                                  ) : isPresent ? (
                                     <button
                                       type="button"
                                       onClick={() => handleInitiateSingleCorrection(st, 'ABSENT')}

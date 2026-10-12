@@ -4,14 +4,10 @@ import {
   Search,
   Users,
   FileCheck2,
-  Trash2,
   Eye,
-  AlertTriangle,
   AlertCircle,
-  X,
   Archive,
-  RefreshCw,
-  ShieldAlert
+  RefreshCw
 } from 'lucide-react';
 import deanService, { FacultyRecord, DepartmentRecord } from '../../../services/dean.service';
 import Skeleton from '../../../components/common/Skeleton';
@@ -29,11 +25,6 @@ export const FacultyListPage: React.FC = () => {
   const [search, setSearch] = useState<string>('');
   const [selectedDept, setSelectedDept] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-
-  // Delete / Archive Modal State
-  const [facultyToDelete, setFacultyToDelete] = useState<FacultyRecord | null>(null);
-  const [deleteInputText, setDeleteInputText] = useState<string>('');
-  const [isArchiving, setIsArchiving] = useState<boolean>(false);
 
   const fetchDependencies = async () => {
     try {
@@ -75,37 +66,6 @@ export const FacultyListPage: React.FC = () => {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchFaculty();
-  };
-
-  // Open Delete Confirmation Modal
-  const handleOpenDeleteModal = (fac: FacultyRecord) => {
-    setFacultyToDelete(fac);
-    setDeleteInputText('');
-  };
-
-  const handleCloseDeleteModal = () => {
-    setFacultyToDelete(null);
-    setDeleteInputText('');
-    setIsArchiving(false);
-  };
-
-  // Execute Non-Destructive Soft-Delete / Archive
-  const handleConfirmArchive = async () => {
-    if (!facultyToDelete || deleteInputText !== 'DELETE') return;
-
-    try {
-      setIsArchiving(true);
-      await deanService.archiveFaculty(facultyToDelete.id);
-      toast.success('Faculty archived successfully.');
-      // Remove from active list immediately without full page reload
-      setFaculty((prev) => prev.filter((f) => f.id !== facultyToDelete.id));
-      handleCloseDeleteModal();
-    } catch (err: any) {
-      const errMsg = err.response?.data?.error || err.message || 'Failed to archive faculty.';
-      toast.error(errMsg);
-    } finally {
-      setIsArchiving(false);
-    }
   };
 
   return (
@@ -296,12 +256,12 @@ export const FacultyListPage: React.FC = () => {
                           <span>View</span>
                         </button>
                         <button
-                          onClick={() => handleOpenDeleteModal(fac)}
+                          onClick={() => navigate(`/dean/faculty/${fac.id}/archive`)}
                           className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 font-bold text-[11px] transition-all border border-rose-200/60 dark:border-rose-900/40 cursor-pointer"
-                          title="Delete / Archive Faculty"
+                          title="Archive Faculty Member"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
+                          <Archive className="w-3.5 h-3.5" />
+                          <span>Archive</span>
                         </button>
                       </div>
                     </td>
@@ -335,105 +295,6 @@ export const FacultyListPage: React.FC = () => {
           </table>
         </div>
       </div>
-
-      {/* ── 2-STEP CONFIRMATION MODAL BEFORE ARCHIVE / DELETE ── */}
-      {facultyToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl p-6 sm:p-7 space-y-5">
-            
-            {/* Header */}
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="p-3 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60">
-                  <ShieldAlert className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-extrabold text-neutral-900 dark:text-white">Delete Faculty?</h3>
-                  <p className="text-xs text-neutral-500">Non-destructive soft-delete & archive protocol</p>
-                </div>
-              </div>
-              <button
-                onClick={handleCloseDeleteModal}
-                disabled={isArchiving}
-                className="p-1 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content info */}
-            <div className="space-y-3 text-xs text-neutral-600 dark:text-neutral-300">
-              <p>
-                You are about to remove <strong className="text-neutral-900 dark:text-white font-bold">{facultyToDelete.name}</strong> ({facultyToDelete.email}) from the active Faculty Directory.
-              </p>
-              <p className="text-neutral-500 dark:text-neutral-400">
-                This will deactivate the faculty login account and remove the faculty from active teaching allocation dropdowns.
-              </p>
-
-              {/* Data Safety Preservation Box */}
-              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 text-amber-900 dark:text-amber-300 space-y-2">
-                <div className="flex items-center space-x-1.5 font-bold text-amber-800 dark:text-amber-200">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-                  <span>Academic History is Preserved</span>
-                </div>
-                <p className="text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-300/90">
-                  Existing academic records such as:
-                </p>
-                <ul className="list-disc list-inside text-[11px] space-y-0.5 pl-1 font-medium text-amber-900 dark:text-amber-200">
-                  <li>Attendance sessions & student attendance records</li>
-                  <li>Continuous Internal Evaluation (CIE) & marks</li>
-                  <li>Curriculum assessments & components</li>
-                  <li>Faculty assignments & teaching history</li>
-                  <li>System audit logs</li>
-                </ul>
-                <p className="text-[11px] font-semibold text-amber-900 dark:text-amber-200 pt-1">
-                  The faculty will be safely archived and accessible anytime under <span className="underline font-bold">Archived Faculty</span>.
-                </p>
-              </div>
-
-              {/* Step 2 Confirmation Input */}
-              <div className="pt-2 space-y-2">
-                <label className="block text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
-                  To confirm removal, type <span className="font-extrabold text-rose-600 dark:text-rose-400 tracking-wider">DELETE</span> in the box below:
-                </label>
-                <input
-                  type="text"
-                  value={deleteInputText}
-                  onChange={(e) => setDeleteInputText(e.target.value)}
-                  placeholder="Type DELETE to confirm"
-                  disabled={isArchiving}
-                  className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end space-x-3 pt-2">
-              <button
-                onClick={handleCloseDeleteModal}
-                disabled={isArchiving}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmArchive}
-                disabled={deleteInputText !== 'DELETE' || isArchiving}
-                className={`inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all shadow-md ${
-                  deleteInputText === 'DELETE' && !isArchiving
-                    ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 cursor-pointer'
-                    : 'bg-neutral-400 dark:bg-neutral-700 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>{isArchiving ? 'Archiving Faculty...' : 'Delete Faculty'}</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );

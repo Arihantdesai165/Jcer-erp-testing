@@ -72,6 +72,9 @@ router.post('/faculty/:id/assignment', hodController.assignFacultySubject as any
 router.post('/faculty/assign', hodController.assignFacultySubject as any);
 router.delete('/faculty/assignment/:assignmentId', hodController.deleteFacultyAssignment as any);
 router.delete('/faculty/:id/assignment/:assignmentId', hodController.deleteFacultyAssignment as any);
+router.post('/faculty/assignment/:assignmentId/unallocate', hodController.deleteFacultyAssignment as any);
+router.delete('/teaching-allocations/:allocationId', hodController.deleteFacultyAssignment as any);
+router.post('/teaching-allocations/:allocationId/unallocate', hodController.deleteFacultyAssignment as any);
 router.patch('/faculty/:id', hodController.updateFacultyAssignment as any);
 router.put('/faculty/:id/assignment', hodController.updateFacultyAssignment as any);
 router.put('/faculty/assignment/:id', hodController.updateFacultyAssignment as any);
@@ -128,11 +131,7 @@ router.get('/academics/students', hodController.getHodStudentPerformance as any)
 router.get('/academics/performance', hodController.getHodStudentPerformance as any);
 
 
-// ─── 7. Special Applied Science Module ───────────────────────────────────────
-router.get('/semester-transition/summary', hodController.getSemesterTransitionSummary as any);
-router.post('/semester-transition/execute', hodController.executeSemesterTransition as any);
-
-// ─── 8. Reports & Settings Module ────────────────────────────────────────────
+// ─── 7. Reports & Settings Module ────────────────────────────────────────────
 router.get('/reports', hodController.getHodReports as any);
 router.get('/settings', hodController.getHodSettings as any);
 router.patch('/settings', hodController.updateHodSettings as any);

@@ -232,12 +232,6 @@ export const HodLayout: React.FC = () => {
       ],
     },
     {
-      title: 'SPECIAL APPLIED SCIENCE',
-      items: [
-        { name: 'Semester Transition', path: '/hod/semester-transition', icon: CheckCircle2 },
-      ],
-    },
-    {
       title: 'SETTINGS',
       items: [
         { name: 'Settings', path: '/hod/settings', icon: Settings },
@@ -259,7 +253,6 @@ export const HodLayout: React.FC = () => {
     '/hod/students': 'Student Management',
     '/hod/students/semesters': 'Semester Student Breakdown',
     '/hod/students/sections': 'Section Allocation',
-    '/hod/semester-transition': 'Semester 2 → Semester 3 Transition',
     '/hod/faculty': 'Faculty Management',
     '/hod/faculty/assignments': 'Teaching Allocation',
     '/hod/faculty/access': 'Faculty Access Control',
