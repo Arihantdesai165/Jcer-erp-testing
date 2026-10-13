@@ -18,6 +18,10 @@ import {
   Award,
   Users,
   Check,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -98,6 +102,7 @@ export const FacultyExternalMarksPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PASS' | 'FAIL' | 'PENDING'>('ALL');
   const [exporting, setExporting] = useState(false);
+  const [showRegulations, setShowRegulations] = useState(false);
 
   // Debounce ref
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -415,71 +420,95 @@ export const FacultyExternalMarksPage: React.FC = () => {
         </div>
 
         {/* ── VTU STATUTORY PASSING CRITERIA CARD ── */}
-        <div className="p-4 bg-gradient-to-r from-purple-50/70 via-indigo-50/50 to-blue-50/70 dark:from-purple-950/20 dark:via-indigo-950/20 dark:to-blue-950/20 border border-purple-200 dark:border-purple-800/80 rounded-xl space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="bg-gradient-to-r from-purple-50/70 via-indigo-50/50 to-blue-50/70 dark:from-purple-950/20 dark:via-indigo-950/20 dark:to-blue-950/20 border border-purple-200 dark:border-purple-800/80 rounded-xl p-3.5 transition-all">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2 text-purple-900 dark:text-purple-300 font-bold text-xs">
-              <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
               <span>VTU UNDERGRADUATE (B.E. / B.TECH) SCHEME STATUTORY PASSING REGULATIONS</span>
             </div>
-            <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
-              Must satisfy all 3 minimum conditions simultaneously to PASS
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* Rule 1: CIE */}
-            <div className="p-3 bg-white/80 dark:bg-neutral-900/80 border border-purple-100 dark:border-purple-900/50 rounded-lg space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800 dark:text-purple-300">
-                  1. CIE Internal (50%)
-                </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
-                  Min 20 / 50M
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                Minimum <strong>40% of CIE maximum</strong> (20 out of 50 marks). Mandatory eligibility threshold to clear CIE.
-              </p>
-            </div>
-
-            {/* Rule 2: SEE */}
-            <div className="p-3 bg-white/80 dark:bg-neutral-900/80 border border-purple-100 dark:border-purple-900/50 rounded-lg space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800 dark:text-purple-300">
-                  2. SEE External (50%)
-                </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
-                  {isLabOrPractical ? 'Min 20 / 50M (40%)' : 'Min 18 / 50M (35%)'}
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                {isLabOrPractical ? (
+            <div className="flex items-center gap-2.5">
+              <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 hidden sm:inline">
+                Must satisfy all 3 minimum conditions simultaneously to PASS
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowRegulations(prev => !prev)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-900/50 dark:hover:bg-purple-900/70 dark:text-purple-200 transition-colors shadow-2xs cursor-pointer"
+                title={showRegulations ? "Hide Passing Regulations" : "View Passing Regulations"}
+              >
+                {showRegulations ? (
                   <>
-                    <strong>Practical/Lab Courses:</strong> Min 40% of SEE max (<strong>20 out of 50M</strong>, or 40/100 raw).
+                    <EyeOff className="w-3.5 h-3.5" />
+                    <span>Hide Regulations</span>
+                    <ChevronUp className="w-3.5 h-3.5" />
                   </>
                 ) : (
                   <>
-                    <strong>Theory Courses:</strong> Min 35% of SEE max (<strong>18 out of 50M</strong>, or 35/100 raw).
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View Regulations</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
                   </>
                 )}
-              </p>
-            </div>
-
-            {/* Rule 3: Combined Aggregate */}
-            <div className="p-3 bg-white/80 dark:bg-neutral-900/80 border border-purple-100 dark:border-purple-900/50 rounded-lg space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800 dark:text-purple-300">
-                  3. Total Aggregate
-                </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
-                  Min 40 / 100M
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                Continuous Internal (50M) + Scaled External (50M) must sum to at least <strong>40 out of 100 marks</strong>.
-              </p>
+              </button>
             </div>
           </div>
+
+          {showRegulations && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 mt-3 border-t border-purple-200/70 dark:border-purple-800/60 animate-in fade-in duration-200">
+              {/* Rule 1: CIE */}
+              <div className="p-3 bg-white/80 dark:bg-neutral-900/80 border border-purple-100 dark:border-purple-900/50 rounded-lg space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800 dark:text-purple-300">
+                    1. CIE Internal (50%)
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
+                    Min 20 / 50M
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                  Minimum <strong>40% of CIE maximum</strong> (20 out of 50 marks). Mandatory eligibility threshold to clear CIE.
+                </p>
+              </div>
+
+              {/* Rule 2: SEE */}
+              <div className="p-3 bg-white/80 dark:bg-neutral-900/80 border border-purple-100 dark:border-purple-900/50 rounded-lg space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800 dark:text-purple-300">
+                    2. SEE External (50%)
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
+                    {isLabOrPractical ? 'Min 20 / 50M (40%)' : 'Min 18 / 50M (35%)'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                  {isLabOrPractical ? (
+                    <>
+                      <strong>Practical/Lab Courses:</strong> Min 40% of SEE max (<strong>20 out of 50M</strong>, or 40/100 raw).
+                    </>
+                  ) : (
+                    <>
+                      <strong>Theory Courses:</strong> Min 35% of SEE max (<strong>18 out of 50M</strong>, or 35/100 raw).
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {/* Rule 3: Combined Aggregate */}
+              <div className="p-3 bg-white/80 dark:bg-neutral-900/80 border border-purple-100 dark:border-purple-900/50 rounded-lg space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-800 dark:text-purple-300">
+                    3. Total Aggregate
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
+                    Min 40 / 100M
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                  Continuous Internal (50M) + Scaled External (50M) must sum to at least <strong>40 out of 100 marks</strong>.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

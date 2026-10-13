@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import admissionService from '../../../services/admission.service';
 import { 
   GraduationCap, Search, Download, Ban, CheckCircle2, Clock, X, 
@@ -49,6 +48,7 @@ const getSemesterDisplay = (app: USNApplicant): string => {
 
 export const AdminUsnAllocationPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Summary Metrics State
@@ -88,19 +88,31 @@ export const AdminUsnAllocationPage: React.FC = () => {
   // Keep track of active debounce timeouts per applicant id
   const validationTimeouts = useRef<Record<string, any>>({});
 
-  // Confirmation / Review modal
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Dedicated Confirmation / Review Page State
+  const [isConfirming, setIsConfirming] = useState(false);
+  const isConfirmationStage = searchParams.get('stage') === 'confirm' || isConfirming;
+  const [confirmFilter, setConfirmFilter] = useState<'ALL' | 'CHANGED' | 'ASSIGNED' | 'ERRORS'>('ALL');
+  const [confirmSearch, setConfirmSearch] = useState('');
+
   const [savingChanges, setSavingChanges] = useState(false);
   const [previewList, setPreviewList] = useState<{
     idx: number;
     name: string;
     appNum: string;
     semester: string;
+    oldUsn?: string;
     newUsn: string;
     isChanged: boolean;
     valid: boolean;
     error?: string;
   }[]>([]);
+
+  // Sync confirmation stage with URL searchParams
+  useEffect(() => {
+    if (searchParams.get('stage') !== 'confirm') {
+      setIsConfirming(false);
+    }
+  }, [searchParams]);
 
   // Cleanup validation timeouts on unmount
   useEffect(() => {
@@ -405,6 +417,7 @@ export const AdminUsnAllocationPage: React.FC = () => {
           name: getFullName(applicantInfo.studentpersonaldetails),
           appNum: applicantInfo.applicationNumber,
           semester: getSemesterDisplay(applicantInfo),
+          oldUsn: applicantInfo.usn || '—',
           newUsn: displayUsn,
           isChanged,
           valid: isValid,
@@ -413,7 +426,11 @@ export const AdminUsnAllocationPage: React.FC = () => {
       }
 
       setPreviewList(listToPreview);
-      setShowConfirmModal(true);
+      setIsConfirming(true);
+      setSearchParams({ stage: 'confirm' });
+      setConfirmFilter('ALL');
+      setConfirmSearch('');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       toast.error('Failed to generate preview list.');
     } finally {
@@ -583,7 +600,9 @@ export const AdminUsnAllocationPage: React.FC = () => {
       setDraftChanges({});
       setValidationErrors({});
       setAsyncValidation({});
-      setShowConfirmModal(false);
+      setIsConfirming(false);
+      setSearchParams({});
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       fetchSummary();
       fetchApplicants();
     } catch (err: any) {
@@ -592,6 +611,27 @@ export const AdminUsnAllocationPage: React.FC = () => {
       setSavingChanges(false);
     }
   };
+
+  const handleCancelConfirmation = () => {
+    setIsConfirming(false);
+    setSearchParams({});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const filteredPreviewList = previewList.filter((item) => {
+    if (confirmFilter === 'CHANGED' && !item.isChanged) return false;
+    if (confirmFilter === 'ERRORS' && item.valid) return false;
+    if (confirmFilter === 'ASSIGNED' && (item.isChanged || !item.newUsn || item.newUsn === '—')) return false;
+
+    if (confirmSearch.trim()) {
+      const q = confirmSearch.toLowerCase();
+      const matchName = item.name.toLowerCase().includes(q);
+      const matchApp = item.appNum.toLowerCase().includes(q);
+      const matchUsn = item.newUsn.toLowerCase().includes(q);
+      return matchName || matchApp || matchUsn;
+    }
+    return true;
+  });
 
   const handleDiscardChanges = () => {
     if (window.confirm('Discard all unsaved drafts and imported sheets?')) {
@@ -814,6 +854,328 @@ export const AdminUsnAllocationPage: React.FC = () => {
   };
 
   const hasChanges = actualDraftChanges.length > 0;
+
+  // ── DEDICATED FULL-PAGE CONFIRMATION VIEW ──
+  if (isConfirmationStage) {
+    if (previewList.length === 0 && !loadingList) {
+      return (
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-12 text-center space-y-4 max-w-lg mx-auto mt-12 shadow-sm animate-fade-in">
+          <div className="size-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h3 className="font-extrabold text-neutral-900 dark:text-white text-base">No Allocations to Review</h3>
+          <p className="text-xs text-neutral-500">Please enter USN numbers in the allocation view and click "Review & Save" to proceed with confirmation.</p>
+          <button
+            onClick={handleCancelConfirmation}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Return to USN Allocation</span>
+          </button>
+        </div>
+      );
+    }
+
+    const changedCount = previewList.filter(p => p.isChanged && p.valid).length;
+    const validationErrorCount = previewList.filter(p => !p.valid).length;
+    const assignedCount = previewList.filter(p => !p.isChanged && p.valid && p.newUsn && p.newUsn !== '—').length;
+
+    return (
+      <div className="space-y-6 animate-fade-in w-full pb-32">
+        {/* ── BREADCRUMB & CONFIRMATION HEADER ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <button
+              type="button"
+              onClick={handleCancelConfirmation}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 mb-2 transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={16} /> Back to USN Allocation Table
+            </button>
+            <h2 className="text-xl md:text-2xl font-black text-neutral-900 dark:text-white uppercase tracking-wide flex items-center gap-2.5">
+              <AlertTriangle className="text-amber-500" size={26} /> Review USN Assignments
+            </h2>
+            <p className="text-xs text-neutral-500 font-semibold mt-1">
+              Please verify all allocations before confirming. The transaction is atomic.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 self-end sm:self-auto select-none">
+            <button
+              type="button"
+              onClick={handleCancelConfirmation}
+              className="px-4 py-2.5 border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl text-xs font-bold text-neutral-700 dark:text-neutral-300 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={savingChanges || validationErrorCount > 0 || actualDraftChanges.length === 0}
+              onClick={handleConfirmSave}
+              className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-violet-500/20 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {savingChanges ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> Saving Assignments...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={14} /> Confirm & Save
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* ── VALIDATION OVERVIEW STAT CARDS (MATCHING DESIGN) ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 select-none">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-2xl p-4 text-center shadow-xs">
+            <span className="text-[10px] font-black text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">
+              Total Students
+            </span>
+            <p className="text-2xl font-black text-neutral-900 dark:text-white mt-1">
+              {previewList.length}
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-neutral-900 border border-violet-200/80 dark:border-violet-900/60 rounded-2xl p-4 text-center shadow-xs">
+            <span className="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+              Pending Changes
+            </span>
+            <p className="text-2xl font-black text-violet-600 dark:text-violet-400 mt-1">
+              {changedCount}
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-neutral-900 border border-rose-200/80 dark:border-rose-900/60 rounded-2xl p-4 text-center shadow-xs">
+            <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider">
+              Validation Errors
+            </span>
+            <p className="text-2xl font-black text-rose-600 mt-1">
+              {validationErrorCount}
+            </p>
+          </div>
+        </div>
+
+        {/* ── VALIDATION ERRORS BANNER IF ANY ── */}
+        {validationErrorCount > 0 && (
+          <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/80 rounded-2xl text-rose-700 dark:text-rose-400 flex items-start gap-3 shadow-xs">
+            <Ban size={18} className="shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-xs font-black uppercase tracking-wider">Validation Errors Detected</p>
+              <p className="text-xs font-medium leading-relaxed">
+                Resolve all validation errors before saving. Uniqueness database checks, format mismatches, or duplicate entries must be resolved before committing.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── FILTER & SEARCH CONTROLS ── */}
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs select-none">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setConfirmFilter('ALL')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                confirmFilter === 'ALL'
+                  ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs'
+                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+              }`}
+            >
+              All Students ({previewList.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmFilter('CHANGED')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                confirmFilter === 'CHANGED'
+                  ? 'bg-violet-600 text-white shadow-xs'
+                  : 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40'
+              }`}
+            >
+              Pending Changes ({changedCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmFilter('ASSIGNED')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                confirmFilter === 'ASSIGNED'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40'
+              }`}
+            >
+              Already Assigned ({assignedCount})
+            </button>
+            {validationErrorCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setConfirmFilter('ERRORS')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  confirmFilter === 'ERRORS'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40'
+                }`}
+              >
+                Errors ({validationErrorCount})
+              </button>
+            )}
+          </div>
+
+          <div className="relative w-full sm:w-72">
+            <input
+              type="text"
+              placeholder="Search in confirmation list..."
+              value={confirmSearch}
+              onChange={(e) => setConfirmSearch(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-medium text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+            />
+            <Search size={14} className="absolute left-3 top-2.5 text-neutral-400" />
+            {confirmSearch && (
+              <button
+                type="button"
+                onClick={() => setConfirmSearch('')}
+                className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-neutral-600 cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── DEDICATED CONFIRMATION DATA TABLE ── */}
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-3xl overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-black dark:bg-neutral-950 text-white border-b border-neutral-800 font-black uppercase tracking-widest text-[9px] select-none">
+                  <th className="py-3.5 px-4 w-14 text-center">SL NO.</th>
+                  <th className="py-3.5 px-4">APPLICATION NUMBER</th>
+                  <th className="py-3.5 px-4">STUDENT NAME</th>
+                  <th className="py-3.5 px-4 text-center">CURRENT SEMESTER</th>
+                  <th className="py-3.5 px-4">USN</th>
+                  <th className="py-3.5 px-4 text-center">STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPreviewList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-neutral-400 font-bold">
+                      No matching records found in confirmation list.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredPreviewList.map((item) => (
+                    <tr 
+                      key={item.idx}
+                      className={`border-b border-neutral-100 dark:border-neutral-850 hover:bg-neutral-50 dark:hover:bg-neutral-850/60 transition-colors ${
+                        !item.valid 
+                          ? 'bg-rose-50/20 dark:bg-rose-950/20' 
+                          : item.isChanged 
+                          ? 'bg-violet-50/25 dark:bg-violet-950/25 border-l-4 border-violet-500' 
+                          : ''
+                      }`}
+                    >
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-400">
+                        {String(item.idx).padStart(2, '0')}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-800 dark:text-neutral-200 font-mono">
+                        {item.appNum}
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700 dark:text-neutral-300">
+                        {item.name}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-neutral-300 border border-slate-200/80 dark:border-neutral-700">
+                          {item.semester}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold tracking-wider uppercase font-mono">
+                        {item.isChanged ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-violet-600 dark:text-violet-400 font-black text-sm">
+                              {item.newUsn}
+                            </span>
+                            {item.oldUsn && item.oldUsn !== '—' && (
+                              <span className="text-[10px] text-neutral-400 line-through">
+                                ({item.oldUsn})
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-600 dark:text-neutral-400">
+                            {item.newUsn}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {!item.valid ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
+                            ✕ {item.error || 'Error'}
+                          </span>
+                        ) : item.isChanged ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400">
+                            ✎ Ready to Save
+                          </span>
+                        ) : item.newUsn && item.newUsn !== '—' && item.newUsn !== '— (Remove Allocation)' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+                            ✓ Assigned
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                            Pending
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ── STICKY CONFIRMATION FOOTER BAR ── */}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border border-neutral-200 dark:border-neutral-800 shadow-2xl rounded-2xl px-6 py-3.5 flex items-center justify-between gap-6 max-w-4xl w-[calc(100%-2rem)]">
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-neutral-500 font-medium">
+              Showing <strong className="text-neutral-900 dark:text-white">{filteredPreviewList.length}</strong> of{' '}
+              <strong className="text-neutral-900 dark:text-white">{previewList.length}</strong> students
+            </span>
+            <span className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 hidden sm:block" />
+            <span className="text-violet-600 dark:text-violet-400 font-bold hidden sm:inline">
+              {changedCount} change(s) ready to commit
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCancelConfirmation}
+              className="px-4 py-2 border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl text-xs font-bold text-neutral-700 dark:text-neutral-300 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={savingChanges || validationErrorCount > 0 || actualDraftChanges.length === 0}
+              onClick={handleConfirmSave}
+              className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-violet-500/20 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {savingChanges ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Saving...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={13} /> Confirm & Save
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`space-y-6 animate-fade-in w-full relative ${hasChanges ? 'pb-32' : 'pb-24'}`}>
@@ -1305,141 +1667,6 @@ export const AdminUsnAllocationPage: React.FC = () => {
             >
               Review & Save
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── TWO-STAGE BATCH PREVIEW & CONFIRMATION MODAL ── */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl animate-in fade-in duration-200 flex flex-col max-h-[90vh]">
-            
-            <div className="flex items-center justify-between border-b border-neutral-150 dark:border-neutral-800 pb-3 flex-shrink-0">
-              <div>
-                <h3 className="text-base font-black text-neutral-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                  <AlertTriangle className="text-amber-500" size={20} /> Review USN Assignments
-                </h3>
-                <p className="text-[10px] text-neutral-400 font-semibold mt-0.5">Please verify all allocations before confirming. The transaction is atomic.</p>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg text-neutral-400 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Validation overview cards */}
-            <div className="grid grid-cols-3 gap-4 flex-shrink-0 select-none">
-              <div className="bg-neutral-50 dark:bg-neutral-955 border border-neutral-200/50 dark:border-neutral-800 rounded-xl p-3 text-center">
-                <span className="text-[10px] font-bold text-neutral-450 uppercase tracking-wide">Total Students</span>
-                <p className="text-lg font-black text-neutral-850 dark:text-white">{previewList.length}</p>
-              </div>
-              <div className="bg-violet-50/40 dark:bg-violet-950/10 border border-violet-200/30 dark:border-violet-900/55 rounded-xl p-3 text-center">
-                <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide">Pending Changes</span>
-                <p className="text-lg font-black text-violet-600 dark:text-violet-400">{previewList.filter(p => p.isChanged && p.valid).length}</p>
-              </div>
-              <div className="bg-rose-50/40 dark:bg-rose-950/10 border border-rose-200/30 dark:border-rose-900/55 rounded-xl p-3 text-center">
-                <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wide">Validation Errors</span>
-                <p className="text-lg font-black text-rose-600">{previewList.filter(p => !p.valid).length}</p>
-              </div>
-            </div>
-
-            {previewList.filter(p => !p.valid).length > 0 && (
-              <div className="p-3 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-xl text-rose-600 flex items-start gap-2 flex-shrink-0">
-                <Ban size={16} className="shrink-0 mt-0.5" />
-                <p className="text-xs font-bold leading-tight">
-                  Resolve all validation errors before saving. Uniqueness database checks, format mismatches, or duplicate entries must be resolved before committing.
-                </p>
-              </div>
-            )}
-
-            {/* Preview List Grid */}
-            <div className="overflow-y-auto flex-grow border border-neutral-150 dark:border-neutral-800 rounded-2xl bg-neutral-50/30 dark:bg-neutral-955/10">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-black text-white border-b border-neutral-800 font-black uppercase tracking-widest text-[9px] select-none sticky top-0">
-                    <th className="py-3 px-4 w-12 text-center">SL NO.</th>
-                    <th className="py-3 px-4">APPLICATION NUMBER</th>
-                    <th className="py-3 px-4">STUDENT NAME</th>
-                    <th className="py-3 px-4 text-center">CURRENT SEMESTER</th>
-                    <th className="py-3 px-4">USN</th>
-                    <th className="py-3 px-4 text-center">STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewList.map((item, idx) => (
-                    <tr 
-                      key={idx}
-                      className={`border-b border-neutral-100 dark:border-neutral-850 hover:bg-neutral-100/50 ${
-                        !item.valid ? 'bg-rose-50/15' : item.isChanged ? 'bg-violet-50/15 dark:bg-violet-950/15' : ''
-                      }`}
-                    >
-                      <td className="py-3 px-4 text-center font-bold text-slate-400">{String(item.idx).padStart(2, '0')}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-800 dark:text-neutral-200 font-mono">{item.appNum}</td>
-                      <td className="py-3 px-4 font-bold text-slate-700 dark:text-neutral-300">{item.name}</td>
-                      <td className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-neutral-300 border border-slate-200/80 dark:border-neutral-700">
-                          {item.semester}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-bold tracking-wider uppercase font-mono">
-                        {item.isChanged ? (
-                          <span className="text-violet-600 dark:text-violet-400 font-black">{item.newUsn}</span>
-                        ) : (
-                          <span className="text-slate-600 dark:text-neutral-400">{item.newUsn}</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {!item.valid ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
-                            ✕ {item.error || 'Error'}
-                          </span>
-                        ) : item.isChanged ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400">
-                            ✎ Ready to Save
-                          </span>
-                        ) : item.newUsn && item.newUsn !== '—' && item.newUsn !== '— (Remove Allocation)' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-                            ✓ Assigned
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                            Pending
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex justify-end gap-2.5 pt-3 border-t border-neutral-150 dark:border-neutral-800 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="px-4 py-2 border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-xs font-bold text-neutral-700 dark:text-neutral-355 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              
-              <button
-                type="button"
-                disabled={savingChanges || previewList.filter(p => !p.valid).length > 0 || actualDraftChanges.length === 0}
-                onClick={handleConfirmSave}
-                className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-md shadow-violet-600/10 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                {savingChanges ? (
-                  <>
-                    <Loader2 size={12} className="animate-spin" /> Saving...
-                  </>
-                ) : 'Confirm & Save'}
-              </button>
-            </div>
-
           </div>
         </div>
       )}

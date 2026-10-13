@@ -85,6 +85,56 @@ export interface StudentProfileData {
     guardianPhone: string;
     annualIncome: string;
   };
+  personal?: {
+    firstName?: string;
+    middleName?: string | null;
+    lastName?: string;
+    fullName?: string;
+    dateOfBirth?: string;
+    gender?: string;
+    caste?: string;
+    category?: string;
+    religion?: string;
+    nationality?: string;
+    studiedInKarnataka?: boolean | null;
+    areaType?: string;
+    aadhaarMasked?: string;
+  };
+  qualifications?: {
+    tenth?: {
+      school?: string;
+      board?: string;
+      passingYear?: string;
+      registerNumber?: string;
+      marksObtained?: number | null;
+      maxMarks?: number | null;
+      percentage?: string;
+      attempts?: number;
+    };
+    twelfth?: {
+      school?: string;
+      board?: string;
+      passingYear?: string;
+      registerNumber?: string;
+      stream?: string;
+      percentage?: string;
+      physicsMarks?: number | null;
+      mathsMarks?: number | null;
+      chemistryMarks?: number | null;
+    } | null;
+    diploma?: {
+      university?: string;
+      year?: string;
+      registerNumber?: string;
+      percentage?: string;
+    } | null;
+    entranceExam?: {
+      cetNumber?: string;
+      dcetNumber?: string | null;
+      cetScore?: number | null;
+      cetRank?: string | null;
+    };
+  };
 }
 
 export interface StudentOverviewData {
@@ -158,6 +208,13 @@ export interface StudentSubjectAttendance {
   absentSessions: number;
   percentage: number;
   status: 'Eligible' | 'Shortage';
+  semester?: number;
+  academicYear?: string;
+  releaseStatus?: string;
+  conductedClasses?: number;
+  attendedClasses?: number;
+  absentClasses?: number;
+  totalEligibleClasses?: number;
 }
 
 export interface StudentAttendanceSessionRecord {
@@ -181,6 +238,22 @@ export interface StudentSubjectMarksGroup {
   subjectName: string;
   semester: number;
   academicYear: string;
+  // Exact 7-column representations
+  cie1Marks?: number | null;
+  cie2Marks?: number | null;
+  assignmentMarks?: number | null;
+  finalInternalMarks?: number | null;
+  externalMarks?: number | null;
+  cie1Display?: string;
+  cie2Display?: string;
+  assignmentDisplay?: string;
+  finalInternalDisplay?: string;
+  externalDisplay?: string;
+  cie1?: { marksObtained: number; maximumMarks: number } | null;
+  cie2?: { marksObtained: number; maximumMarks: number } | null;
+  credits?: number;
+  status?: string;
+  statusLabel?: string;
   assessments: Array<{
     id: string;
     assessmentName: string;
@@ -192,6 +265,20 @@ export interface StudentSubjectMarksGroup {
     publishedAt: string | null;
     status: string;
   }>;
+}
+
+export interface StudentPublishedMarksResponse {
+  semester: number;
+  academicYear: string;
+  marksBySubject: StudentSubjectMarksGroup[];
+  subjects: StudentSubjectMarksGroup[];
+  semesters?: Array<{
+    semester: number;
+    academicYear: string;
+    rows: StudentSubjectMarksGroup[];
+    subjects: StudentSubjectMarksGroup[];
+  }>;
+  statusNotice?: string;
 }
 
 export const studentService = {
@@ -234,16 +321,12 @@ export const studentService = {
   },
 
   /**
-   * Fetches published marks grouped by subject
+   * Fetches published marks grouped by subject and semester
    */
   async getPublishedMarks(params?: {
     semester?: number;
     academicYear?: string;
-  }): Promise<{
-    semester: number;
-    academicYear: string;
-    marksBySubject: StudentSubjectMarksGroup[];
-  }> {
+  }): Promise<StudentPublishedMarksResponse> {
     const res = await axios.get(`${API_BASE_URL}/student/marks`, {
       ...getAuthHeaders(),
       params,

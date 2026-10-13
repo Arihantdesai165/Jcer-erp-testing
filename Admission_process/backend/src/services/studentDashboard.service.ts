@@ -14,6 +14,8 @@ import AdmissionPersonalDetail from '../models/AdmissionPersonalDetail';
 import AdmissionParentDetail from '../models/AdmissionParentDetail';
 import AdmissionAddress from '../models/AdmissionAddress';
 import AdmissionAcademicDetail from '../models/AdmissionAcademicDetail';
+import StudentReleasedAcademicData from '../models/StudentReleasedAcademicData';
+import AcademicRelease from '../models/AcademicRelease';
 import logger from '../utils/logger.util';
 
 export interface ResolvedStudentContext {
@@ -102,6 +104,26 @@ class StudentDashboardService {
           }
           student = matchingStudent;
         }
+      }
+    }
+
+    // 5. Fallback resolution: find Admission by Student enrollmentNumber/USN or email
+    if (!admission && student) {
+      const orConds: any[] = [];
+      if (student.enrollmentNumber) orConds.push({ applicationNumber: student.enrollmentNumber });
+      if (student.usn) orConds.push({ cetNumber: student.usn }, { dcetNumber: student.usn });
+      if (user.email) orConds.push({ email: user.email.toLowerCase() });
+      if (orConds.length > 0) {
+        admission = await Admission.findOne({
+          where: { [Op.or]: orConds },
+          include: [
+            { model: Department, as: 'branch', attributes: ['id', 'name', 'code'] },
+            { model: AdmissionPersonalDetail, as: 'studentpersonaldetails' },
+            { model: AdmissionParentDetail, as: 'studentparentdetails' },
+            { model: AdmissionAddress, as: 'studentaddress' },
+            { model: AdmissionAcademicDetail, as: 'studentacademicdetails' },
+          ],
+        });
       }
     }
 
@@ -201,128 +223,91 @@ class StudentDashboardService {
 
     const studentName = `${u.firstName || ''} ${u.middleName || ''} ${u.lastName || ''}`.replace(/\s+/g, ' ').trim() || 'Student';
 
-    // 1. Calculate overall attendance directly from AttendanceRecord
-    const allAttendance = await AttendanceRecord.findAll({
-      where: { studentId: s.id },
-      attributes: ['status', 'subjectId'],
-    });
-
-    const totalSessions = allAttendance.length;
-    const attendedSessions = allAttendance.filter((r) => r.status === 'PRESENT' || r.status === 'EXCUSED').length;
-    const absentSessions = allAttendance.filter((r) => r.status === 'ABSENT').length;
-    const overallAttendancePercentage = totalSessions > 0
-      ? Number(((attendedSessions / totalSessions) * 100).toFixed(1))
-      : 0;
-
-    // 2. Calculate subject-wise attendance breakdown
-    const subjectAttendanceMap: Record<string, { total: number; attended: number; absent: number }> = {};
-    for (const rec of allAttendance) {
-      if (!subjectAttendanceMap[rec.subjectId]) {
-        subjectAttendanceMap[rec.subjectId] = { total: 0, attended: 0, absent: 0 };
-      }
-      subjectAttendanceMap[rec.subjectId].total += 1;
-      if (rec.status === 'PRESENT' || rec.status === 'EXCUSED') {
-        subjectAttendanceMap[rec.subjectId].attended += 1;
-      } else if (rec.status === 'ABSENT') {
-        subjectAttendanceMap[rec.subjectId].absent += 1;
-      }
-    }
-
-    // Fetch subjects for current semester
-    const subjects = await Subject.findAll({
+    // 1. Authoritative released attendance from HOD release module
+    const releasedAttendance = await StudentReleasedAcademicData.findAll({
       where: {
-        semester: s.semester,
-        [Op.or]: [
-          { departmentId: s.departmentId },
-          { departmentId: null },
-        ],
+        studentId: s.id,
+        releaseType: 'ATTENDANCE',
       },
-      attributes: ['id', 'name', 'code', 'credits'],
-      order: [['code', 'ASC']],
+      include: [{ model: Subject, as: 'subject', attributes: ['id', 'name', 'code', 'credits'] }],
+      order: [['createdAt', 'DESC']],
     });
 
-    const subjectAttendanceSummary = subjects.map((subj) => {
-      const stats = subjectAttendanceMap[subj.id] || { total: 0, attended: 0, absent: 0 };
-      const percentage = stats.total > 0
-        ? Number(((stats.attended / stats.total) * 100).toFixed(1))
+    let overallAttendancePercentage = 0;
+    let totalSessions = 0;
+    let attendedSessions = 0;
+    let absentSessions = 0;
+    const subjectAttendanceSummary: any[] = [];
+
+    if (releasedAttendance.length > 0) {
+      for (const rec of releasedAttendance) {
+        const cond = rec.conductedClasses || 0;
+        const att = rec.attendedClasses || 0;
+        totalSessions += cond;
+        attendedSessions += att;
+        absentSessions += Math.max(0, cond - att);
+        const subj = rec.subject as any;
+        const pct = rec.attendancePercentage !== null ? Number(rec.attendancePercentage) : 0;
+        subjectAttendanceSummary.push({
+          subjectId: rec.subjectId,
+          subjectCode: subj?.code || 'N/A',
+          subjectName: subj?.name || 'N/A',
+          totalClasses: cond,
+          attendedClasses: att,
+          absentClasses: Math.max(0, cond - att),
+          totalSessions: cond,
+          attendedSessions: att,
+          absentSessions: Math.max(0, cond - att),
+          percentage: pct,
+          status: pct >= 85 ? ('Eligible' as const) : ('Shortage' as const),
+          releaseStatus: 'RELEASED',
+        });
+      }
+      overallAttendancePercentage = totalSessions > 0
+        ? Number(((attendedSessions / totalSessions) * 100).toFixed(1))
         : 0;
-
-      return {
-        subjectId: subj.id,
-        subjectCode: subj.code,
-        subjectName: subj.name,
-        totalClasses: stats.total,
-        attendedClasses: stats.attended,
-        absentClasses: stats.absent,
-        totalSessions: stats.total,
-        attendedSessions: stats.attended,
-        absentSessions: stats.absent,
-        percentage,
-        status: percentage >= 75 ? ('Eligible' as const) : ('Shortage' as const),
-      };
-    });
-
-    // 3. Fetch published marks summary (ONLY isPublished = true)
-    const publishedConfigs = await AssessmentConfiguration.findAll({
-      where: {
-        semester: s.semester,
-        academicYear: s.currentAcademicYear || '2026-27',
-        isPublished: true,
-      },
-      include: [{ model: Subject, as: 'subject', attributes: ['id', 'name', 'code'] }],
-    });
-
-    const publishedConfigIds = publishedConfigs.map((c) => c.id);
-    const studentSummaries = publishedConfigIds.length > 0
-      ? await StudentAssessmentSummary.findAll({
-          where: {
-            assessmentConfigurationId: { [Op.in]: publishedConfigIds },
-            studentId: s.id,
-          },
-        })
-      : [];
-
-    const summaryMap: Record<string, StudentAssessmentSummary> = {};
-    for (const sum of studentSummaries) {
-      summaryMap[sum.assessmentConfigurationId] = sum;
     }
 
-    const publishedMarksSummary = publishedConfigs.map((c) => {
-      const sum = summaryMap[c.id];
+    // 2. Authoritative released marks from HOD release module
+    const releasedMarks = await StudentReleasedAcademicData.findAll({
+      where: {
+        studentId: s.id,
+        releaseType: 'MARKS',
+      },
+      include: [{ model: Subject, as: 'subject', attributes: ['id', 'name', 'code'] }],
+      order: [['createdAt', 'DESC']],
+    });
+
+    const publishedMarksSummary = releasedMarks.map((rm) => {
+      const subj = rm.subject as any;
       return {
-        id: c.id,
-        assessmentId: c.id,
-        assessmentName: c.assessmentType,
-        assessmentType: c.assessmentType,
-        subjectCode: c.subject?.code,
-        subjectName: c.subject?.name,
-        semester: s.semester,
-        maximumMarks: Number(c.maximumMarks),
-        marksObtained: sum ? Number(sum.finalCieMarks) : 0,
-        percentage: sum ? Number(sum.percentage) : 0,
-        publishedAt: c.publishedAt ? c.publishedAt.toISOString() : new Date().toISOString(),
+        id: rm.id,
+        assessmentId: rm.id,
+        assessmentName: rm.assessmentType,
+        assessmentType: rm.assessmentType,
+        subjectCode: subj?.code || 'N/A',
+        subjectName: subj?.name || 'N/A',
+        semester: rm.semester,
+        maximumMarks: Number(rm.maxMarks || 0),
+        marksObtained: Number(rm.marksObtained || 0),
+        percentage: Number(rm.percentage || 0),
+        publishedAt: (rm as any).createdAt ? (rm as any).createdAt.toISOString() : new Date().toISOString(),
       };
     });
 
-    // 4. Assessment publication status summary (safe statuses)
-    const allSemesterConfigs = await AssessmentConfiguration.findAll({
-      where: {
-        semester: s.semester,
-        academicYear: s.currentAcademicYear || '2026-27',
-      },
-      include: [{ model: Subject, as: 'subject', attributes: ['id', 'name', 'code'] }],
+    const assessmentPublicationStatus = releasedMarks.map((rm) => {
+      const subj = rm.subject as any;
+      return {
+        assessmentType: rm.assessmentType,
+        subjectCode: subj?.code || 'N/A',
+        subjectName: subj?.name || 'N/A',
+        isPublished: true,
+        statusLabel: 'Official Release',
+        publishedAt: (rm as any).createdAt,
+      };
     });
 
-    const assessmentPublicationStatus = allSemesterConfigs.map((c) => ({
-      assessmentType: c.assessmentType,
-      subjectCode: c.subject?.code,
-      subjectName: c.subject?.name,
-      isPublished: Boolean(c.isPublished),
-      statusLabel: c.isPublished ? 'Published' : 'Evaluation in Progress',
-      publishedAt: c.publishedAt,
-    }));
-
-    // 5. Recent academic updates timeline
+    // 3. Recent academic updates timeline
     const recentAcademicUpdates: Array<{
       type: 'ATTENDANCE' | 'MARKS';
       title: string;
@@ -391,6 +376,7 @@ class StudentDashboardService {
 
   /**
    * Attendance Page: Dynamic, real-time subject-wise breakdown & stats
+   * STRICTLY returns ONLY data that has been explicitly released by the authorized HOD.
    */
   async getStudentAttendanceSummary(userId: string): Promise<any> {
     const { student, isAdmissionApplicant } = await this.resolveStudentContext(userId);
@@ -409,86 +395,123 @@ class StudentDashboardService {
           absentClasses: 0,
         },
         subjects: [],
+        semesters: [],
         isAdmissionApplicant: true,
         statusNotice: 'Admission application in progress. Academic attendance tracking begins upon formal semester enrollment.',
       };
     }
 
-    const allRecords = await AttendanceRecord.findAll({
-      where: { studentId: student.id },
-      attributes: ['id', 'subjectId', 'status', 'date', 'sessionPeriod'],
-    });
-
-    const totalSessions = allRecords.length;
-    const attendedSessions = allRecords.filter((r) => r.status === 'PRESENT' || r.status === 'EXCUSED').length;
-    const absentSessions = allRecords.filter((r) => r.status === 'ABSENT').length;
-    const overallPercentage = totalSessions > 0
-      ? Number(((attendedSessions / totalSessions) * 100).toFixed(1))
-      : 0;
-
-    const subjects = await Subject.findAll({
+    // Query explicitly released attendance for this student from the consolidated register releases
+    const releasedAttendance = await StudentReleasedAcademicData.findAll({
       where: {
-        semester: student.semester,
-        [Op.or]: [
-          { departmentId: student.departmentId },
-          { departmentId: null },
-        ],
+        studentId: student.id,
+        releaseType: 'ATTENDANCE',
       },
-      attributes: ['id', 'name', 'code', 'credits'],
-      order: [['code', 'ASC']],
+      include: [
+        {
+          model: Subject,
+          as: 'subject',
+          attributes: ['id', 'name', 'code', 'credits', 'semester'],
+        },
+      ],
+      order: [
+        ['semester', 'ASC'],
+        ['createdAt', 'DESC'],
+      ],
     });
 
-    const subjectMap: Record<string, { total: number; attended: number; absent: number }> = {};
-    for (const rec of allRecords) {
-      if (!subjectMap[rec.subjectId]) {
-        subjectMap[rec.subjectId] = { total: 0, attended: 0, absent: 0 };
-      }
-      subjectMap[rec.subjectId].total += 1;
-      if (rec.status === 'PRESENT' || rec.status === 'EXCUSED') {
-        subjectMap[rec.subjectId].attended += 1;
-      } else if (rec.status === 'ABSENT') {
-        subjectMap[rec.subjectId].absent += 1;
-      }
-    }
+    let totalClasses = 0;
+    let attendedClasses = 0;
+    let absentClasses = 0;
+    let overallPercentage = 0;
 
-    const subjectBreakdown = subjects.map((s) => {
-      const stats = subjectMap[s.id] || { total: 0, attended: 0, absent: 0 };
-      const pct = stats.total > 0 ? Number(((stats.attended / stats.total) * 100).toFixed(1)) : 0;
+    const subjects = releasedAttendance.map((rec) => {
+      const s = rec.subject as any;
+      const conducted = rec.conductedClasses || 0;
+      const attended = rec.attendedClasses || 0;
+      const absent = Math.max(0, conducted - attended);
+      const pct = rec.attendancePercentage !== null ? Number(rec.attendancePercentage) : 0;
+
+      totalClasses += conducted;
+      attendedClasses += attended;
+      absentClasses += absent;
+
       return {
-        subjectId: s.id,
-        subjectCode: s.code,
-        subjectName: s.name,
-        credits: s.credits,
-        totalEligibleClasses: stats.total,
-        attendedClasses: stats.attended,
-        absentClasses: stats.absent,
-        totalSessions: stats.total,
-        attendedSessions: stats.attended,
-        absentSessions: stats.absent,
+        subjectId: rec.subjectId,
+        subjectCode: s?.code || 'N/A',
+        subjectName: s?.name || 'N/A',
+        credits: s?.credits || 0,
+        semester: rec.semester,
+        academicYear: rec.academicYear,
+        totalEligibleClasses: conducted,
+        conductedClasses: conducted,
+        attendedClasses: attended,
+        absentClasses: absent,
+        totalSessions: conducted,
+        attendedSessions: attended,
+        absentSessions: absent,
         percentage: pct,
-        status: pct >= 75 ? ('Eligible' as const) : ('Shortage' as const),
+        status: pct >= 85 ? ('Eligible' as const) : ('Shortage' as const),
+        releaseStatus: 'RELEASED',
+        releasedAt: (rec as any).createdAt,
       };
     });
 
+    if (totalClasses > 0) {
+      overallPercentage = Number(((attendedClasses / totalClasses) * 100).toFixed(1));
+    }
+
+    // Group subjects by semester
+    const semesterMap: Record<number, any> = {};
+    for (const sub of subjects) {
+      if (!semesterMap[sub.semester]) {
+        semesterMap[sub.semester] = {
+          semester: sub.semester,
+          academicYear: sub.academicYear,
+          subjects: [],
+          totalClasses: 0,
+          attendedClasses: 0,
+        };
+      }
+      semesterMap[sub.semester].subjects.push(sub);
+      semesterMap[sub.semester].totalClasses += sub.totalEligibleClasses;
+      semesterMap[sub.semester].attendedClasses += sub.attendedClasses;
+    }
+
+    const semesters = Object.values(semesterMap).map((grp: any) => ({
+      semester: grp.semester,
+      academicYear: grp.academicYear,
+      totalClasses: grp.totalClasses,
+      attendedClasses: grp.attendedClasses,
+      overallPercentage: grp.totalClasses > 0 ? Number(((grp.attendedClasses / grp.totalClasses) * 100).toFixed(1)) : 0,
+      subjects: grp.subjects,
+    }));
+
     return {
       overallPercentage,
-      totalClasses: totalSessions,
-      attendedClasses: attendedSessions,
-      absentClasses: absentSessions,
+      totalClasses,
+      attendedClasses,
+      absentClasses,
       excusedClasses: 0,
       overall: {
         percentage: overallPercentage,
-        totalClasses: totalSessions,
-        attendedClasses: attendedSessions,
-        absentClasses: absentSessions,
+        totalClasses,
+        attendedClasses,
+        absentClasses,
       },
-      subjects: subjectBreakdown,
+      subjects,
+      semesters,
       isAdmissionApplicant: false,
+      statusNotice:
+        subjects.length === 0
+          ? 'Attendance has not yet been released by the HOD for your semester. Officially released attendance will appear here once published.'
+          : undefined,
     };
   }
 
   /**
    * Attendance History: Filterable date-wise attendance session records
+   * Enforces that session history is only visible for subjects whose attendance has been officially released.
    */
   async getStudentAttendanceHistory(
     userId: string,
@@ -506,10 +529,40 @@ class StudentDashboardService {
       };
     }
 
-    const whereClause: any = { studentId: student.id };
+    // Enforce that session history is only visible for subjects whose attendance has been officially released by HOD
+    const releasedSubjectIds = (
+      await StudentReleasedAcademicData.findAll({
+        where: { studentId: student.id, releaseType: 'ATTENDANCE' },
+        attributes: ['subjectId'],
+      })
+    ).map((r) => r.subjectId);
+
+    if (releasedSubjectIds.length === 0) {
+      return {
+        history: [],
+        totalCount: 0,
+        totalRecords: 0,
+        isAdmissionApplicant: false,
+        statusNotice: 'Attendance records have not been released by the HOD yet.',
+      };
+    }
+
+    const whereClause: any = {
+      studentId: student.id,
+      subjectId: { [Op.in]: releasedSubjectIds },
+    };
 
     if (filters && filters.subjectId && filters.subjectId !== 'ALL') {
-      whereClause.subjectId = filters.subjectId;
+      if (releasedSubjectIds.includes(filters.subjectId)) {
+        whereClause.subjectId = filters.subjectId;
+      } else {
+        return {
+          history: [],
+          totalCount: 0,
+          totalRecords: 0,
+          isAdmissionApplicant: false,
+        };
+      }
     }
 
     if (filters.startDate && filters.endDate) {
@@ -549,7 +602,9 @@ class StudentDashboardService {
   }
 
   /**
-   * Marks / CIE Results: STRICTLY returns ONLY published marks (isPublished = true)
+   * Marks / CIE Results: STRICTLY returns ONLY published marks (isPublished = true / HOD release)
+   * Exact Table Column Format:
+   * | Subject Name | CIE-1 Marks | CIE-2 Marks | Assignment Marks | Final Internal Marks | External Marks | Status |
    */
   async getStudentPublishedMarks(userId: string, requestedSemester?: number): Promise<any> {
     const { student, admission, isAdmissionApplicant } = await this.resolveStudentContext(userId);
@@ -559,6 +614,7 @@ class StudentDashboardService {
       return {
         semester: sem,
         academicYear: admission?.academicYear || '2026-27',
+        semesters: [],
         subjects: [],
         marksBySubject: [],
         isAdmissionApplicant: true,
@@ -566,165 +622,214 @@ class StudentDashboardService {
       };
     }
 
-    const semester = requestedSemester ? Number(requestedSemester) : student.semester;
-
-    // Fetch all academic subjects for this semester
-    const subjects = await Subject.findAll({
-      where: {
-        semester,
-        [Op.or]: [
-          { departmentId: student.departmentId },
-          { departmentId: null },
-        ],
-      },
-      attributes: ['id', 'name', 'code', 'credits'],
-      order: [['code', 'ASC']],
-    });
-
-    // Fetch published assessments for this semester
-    const publishedConfigs = await AssessmentConfiguration.findAll({
-      where: {
-        semester,
-        isPublished: true,
-      },
-      attributes: ['id', 'subjectId', 'assessmentType', 'maximumMarks', 'publishedAt', 'status', 'isPublished'],
-    });
-
-    const publishedConfigIds = publishedConfigs.map((c) => c.id);
-    const summaries = publishedConfigIds.length > 0
-      ? await StudentAssessmentSummary.findAll({
-          where: {
-            assessmentConfigurationId: { [Op.in]: publishedConfigIds },
-            studentId: student.id,
-          },
-        })
-      : [];
-
-    const summaryMap: Record<string, StudentAssessmentSummary> = {};
-    for (const s of summaries) {
-      summaryMap[s.assessmentConfigurationId] = s;
+    // 1. Fetch only officially released marks from StudentReleasedAcademicData
+    const marksWhere: any = {
+      studentId: student.id,
+      releaseType: 'MARKS',
+    };
+    if (requestedSemester) {
+      marksWhere.semester = Number(requestedSemester);
     }
 
-    // Map by subject ID
-    const subjectMarksList = subjects.map((subj) => {
-      const cie1Config = publishedConfigs.find(
-        (c) => c.subjectId === subj.id && c.assessmentType === 'CIE1'
-      );
-      const cie2Config = publishedConfigs.find(
-        (c) => c.subjectId === subj.id && c.assessmentType === 'CIE2'
-      );
-
-      const cie1Summary = cie1Config ? summaryMap[cie1Config.id] : null;
-      const cie2Summary = cie2Config ? summaryMap[cie2Config.id] : null;
-
-      const cie1Data = cie1Config && cie1Summary
-        ? {
-            marksObtained: Number(cie1Summary.finalCieMarks),
-            maximumMarks: Number(cie1Config.maximumMarks),
-            percentage: Number(cie1Summary.percentage),
-            publishedAt: cie1Config.publishedAt,
-            status: 'PUBLISHED',
-          }
-        : cie1Config
-        ? {
-            marksObtained: 0,
-            maximumMarks: Number(cie1Config.maximumMarks),
-            percentage: 0,
-            publishedAt: cie1Config.publishedAt,
-            status: 'PUBLISHED',
-          }
-        : null;
-
-      const cie2Data = cie2Config && cie2Summary
-        ? {
-            marksObtained: Number(cie2Summary.finalCieMarks),
-            maximumMarks: Number(cie2Config.maximumMarks),
-            percentage: Number(cie2Summary.percentage),
-            publishedAt: cie2Config.publishedAt,
-            status: 'PUBLISHED',
-          }
-        : cie2Config
-        ? {
-            marksObtained: 0,
-            maximumMarks: Number(cie2Config.maximumMarks),
-            percentage: 0,
-            publishedAt: cie2Config.publishedAt,
-            status: 'PUBLISHED',
-          }
-        : null;
-
-      const isFullyPublished = Boolean(cie1Data && cie2Data);
-      const isPartiallyPublished = Boolean(cie1Data || cie2Data);
-
-      // Detailed assessment items for StudentMarksPage
-      const assessments: Array<{
-        id: string;
-        assessmentName: string;
-        assessmentType: string;
-        maximumMarks: number;
-        marksObtained: number | null;
-        percentage: number | null;
-        isPublished: boolean;
-        publishedAt: string | null;
-        status: string;
-      }> = [];
-
-      if (cie1Config && cie1Config.isPublished) {
-        assessments.push({
-          id: cie1Config.id,
-          assessmentName: 'CIE 1',
-          assessmentType: 'CIE1',
-          maximumMarks: Number(cie1Config.maximumMarks),
-          marksObtained: cie1Summary ? Number(cie1Summary.finalCieMarks) : null,
-          percentage: cie1Summary ? Number(cie1Summary.percentage) : null,
-          isPublished: true,
-          publishedAt: cie1Config.publishedAt ? cie1Config.publishedAt.toISOString() : null,
-          status: 'PUBLISHED',
-        });
-      }
-
-      if (cie2Config && cie2Config.isPublished) {
-        assessments.push({
-          id: cie2Config.id,
-          assessmentName: 'CIE 2',
-          assessmentType: 'CIE2',
-          maximumMarks: Number(cie2Config.maximumMarks),
-          marksObtained: cie2Summary ? Number(cie2Summary.finalCieMarks) : null,
-          percentage: cie2Summary ? Number(cie2Summary.percentage) : null,
-          isPublished: true,
-          publishedAt: cie2Config.publishedAt ? cie2Config.publishedAt.toISOString() : null,
-          status: 'PUBLISHED',
-        });
-      }
-
-      return {
-        subjectId: subj.id,
-        subjectCode: subj.code,
-        subjectName: subj.name,
-        semester,
-        academicYear: student.currentAcademicYear || '2026-27',
-        credits: subj.credits,
-        cie1: cie1Data,
-        cie2: cie2Data,
-        assessments,
-        publicationStatus: isFullyPublished
-          ? 'FULLY_PUBLISHED'
-          : isPartiallyPublished
-          ? 'PARTIALLY_PUBLISHED'
-          : 'NOT_PUBLISHED',
-        statusNotice: isFullyPublished
-          ? 'All CIE Results Published'
-          : isPartiallyPublished
-          ? 'Partial Results Published'
-          : 'Results Not Yet Published',
-      };
+    const releasedMarks = await StudentReleasedAcademicData.findAll({
+      where: marksWhere,
+      include: [
+        {
+          model: Subject,
+          as: 'subject',
+          attributes: ['id', 'name', 'code', 'credits', 'semester'],
+        },
+      ],
+      order: [
+        ['semester', 'ASC'],
+        ['createdAt', 'ASC'],
+      ],
     });
 
+    // 2. Identify all relevant semesters
+    const activeSemesters = Array.from(
+      new Set([
+        ...(requestedSemester ? [Number(requestedSemester)] : [student.semester]),
+        ...releasedMarks.map((r) => r.semester),
+      ])
+    ).sort((a, b) => a - b);
+
+    // 3. Build semester-wise tables
+    const semesterTables = await Promise.all(
+      activeSemesters.map(async (sem) => {
+        // Find academic subjects for this semester
+        const releasedSubjectIdsForSem = releasedMarks
+          .filter((r) => r.semester === sem)
+          .map((r) => r.subjectId);
+
+        const subjectWhere: any = {
+          semester: sem,
+        };
+
+        if (sem === 1 || sem === 2) {
+          // Applied Science handles semesters 1 & 2 across branches
+        } else {
+          subjectWhere[Op.or] = [
+            { departmentId: student.departmentId },
+            { departmentId: null },
+            ...(releasedSubjectIdsForSem.length > 0 ? [{ id: { [Op.in]: releasedSubjectIdsForSem } }] : []),
+          ];
+        }
+
+        const subjects = await Subject.findAll({
+          where: subjectWhere,
+          attributes: ['id', 'name', 'code', 'credits', 'semester'],
+          order: [['code', 'ASC']],
+        });
+
+        const rows = subjects.map((subj) => {
+          const subMarks = releasedMarks.filter(
+            (r) => r.subjectId === subj.id && r.semester === sem
+          );
+
+          const cie1Rel = subMarks.find((r) => r.assessmentType === 'CIE1');
+          const cie2Rel = subMarks.find((r) => r.assessmentType === 'CIE2');
+          const assignmentRel = subMarks.find((r) => r.assessmentType === 'ASSIGNMENT');
+          const finalInternalRel = subMarks.find((r) => r.assessmentType === 'FINAL_INTERNAL');
+          const externalRel = subMarks.find((r) => r.assessmentType === 'EXTERNAL');
+
+          const releasedAssessments = [cie1Rel, cie2Rel, assignmentRel, finalInternalRel, externalRel].filter(Boolean);
+          const count = releasedAssessments.length;
+
+          let status = 'NOT_RELEASED';
+          let statusLabel = 'Not Released';
+          if (count === 5) {
+            status = 'FULLY_RELEASED';
+            statusLabel = 'Fully Released';
+          } else if (count > 0) {
+            status = 'PARTIALLY_RELEASED';
+            statusLabel = 'Partially Released';
+          }
+
+          // Exact column representations:
+          // Unreleased columns remain strictly null / "Not Released"
+          const cie1Display = cie1Rel ? `${cie1Rel.marksObtained !== null ? cie1Rel.marksObtained : 0} / ${cie1Rel.maxMarks || 50}` : 'Not Released';
+          const cie2Display = cie2Rel ? `${cie2Rel.marksObtained !== null ? cie2Rel.marksObtained : 0} / ${cie2Rel.maxMarks || 50}` : 'Not Released';
+          const assignmentDisplay = assignmentRel ? `${assignmentRel.marksObtained !== null ? assignmentRel.marksObtained : 0} / ${assignmentRel.maxMarks || 25}` : 'Not Released';
+          const finalInternalDisplay = finalInternalRel ? `${finalInternalRel.marksObtained !== null ? finalInternalRel.marksObtained : 0} / ${finalInternalRel.maxMarks || 50}` : 'Not Released';
+          const externalDisplay = externalRel ? `${externalRel.marksObtained !== null ? externalRel.marksObtained : 0} / ${externalRel.maxMarks || 100}` : 'Not Released';
+
+          // Legacy assessment array for backwards compatibility
+          const assessments: any[] = [];
+          if (cie1Rel) {
+            assessments.push({
+              id: cie1Rel.id,
+              assessmentName: 'CIE 1',
+              assessmentType: 'CIE1',
+              maximumMarks: Number(cie1Rel.maxMarks || 50),
+              marksObtained: cie1Rel.marksObtained !== null ? Number(cie1Rel.marksObtained) : 0,
+              percentage: Number(cie1Rel.percentage || 0),
+              isPublished: true,
+              publishedAt: cie1Rel.createdAt.toISOString(),
+              status: 'RELEASED',
+            });
+          }
+          if (cie2Rel) {
+            assessments.push({
+              id: cie2Rel.id,
+              assessmentName: 'CIE 2',
+              assessmentType: 'CIE2',
+              maximumMarks: Number(cie2Rel.maxMarks || 50),
+              marksObtained: cie2Rel.marksObtained !== null ? Number(cie2Rel.marksObtained) : 0,
+              percentage: Number(cie2Rel.percentage || 0),
+              isPublished: true,
+              publishedAt: cie2Rel.createdAt.toISOString(),
+              status: 'RELEASED',
+            });
+          }
+          if (assignmentRel) {
+            assessments.push({
+              id: assignmentRel.id,
+              assessmentName: 'Assignment',
+              assessmentType: 'ASSIGNMENT',
+              maximumMarks: Number(assignmentRel.maxMarks || 25),
+              marksObtained: assignmentRel.marksObtained !== null ? Number(assignmentRel.marksObtained) : 0,
+              percentage: Number(assignmentRel.percentage || 0),
+              isPublished: true,
+              publishedAt: assignmentRel.createdAt.toISOString(),
+              status: 'RELEASED',
+            });
+          }
+          if (finalInternalRel) {
+            assessments.push({
+              id: finalInternalRel.id,
+              assessmentName: 'Final Internal Marks',
+              assessmentType: 'FINAL_INTERNAL',
+              maximumMarks: Number(finalInternalRel.maxMarks || 50),
+              marksObtained: finalInternalRel.marksObtained !== null ? Number(finalInternalRel.marksObtained) : 0,
+              percentage: Number(finalInternalRel.percentage || 0),
+              isPublished: true,
+              publishedAt: finalInternalRel.createdAt.toISOString(),
+              status: 'RELEASED',
+            });
+          }
+          if (externalRel) {
+            assessments.push({
+              id: externalRel.id,
+              assessmentName: 'External Marks',
+              assessmentType: 'EXTERNAL',
+              maximumMarks: Number(externalRel.maxMarks || 100),
+              marksObtained: externalRel.marksObtained !== null ? Number(externalRel.marksObtained) : 0,
+              percentage: Number(externalRel.percentage || 0),
+              isPublished: true,
+              publishedAt: externalRel.createdAt.toISOString(),
+              status: 'RELEASED',
+            });
+          }
+
+          return {
+            subjectId: subj.id,
+            subjectCode: subj.code,
+            subjectName: subj.name,
+            credits: subj.credits,
+            semester: sem,
+            academicYear: student.currentAcademicYear || '2026-27',
+            // Table-specific columns
+            cie1Marks: cie1Rel ? (cie1Rel.marksObtained !== null ? Number(cie1Rel.marksObtained) : 0) : null,
+            cie2Marks: cie2Rel ? (cie2Rel.marksObtained !== null ? Number(cie2Rel.marksObtained) : 0) : null,
+            assignmentMarks: assignmentRel ? (assignmentRel.marksObtained !== null ? Number(assignmentRel.marksObtained) : 0) : null,
+            finalInternalMarks: finalInternalRel ? (finalInternalRel.marksObtained !== null ? Number(finalInternalRel.marksObtained) : 0) : null,
+            externalMarks: externalRel ? (externalRel.marksObtained !== null ? Number(externalRel.marksObtained) : 0) : null,
+            // Display strings
+            cie1Display,
+            cie2Display,
+            assignmentDisplay,
+            finalInternalDisplay,
+            externalDisplay,
+            status,
+            statusLabel,
+            // Objects
+            cie1: cie1Rel ? { marksObtained: Number(cie1Rel.marksObtained || 0), maximumMarks: Number(cie1Rel.maxMarks || 50) } : null,
+            cie2: cie2Rel ? { marksObtained: Number(cie2Rel.marksObtained || 0), maximumMarks: Number(cie2Rel.maxMarks || 50) } : null,
+            assessments,
+            publicationStatus: count === 5 ? 'FULLY_PUBLISHED' : count > 0 ? 'PARTIALLY_PUBLISHED' : 'NOT_PUBLISHED',
+          };
+        });
+
+        return {
+          semester: sem,
+          academicYear: student.currentAcademicYear || '2026-27',
+          rows,
+          subjects: rows,
+        };
+      })
+    );
+
+    const currentSemTable = semesterTables.find(
+      (st) => st.semester === (requestedSemester ? Number(requestedSemester) : student.semester)
+    ) || semesterTables[0];
+
     return {
-      semester,
+      semester: requestedSemester ? Number(requestedSemester) : student.semester,
       academicYear: student.currentAcademicYear || '2026-27',
-      subjects: subjectMarksList,
-      marksBySubject: subjectMarksList,
+      semesters: semesterTables,
+      subjects: currentSemTable?.rows || [],
+      marksBySubject: currentSemTable?.rows || [],
       isAdmissionApplicant: false,
     };
   }
@@ -792,10 +897,45 @@ class StudentDashboardService {
         currentSemester: currentSem,
         section: currentSection,
         academicYear: currentAy,
-        previousSchool: student?.previousCollege || acd.pucCollegeName || acd.diplomaCollegeName || acd.tenthSchoolName || 'N/A',
-        previousBoard: acd.pucBoard || acd.tenthBoard || 'State Board',
-        previousPercentage: acd.pucPercentage || acd.tenthPercentage || 'N/A',
-        rank: admission?.cetNumber || 'N/A',
+        previousSchool: student?.previousCollege || acd.twelfthSchool || acd.diplomaUniversity || acd.tenthSchool || 'N/A',
+        previousBoard: acd.twelfthBoard || acd.tenthBoard || 'State Board',
+        previousPercentage: acd.twelfthPercentage || acd.diplomaPercentage || acd.tenthPercentage || 'N/A',
+        rank: acd.cetRank ? `#${acd.cetRank}` : admission?.cetNumber || 'N/A',
+      },
+      qualifications: {
+        tenth: {
+          school: acd.tenthSchool || 'N/A',
+          board: acd.tenthBoard || 'State Board',
+          passingYear: acd.tenthPassingYear || 'N/A',
+          registerNumber: acd.tenthRegisterNumber || 'N/A',
+          marksObtained: acd.tenthMarksObtained ?? null,
+          maxMarks: acd.tenthMaxMarks ?? null,
+          percentage: acd.tenthPercentage ? `${acd.tenthPercentage}%` : 'N/A',
+          attempts: acd.tenthAttempts || 1,
+        },
+        twelfth: acd.twelfthSchool ? {
+          school: acd.twelfthSchool,
+          board: acd.twelfthBoard || 'Karnataka Pre-University Board',
+          passingYear: acd.twelfthPassingYear || 'N/A',
+          registerNumber: acd.twelfthRegisterNumber || 'N/A',
+          stream: acd.twelfthStream || 'Science',
+          percentage: acd.twelfthPercentage ? `${acd.twelfthPercentage}%` : 'N/A',
+          physicsMarks: acd.physicsMarks ?? null,
+          mathsMarks: acd.mathsMarks ?? null,
+          chemistryMarks: acd.chemistryMarks ?? null,
+        } : null,
+        diploma: acd.diplomaUniversity ? {
+          university: acd.diplomaUniversity,
+          year: acd.diplomaYear || 'N/A',
+          registerNumber: acd.diplomaRegisterNumber || 'N/A',
+          percentage: acd.diplomaPercentage ? `${acd.diplomaPercentage}%` : 'N/A',
+        } : null,
+        entranceExam: {
+          cetNumber: admission?.cetNumber || (student as any)?.cetNumber || 'N/A',
+          dcetNumber: admission?.dcetNumber || (student as any)?.dcetNumber || null,
+          cetScore: acd.cetScore ?? null,
+          cetRank: acd.cetRank ? `#${acd.cetRank}` : null,
+        },
       },
       contact: {
         studentMobile: u.phone || user.phone || 'N/A',
@@ -831,7 +971,7 @@ class StudentDashboardService {
         motherEmail: prd.motherEmail || 'N/A',
         guardianName: prd.guardianName || 'N/A',
         guardianPhone: prd.guardianPhone || 'N/A',
-        annualIncome: prd.annualIncome ? `₹${Number(prd.annualIncome).toLocaleString('en-IN')}` : 'N/A',
+        annualIncome: (prd.fatherAnnualIncome || prd.annualIncome) ? `₹${Number(prd.fatherAnnualIncome || prd.annualIncome).toLocaleString('en-IN')}` : 'N/A',
       },
       // Backwards compatibility mappings for older components:
       personal: {
@@ -861,7 +1001,7 @@ class StudentDashboardService {
         motherOccupation: prd.motherOccupation || 'N/A',
         guardianName: prd.guardianName || null,
         guardianPhone: prd.guardianPhone || null,
-        annualIncome: prd.annualIncome ? `₹${Number(prd.annualIncome).toLocaleString('en-IN')}` : 'N/A',
+        annualIncome: (prd.fatherAnnualIncome || prd.annualIncome) ? `₹${Number(prd.fatherAnnualIncome || prd.annualIncome).toLocaleString('en-IN')}` : 'N/A',
       },
       academicAndAdmission: {
         usn: currentUsn,

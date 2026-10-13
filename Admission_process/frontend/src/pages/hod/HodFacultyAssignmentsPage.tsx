@@ -28,6 +28,9 @@ import {
   Calendar,
   ArrowLeft,
   UserX,
+  ArrowRight,
+  Sparkles,
+  GraduationCap,
 } from 'lucide-react';
 import { RootState } from '../../store';
 import hodService, {
@@ -90,7 +93,15 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
 
   // Branch Selection State (Main view)
   const [branchesList, setBranchesList] = useState<HodBranchOverviewItem[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<string>('CSE');
+  const [selectedBranch, setSelectedBranch] = useState<string>(isAppliedScience ? 'CSE' : (deptCode || 'CSE'));
+
+  const currentBranchCode = isAppliedScience ? selectedBranch : deptCode;
+
+  useEffect(() => {
+    if (!isAppliedScience && deptCode) {
+      setSelectedBranch(deptCode);
+    }
+  }, [deptCode, isAppliedScience]);
 
   // URL Query Parameters Sync
   const [searchParams, setSearchParams] = useSearchParams();
@@ -721,7 +732,7 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
     let partial = 0;
     let unassigned = 0;
 
-    const currentBranchSections = departmentSectionsMap[selectedBranch] || [];
+    const currentBranchSections = departmentSectionsMap[currentBranchCode] || departmentSectionsMap[selectedBranch] || [];
     const requiredSectionsCount = currentBranchSections.length;
 
     filteredSubjects.forEach((subj) => {
@@ -740,7 +751,7 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
       partialSubjectsCount: partial,
       unassignedSubjectsCount: unassigned,
     };
-  }, [filteredSubjects, subjectAssignmentsMap, departmentSectionsMap, selectedBranch]);
+  }, [filteredSubjects, subjectAssignmentsMap, departmentSectionsMap, currentBranchCode, selectedBranch]);
 
   // Selected Core Department Display Name
   const selectedCoreDeptObj = useMemo(() => {
@@ -913,8 +924,14 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Subjects</p>
-            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{totalSubjectsCount}</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Semester {selectedSemester} ({selectedBranch})</p>
+            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2) ? '0' : totalSubjectsCount}
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2)
+                ? 'Handled by Applied Science'
+                : `Semester ${selectedSemester} (${currentBranchCode})`}
+            </p>
           </div>
           <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
             <BookOpen className="w-6 h-6" />
@@ -924,8 +941,14 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Assigned Subjects</p>
-            <h3 className="text-2xl font-extrabold text-emerald-950 mt-1">{assignedSubjectsCount}</h3>
-            <p className="text-xs text-emerald-600 mt-0.5">Active teaching allocations</p>
+            <h3 className="text-2xl font-extrabold text-emerald-950 mt-1">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2) ? '0' : assignedSubjectsCount}
+            </h3>
+            <p className="text-xs text-emerald-600 mt-0.5">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2)
+                ? 'Handled by AS Dept'
+                : 'Active teaching allocations'}
+            </p>
           </div>
           <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
             <CheckCircle2 className="w-6 h-6" />
@@ -935,8 +958,14 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Partially Covered</p>
-            <h3 className="text-2xl font-extrabold text-amber-950 mt-1">{partialSubjectsCount}</h3>
-            <p className="text-xs text-amber-600 mt-0.5">Some sections allocated</p>
+            <h3 className="text-2xl font-extrabold text-amber-950 mt-1">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2) ? '0' : partialSubjectsCount}
+            </h3>
+            <p className="text-xs text-amber-600 mt-0.5">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2)
+                ? 'Handled by AS Dept'
+                : 'Some sections allocated'}
+            </p>
           </div>
           <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
             <AlertCircle className="w-6 h-6" />
@@ -946,8 +975,14 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-rose-600 uppercase tracking-wider">Unassigned</p>
-            <h3 className="text-2xl font-extrabold text-rose-950 mt-1">{unassignedSubjectsCount}</h3>
-            <p className="text-xs text-rose-600 mt-0.5">Needs faculty allocation</p>
+            <h3 className="text-2xl font-extrabold text-rose-950 mt-1">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2) ? '0' : unassignedSubjectsCount}
+            </h3>
+            <p className="text-xs text-rose-600 mt-0.5">
+              {!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2)
+                ? 'Handled by AS Dept'
+                : 'Needs faculty allocation'}
+            </p>
           </div>
           <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
             <Clock className="w-6 h-6" />
@@ -960,6 +995,7 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
         <div className="flex space-x-2 min-w-max">
           {(isAppliedScience ? [1, 2] : [1, 2, 3, 4, 5, 6, 7, 8]).map((sem) => {
             const isActive = selectedSemester === sem;
+            const isAsManaged = !isAppliedScience && (sem === 1 || sem === 2);
             return (
               <button
                 key={sem}
@@ -976,6 +1012,15 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
                 }`}
               >
                 <span>Semester {sem}</span>
+                {isAsManaged && (
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                      isActive ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    AS
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1011,7 +1056,7 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
           </div>
 
           <div className="text-xs text-slate-500 font-medium px-3 py-2 bg-slate-100 rounded-xl">
-            Showing <span className="font-bold text-slate-900">{totalSubjectsCount}</span> subjects
+            Showing <span className="font-bold text-slate-900">{!isAppliedScience && (selectedSemester === 1 || selectedSemester === 2) ? 0 : totalSubjectsCount}</span> subjects
           </div>
         </div>
       </div>
@@ -1022,12 +1067,28 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
           <RefreshCw className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-3" />
           <p className="text-slate-600 font-medium text-sm">Loading master subjects and section allocations...</p>
         </div>
+      ) : !isAppliedScience && (selectedSemester === 1 || selectedSemester === 2) ? (
+        <div className="bg-white p-12 md:p-16 rounded-2xl border border-indigo-100 shadow-xs text-center max-w-2xl mx-auto">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4 border border-indigo-100/80 shadow-xs">
+            <Building2 className="w-8 h-8" />
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 mb-2">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            Applied Science Department
+          </span>
+          <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            Handled by Applied Science Department
+          </h3>
+          <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-lg mx-auto">
+            1st and 2nd Semester subjects and teaching allocations for <strong>{deptName} ({currentBranchCode})</strong> are handled by the <strong>Applied Science (AS) Department</strong>.
+          </p>
+        </div>
       ) : filteredSubjects.length === 0 ? (
         <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center">
           <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="text-lg font-bold text-slate-800">No Subjects Found</h3>
           <p className="text-sm text-slate-500 mt-1">
-            No active master subjects configured for Semester {selectedSemester} ({selectedBranch})
+            No active master subjects configured for Semester {selectedSemester} ({currentBranchCode})
             {isAppliedScience ? ` • ${selectedCycle === 'P_CYCLE' ? 'P Cycle' : 'C Cycle'}` : ''}.
           </p>
         </div>
@@ -1081,10 +1142,10 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
                           <Clock className="w-3.5 h-3.5" />
                           <span>Unassigned (Needs Faculty)</span>
                         </span>
-                      ) : (departmentSectionsMap[selectedBranch]?.length > 0 && subjectAllocations.length < departmentSectionsMap[selectedBranch]?.length) ? (
+                      ) : ((departmentSectionsMap[currentBranchCode] || departmentSectionsMap[selectedBranch])?.length > 0 && subjectAllocations.length < (departmentSectionsMap[currentBranchCode] || departmentSectionsMap[selectedBranch])?.length) ? (
                         <span className="inline-flex items-center space-x-1.5 text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
                           <AlertCircle className="w-3.5 h-3.5" />
-                          <span>Partially Covered ({subjectAllocations.length}/{departmentSectionsMap[selectedBranch]?.length} Sections)</span>
+                          <span>Partially Covered ({subjectAllocations.length}/{(departmentSectionsMap[currentBranchCode] || departmentSectionsMap[selectedBranch])?.length} Sections)</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center space-x-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">

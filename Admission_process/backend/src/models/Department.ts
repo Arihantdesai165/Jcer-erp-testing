@@ -8,6 +8,7 @@ class Department extends Model {
   public type!: 'STANDARD' | 'SEMESTER_HANDLING';
   public handlingSemesters!: number[] | null;
   public activeSchemeId!: string | null;
+  public attendanceThreshold!: number;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -43,6 +44,11 @@ Department.init(
       type: DataTypes.STRING(30),
       allowNull: true,
       defaultValue: null,
+    },
+    attendanceThreshold: {
+      type: DataTypes.DOUBLE,
+      allowNull: false,
+      defaultValue: 85.0,
     },
   },
   {

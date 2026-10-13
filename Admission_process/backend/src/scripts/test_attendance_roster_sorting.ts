@@ -1,5 +1,5 @@
 import db from '../config/database';
-import { getEnrolledStudentsForAssignment, facultyService } from '../services/faculty.service';
+import { getEnrolledStudentsForAssignment, facultyService, compareStudentsByUsnOrName, isAssignedUsn } from '../services/faculty.service';
 import { attendanceExcelService } from '../services/attendanceExcel.service';
 import Student from '../models/Student';
 import User from '../models/User';
@@ -10,7 +10,7 @@ import Section from '../models/Section';
 
 async function runTests() {
   console.log('================================================================');
-  console.log('🚀 RUNNING ATTENDANCE ROSTER SEMESTER-SPECIFIC ORDERING SUITE');
+  console.log('🚀 RUNNING ATTENDANCE ROSTER USN / NAME SORTING TEST SUITE');
   console.log('================================================================\n');
 
   await db.authenticate();
@@ -31,19 +31,21 @@ async function runTests() {
     console.log(`  Total enrolled students: ${sem1Students.length}`);
     
     if (sem1Students.length > 1) {
-      // Check if student names are in A-Z order
-      let isAlphabetical = true;
+      let isSortedProperly = true;
       for (let i = 0; i < sem1Students.length - 1; i++) {
-        const nameA = sem1Students[i].user ? `${sem1Students[i].user.firstName || ''} ${sem1Students[i].user.lastName || ''}`.trim().toLowerCase() : '';
-        const nameB = sem1Students[i + 1].user ? `${sem1Students[i + 1].user.firstName || ''} ${sem1Students[i + 1].user.lastName || ''}`.trim().toLowerCase() : '';
-        if (nameA.localeCompare(nameB) > 0) {
-          isAlphabetical = false;
-          console.error(`  ❌ Order violation at index ${i}: "${nameA}" should be before "${nameB}"`);
+        const sA = sem1Students[i];
+        const sB = sem1Students[i + 1];
+        const nameA = sA.user ? `${sA.user.firstName || ''} ${sA.user.lastName || ''}`.trim() : '';
+        const nameB = sB.user ? `${sB.user.firstName || ''} ${sB.user.lastName || ''}`.trim() : '';
+        const cmp = compareStudentsByUsnOrName(sA.usn, sB.usn, nameA, nameB, sA.rollNumber, sB.rollNumber);
+        if (cmp > 0) {
+          isSortedProperly = false;
+          console.error(`  ❌ Order violation at index ${i}: "${sA.usn || nameA}" should be before "${sB.usn || nameB}"`);
           break;
         }
       }
-      if (isAlphabetical) {
-        console.log(`  ✅ [PASS] Semester 1 roster is strictly ordered by Student Name A-Z (case-insensitive).`);
+      if (isSortedProperly) {
+        console.log(`  ✅ [PASS] Semester 1 roster is correctly ordered (USN ASC when assigned, Name A-Z fallback).`);
         console.log(`  Sample (first 5):`);
         sem1Students.slice(0, 5).forEach((s, idx) => {
           const sName = s.user ? `${s.user.firstName || ''} ${s.user.lastName || ''}`.trim() : 'Student';
@@ -72,17 +74,20 @@ async function runTests() {
     console.log(`  Total enrolled students: ${seniorStudents.length}`);
     
     if (seniorStudents.length > 1) {
-      let isUsnAsc = true;
+      let isSortedProperly = true;
       for (let i = 0; i < seniorStudents.length - 1; i++) {
-        const usnA = (seniorStudents[i].usn || seniorStudents[i].enrollmentNumber || '').trim().toLowerCase();
-        const usnB = (seniorStudents[i + 1].usn || seniorStudents[i + 1].enrollmentNumber || '').trim().toLowerCase();
-        if (usnA.localeCompare(usnB) > 0) {
-          isUsnAsc = false;
-          console.error(`  ❌ Order violation at index ${i}: USN "${usnA}" should be before "${usnB}"`);
+        const sA = seniorStudents[i];
+        const sB = seniorStudents[i + 1];
+        const nameA = sA.user ? `${sA.user.firstName || ''} ${sA.user.lastName || ''}`.trim() : '';
+        const nameB = sB.user ? `${sB.user.firstName || ''} ${sB.user.lastName || ''}`.trim() : '';
+        const cmp = compareStudentsByUsnOrName(sA.usn, sB.usn, nameA, nameB, sA.rollNumber, sB.rollNumber);
+        if (cmp > 0) {
+          isSortedProperly = false;
+          console.error(`  ❌ Order violation at index ${i}: "${sA.usn || nameA}" should be before "${sB.usn || nameB}"`);
           break;
         }
       }
-      if (isUsnAsc) {
+      if (isSortedProperly) {
         console.log(`  ✅ [PASS] Semester ${semSeniorAssignment.semester} roster is strictly ordered by USN ASC.`);
         console.log(`  Sample (first 5):`);
         seniorStudents.slice(0, 5).forEach((s, idx) => {
@@ -95,75 +100,76 @@ async function runTests() {
     }
   }
 
-  // TEST 3: Mock In-Memory Array Verification for Edge Cases
-  console.log('\n📦 TEST 3: Edge Case Verification (Tie-breakers, Mixed Casing, Symbols)');
+  // TEST 3: Mock In-Memory Array Verification for Assigned USNs vs Unassigned USNs
+  console.log('\n📦 TEST 3: Assigned USNs Sorting Verification (The User Reported Case)');
   
-  // Simulated Sem 1 batch
-  const mockSem1Students = [
-    { usn: '1JC26CS002', user: { firstName: 'Yuvaraj', lastName: 'Talawar' } },
-    { usn: '1JC26CS001', user: { firstName: 'ananya', lastName: 'Deshmukh' } },
-    { usn: 'JCER-2026-CSE-00003', user: { firstName: 'Cat', lastName: 'Don' } },
-    { usn: 'SEM1-TEST-041', user: { firstName: 'SEM1', lastName: 'Student041' } },
-    { usn: 'SEM1-TEST-040', user: { firstName: 'SEM1', lastName: 'Student040' } },
-    { usn: '1JC26CS015', user: { firstName: 'Aarav', lastName: 'Kumar' } },
-    { usn: '1JC26CS005', user: { firstName: 'Aarav', lastName: 'Kumar' } },
+  // Real test case from user's screenshot where Asha Badnaik (2JR26CV008) was improperly before Rakshit Desai (2JR26CV002)
+  const userCaseStudents = [
+    { usn: '2JR26CV001', name: 'Arihant Desai' },
+    { usn: '2JR26CV008', name: 'Asha Badnaik' },
+    { usn: '2JR26CV006', name: 'Charanraj Jadhav' },
+    { usn: '2JR26CV005', name: 'Madhura Lohar' },
+    { usn: '2JR26CV011', name: 'Mallavva Nandi' },
+    { usn: '2JR26CV012', name: 'Nihal Dandagalkar' },
+    { usn: '2JR26CV002', name: 'Rakshit Desai' },
+    { usn: '2JR26CV003', name: 'Roopa Kajagar' },
+    { usn: '2JR26CV007', name: 'Sanvi Belakud' },
+    { usn: '2JR26CV010', name: 'Shravan Teradale' },
+    { usn: '2JR26CV009', name: 'Shreya Raghavendra Simpi' },
+    { usn: '2JR26CV004', name: 'soniya Figer' },
   ];
 
-  const sortedSem1 = [...mockSem1Students].sort((a: any, b: any) => {
-    const nameA = a.user ? `${a.user.firstName || ''} ${a.user.lastName || ''}`.trim().toLowerCase() : '';
-    const nameB = b.user ? `${b.user.firstName || ''} ${b.user.lastName || ''}`.trim().toLowerCase() : '';
-    const cmp = nameA.localeCompare(nameB);
-    if (cmp !== 0) return cmp;
-    const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-    const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-    return usnA.localeCompare(usnB);
-  });
+  const sortedUserCase = [...userCaseStudents].sort((a, b) =>
+    compareStudentsByUsnOrName(a.usn, b.usn, a.name, b.name)
+  );
 
-  console.log('  Sorted Sem 1 results:');
-  sortedSem1.forEach((s, idx) => console.log(`    ${idx + 1}. ${s.user.firstName} ${s.user.lastName} (${s.usn})`));
+  console.log('  Sorted user case students by assigned USN:');
+  sortedUserCase.forEach((s, idx) => console.log(`    ${String(idx + 1).padStart(2, '0')} | USN: ${s.usn} | Name: ${s.name}`));
 
   if (
-    sortedSem1[0].user.firstName === 'Aarav' &&
-    sortedSem1[0].usn === '1JC26CS005' &&
-    sortedSem1[1].usn === '1JC26CS015' &&
-    sortedSem1[2].user.firstName === 'ananya' &&
-    sortedSem1[sortedSem1.length - 1].user.firstName === 'Yuvaraj'
+    sortedUserCase[0].usn === '2JR26CV001' &&
+    sortedUserCase[1].usn === '2JR26CV002' &&
+    sortedUserCase[2].usn === '2JR26CV003' &&
+    sortedUserCase[3].usn === '2JR26CV004' &&
+    sortedUserCase[4].usn === '2JR26CV005' &&
+    sortedUserCase[5].usn === '2JR26CV006' &&
+    sortedUserCase[6].usn === '2JR26CV007' &&
+    sortedUserCase[7].usn === '2JR26CV008' &&
+    sortedUserCase[8].usn === '2JR26CV009' &&
+    sortedUserCase[9].usn === '2JR26CV010' &&
+    sortedUserCase[10].usn === '2JR26CV011' &&
+    sortedUserCase[11].usn === '2JR26CV012'
   ) {
-    console.log('  ✅ [PASS] Sem 1: Names A-Z with case-insensitivity and USN tie-breaker verified.');
+    console.log('  ✅ [PASS] User case students correctly and strictly sorted by USN 001..012!');
   } else {
-    throw new Error('Sem 1 sorting failed validation check.');
+    throw new Error('User case USN sorting failed validation check.');
   }
 
-  // Simulated Sem 2+ batch
-  const mockSeniorStudents = [
-    { usn: '2JR25CS005', user: { firstName: 'Yuvaraj', lastName: 'Talawar' } },
-    { usn: '2JR25CS001', user: { firstName: 'Ananya', lastName: 'Deshmukh' } },
-    { usn: '2JR25CS003', user: { firstName: 'Cat', lastName: 'Don' } },
-    { usn: '2JR25CS002', user: { firstName: 'Bhavana', lastName: 'Patil' } },
+  // TEST 4: Unassigned USNs fallback to Student Name A-Z
+  console.log('\n📦 TEST 4: Unassigned USNs Fallback Verification');
+  const mockUnassigned = [
+    { usn: null, name: 'Zack Taylor' },
+    { usn: '', name: 'Alice Bob' },
+    { usn: 'N/A', name: 'Charlie Dave' },
+    { usn: 'JCER-2026-001', name: 'Bella Swan' },
   ];
 
-  const sortedSenior = [...mockSeniorStudents].sort((a: any, b: any) => {
-    const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-    const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-    const cmp = usnA.localeCompare(usnB);
-    if (cmp !== 0) return cmp;
-    const nameA = a.user ? `${a.user.firstName || ''} ${a.user.lastName || ''}`.trim().toLowerCase() : '';
-    const nameB = b.user ? `${b.user.firstName || ''} ${b.user.lastName || ''}`.trim().toLowerCase() : '';
-    return nameA.localeCompare(nameB);
-  });
+  const sortedUnassigned = [...mockUnassigned].sort((a, b) =>
+    compareStudentsByUsnOrName(a.usn, b.usn, a.name, b.name)
+  );
 
-  console.log('  Sorted Sem 2+ results:');
-  sortedSenior.forEach((s, idx) => console.log(`    ${idx + 1}. ${s.usn} - ${s.user.firstName} ${s.user.lastName}`));
+  console.log('  Sorted unassigned students by Name:');
+  sortedUnassigned.forEach((s, idx) => console.log(`    ${idx + 1}. ${s.name} (${s.usn || 'No USN'})`));
 
   if (
-    sortedSenior[0].usn === '2JR25CS001' &&
-    sortedSenior[1].usn === '2JR25CS002' &&
-    sortedSenior[2].usn === '2JR25CS003' &&
-    sortedSenior[3].usn === '2JR25CS005'
+    sortedUnassigned[0].name === 'Alice Bob' &&
+    sortedUnassigned[1].name === 'Bella Swan' &&
+    sortedUnassigned[2].name === 'Charlie Dave' &&
+    sortedUnassigned[3].name === 'Zack Taylor'
   ) {
-    console.log('  ✅ [PASS] Sem 2+: USN ascending strictly obeyed.');
+    console.log('  ✅ [PASS] Unassigned USNs correctly fallback to Student Name A-Z.');
   } else {
-    throw new Error('Sem 2+ sorting failed validation check.');
+    throw new Error('Unassigned sorting fallback failed validation check.');
   }
 
   console.log('\n================================================================');
@@ -176,3 +182,4 @@ runTests().catch((err) => {
   console.error('Test failed:', err);
   process.exit(1);
 });
+

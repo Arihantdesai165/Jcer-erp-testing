@@ -301,8 +301,8 @@ export const HodDashboardPage: React.FC = () => {
             ) : (
               <>
                 <option value="ALL">All Semesters</option>
-                <option value="1">Semester 1</option>
-                <option value="2">Semester 2</option>
+                <option value="1">Semester 1 (AS)</option>
+                <option value="2">Semester 2 (AS)</option>
                 <option value="3">Semester 3</option>
                 <option value="4">Semester 4</option>
                 <option value="5">Semester 5</option>
@@ -1155,8 +1155,10 @@ export const HodDashboardPage: React.FC = () => {
                     Loading subjects for Semester {requestSemester}...
                   </div>
                 ) : availableSubjects.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-rose-500 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900/40 font-semibold">
-                    No active subjects found for Semester {requestSemester}.
+                  <div className="p-3 text-center text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900/40 font-semibold">
+                    {!isSemesterHandling && (requestSemester === 1 || requestSemester === 2)
+                      ? 'Semester 1 and 2 subjects are handled by the Applied Science Department.'
+                      : `No active subjects found for Semester ${requestSemester}.`}
                   </div>
                 ) : (
                   <select

@@ -19,6 +19,7 @@ export const HodAttendanceDefaultersPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedSemester, setSelectedSemester] = useState<string>('ALL');
   const [limit, setLimit] = useState<number>(10);
+  const [threshold, setThreshold] = useState<number>(85);
 
   useEffect(() => {
     fetchDefaulters();
@@ -31,6 +32,9 @@ export const HodAttendanceDefaultersPage: React.FC = () => {
         semester: selectedSemester,
       });
       setDefaulters(data);
+      if ((data as any)?.threshold !== undefined) {
+        setThreshold(Number((data as any).threshold));
+      }
     } catch (err) {
       console.error('Failed to load defaulters:', err);
     } finally {
@@ -85,7 +89,7 @@ export const HodAttendanceDefaultersPage: React.FC = () => {
               Defaulter Count
             </span>
             <div className="text-2xl font-black mt-0.5 text-rose-400">
-              {defaulters.length} <span className="text-xs font-semibold text-neutral-400">&lt; 75%</span>
+              {defaulters.length} <span className="text-xs font-semibold text-neutral-400">&lt; {threshold}%</span>
             </div>
           </div>
 
@@ -130,7 +134,7 @@ export const HodAttendanceDefaultersPage: React.FC = () => {
 
         <div className="flex items-center gap-4">
           <span className="text-xs font-extrabold text-rose-600 dark:text-rose-400">
-            Threshold: &lt; 75.0%
+            Threshold: &lt; {threshold}%
           </span>
           <ShowStudentsRangeSelector
             value={limit}

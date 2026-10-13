@@ -127,6 +127,9 @@ async function loadFullAdmission(admission: Admission) {
 function serializeAdmission(admission: any): any {
   if (!admission) return null;
   const data = admission.toJSON ? admission.toJSON() : JSON.parse(JSON.stringify(admission));
+  if (!data.usn && data.user?.student?.usn) {
+    data.usn = data.user.student.usn;
+  }
   if (data.studentacademicdetails) {
     const acad = data.studentacademicdetails;
     // Map tenth to sslc
@@ -995,16 +998,19 @@ class AdmissionService {
       const admission = plainStudent.admission;
       const user = plainStudent.user;
       const dept = plainStudent.department;
+      const studentUsn = (plainStudent.usn || admission?.usn || null);
 
       if (admission) {
         const serialized = serializeAdmission(admission);
+        serialized.usn = studentUsn;
         serialized.branch = dept || serialized.branch;
         serialized.branchId = plainStudent.departmentId || serialized.branchId;
         serialized.user = {
           ...(serialized.user || user),
           student: {
             id: plainStudent.id,
-            enrollmentNumber: plainStudent.enrollmentNumber || plainStudent.usn || admission.applicationNumber,
+            usn: studentUsn,
+            enrollmentNumber: studentUsn || plainStudent.enrollmentNumber || admission.applicationNumber,
             rollNumber: plainStudent.rollNumber,
             semester: plainStudent.semester,
           }
@@ -1017,6 +1023,7 @@ class AdmissionService {
         id: plainStudent.id,
         userId: plainStudent.userId,
         applicationNumber: null,
+        usn: studentUsn,
         academicYear: plainStudent.currentAcademicYear || '2026-2027',
         admissionType: plainStudent.admissionType || 'EXISTING',
         branchId: plainStudent.departmentId,
@@ -1045,7 +1052,8 @@ class AdmissionService {
           profileImage: user.profileImage,
           student: {
             id: plainStudent.id,
-            enrollmentNumber: plainStudent.enrollmentNumber || plainStudent.usn,
+            usn: studentUsn,
+            enrollmentNumber: studentUsn || plainStudent.enrollmentNumber,
             rollNumber: plainStudent.rollNumber,
             semester: plainStudent.semester,
           }
@@ -1522,8 +1530,14 @@ class AdmissionService {
         distinct: true,
       });
 
-      // If status is ALL and we haven't reached limit, also check if non-admission existing students should be included
-      let finalRows = rows;
+      // Ensure USN is present on each application row if student has it
+      let finalRows = rows.map((r: any) => {
+        const item = r.toJSON ? r.toJSON() : r;
+        if (!item.usn && item.user?.student?.usn) {
+          item.usn = item.user.student.usn;
+        }
+        return item;
+      });
       let finalCount = count;
 
       if (status === 'ALL') {

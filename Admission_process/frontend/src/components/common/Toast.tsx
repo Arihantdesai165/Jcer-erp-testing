@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ToastProps {
   message: string;
@@ -7,7 +8,7 @@ interface ToastProps {
   duration?: number;
 }
 
-export const Toast: React.FC<ToastProps> = ({ message, type, onClose, duration = 3000 }) => {
+export const Toast: React.FC<ToastProps> = ({ message, type, onClose, duration = 4000 }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
@@ -17,26 +18,34 @@ export const Toast: React.FC<ToastProps> = ({ message, type, onClose, duration =
 
   const isSuccess = type === 'success';
 
-  return (
-    <div className="fixed top-5 right-5 z-50 animate-slide-in">
+  const content = (
+    <div className="fixed top-5 right-5 z-[9999999] pointer-events-auto animate-slide-in">
       <div
-        className={`flex items-center space-x-3 px-5 py-4 rounded-xl border backdrop-blur-md shadow-xl transition-all duration-300 ${
+        className={`flex items-center space-x-3 px-5 py-4 rounded-xl border backdrop-blur-md shadow-2xl transition-all duration-300 ${
           isSuccess
-            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/30'
-            : 'bg-rose-950/80 text-rose-300 border-rose-500/30'
+            ? 'bg-emerald-950/95 text-emerald-200 border-emerald-500/40 shadow-emerald-950/50'
+            : 'bg-rose-950/95 text-rose-200 border-rose-500/40 shadow-rose-950/50'
         }`}
       >
-        <span className="text-xl">{isSuccess ? '✅' : '❌'}</span>
-        <div className="text-sm font-medium tracking-wide">{message}</div>
+        <span className="text-xl shrink-0">{isSuccess ? '✅' : '❌'}</span>
+        <div className="text-sm font-semibold tracking-wide">{message}</div>
         <button
+          type="button"
           onClick={onClose}
-          className="text-slate-400 hover:text-white transition-colors duration-150 pl-2 focus:outline-none"
+          className="text-slate-400 hover:text-white transition-colors duration-150 pl-2 focus:outline-none cursor-pointer"
         >
           ✕
         </button>
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(content, document.body);
+  }
+
+  return content;
 };
 
 export default Toast;
+

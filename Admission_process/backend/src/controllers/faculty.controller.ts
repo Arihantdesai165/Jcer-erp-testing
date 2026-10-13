@@ -451,11 +451,8 @@ export const getFacultyCompleteAttendanceHistory = async (
       return res.status(401).json({ error: 'Unauthorized: Session missing.' });
     }
 
-    if (!assignmentId) {
-      return res.status(400).json({ error: 'Assignment ID is required.' });
-    }
-
-    const completeHistory = await facultyService.getFacultyCompleteAttendanceHistory(userId, assignmentId);
+    const month = req.query.month ? String(req.query.month) : undefined;
+    const completeHistory = await facultyService.getFacultyCompleteAttendanceHistory(userId, assignmentId, month);
     return res.json({
       success: true,
       data: completeHistory,

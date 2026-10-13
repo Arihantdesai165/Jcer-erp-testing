@@ -21,6 +21,7 @@ export type AdmissionStatus =
 export interface AdmissionApplication {
   id: string;
   applicationNumber: string;
+  usn?: string | null;
   admissionType: string | null;
   qualification: string | null;
   aadhaar?: string;
@@ -103,6 +104,8 @@ export interface AdmissionApplication {
     phone: string | null;
     profileImage: string | null;
     student?: {
+      id?: string;
+      usn?: string | null;
       enrollmentNumber: string;
       semester?: number | null;
     } | null;

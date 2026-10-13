@@ -22,6 +22,7 @@ import AttendanceSession from '../models/AttendanceSession';
 import AttendanceBackupFile from '../models/AttendanceBackupFile';
 import AttendanceBackupJob from '../models/AttendanceBackupJob';
 import User from '../models/User';
+import DepartmentSetting from '../models/DepartmentSetting';
 import Notification from '../models/Notification';
 import AuditLog from '../models/AuditLog';
 import sectionAllocationService, { SectionAllocationService } from '../services/sectionAllocation.service';
@@ -482,6 +483,20 @@ export const getHodDepartment = async (req: AuthenticatedRequest, res: Response,
 };
 
 // ─── 2. Students Module ──────────────────────────────────────────────────────
+
+/**
+ * Extract clean section code, e.g. "Section A" -> "A", "Sec B" -> "B", "A" -> "A".
+ * Guarantees that internal UUIDs are NEVER returned as human-readable section codes.
+ */
+export const getCleanSectionCode = (nameOrCode: string | null | undefined): string => {
+  if (!nameOrCode || typeof nameOrCode !== 'string') return '';
+  const trimmed = nameOrCode.trim();
+  // UUIDs are internal IDs and never human-readable section codes
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return '';
+  }
+  return trimmed.replace(/^(Section|Sec|Division|Div)\s*/i, '').trim();
+};
 
 /**
  * Centralized HOD Student Scope Service: getHodDepartmentStudents
@@ -1022,16 +1037,39 @@ export const getHodStudents = async (req: AuthenticatedRequest, res: Response, n
       });
     }
 
-    // Resolve department section UUIDs to clean letters ('A', 'B', etc.)
+    // Collect candidate Section UUIDs from students across departments/enrollments
+    const studentSecUuids = new Set<string>();
+    rows.forEach((s: any) => {
+      const enc = (s as any).academicEnrollments?.[0];
+      [enc?.sectionId, s.sectionId, s.section].forEach((val) => {
+        if (val && typeof val === 'string') {
+          const trimmed = val.trim();
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+            studentSecUuids.add(trimmed);
+          }
+        }
+      });
+    });
+
+    const secWhereOr: any[] = [{ departmentId }];
+    if (studentSecUuids.size > 0) {
+      secWhereOr.push({ id: { [Op.in]: Array.from(studentSecUuids) } });
+    }
+
+    // Resolve department and student section UUIDs to clean letters ('A', 'B', etc.)
     const deptSections = await Section.findAll({
-      where: { departmentId },
+      where: { [Op.or]: secWhereOr },
       attributes: ['id', 'name'],
     });
     const sectionLookup = new Map<string, string>();
     deptSections.forEach((sec) => {
-      const clean = sec.name.replace(/^(Section|Sec)\s*/i, '').trim() || sec.name;
+      const clean = getCleanSectionCode(sec.name) || sec.name.replace(/^(Section|Sec)\s*/i, '').trim() || sec.name;
       sectionLookup.set(sec.id, clean);
+      sectionLookup.set(sec.id.toLowerCase(), clean);
       sectionLookup.set(sec.name, clean);
+      sectionLookup.set(sec.name.toLowerCase(), clean);
+      sectionLookup.set(clean, clean);
+      sectionLookup.set(clean.toLowerCase(), clean);
     });
 
     const students = rows.map((s: any, idx: number) => {
@@ -1050,12 +1088,16 @@ export const getHodStudents = async (req: AuthenticatedRequest, res: Response, n
       const sem = Number(enc?.semesterId || s.semester);
 
       let cleanSection: string | null = null;
-      if (enc?.sectionId && sectionLookup.has(enc.sectionId)) {
-        cleanSection = sectionLookup.get(enc.sectionId)!;
-      } else if (s.section && sectionLookup.has(s.section)) {
-        cleanSection = sectionLookup.get(s.section)!;
-      } else if (s.section && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.section)) {
-        cleanSection = s.section.replace(/^(Section|Sec)\s*/i, '').trim();
+      const rawCandidate = enc?.sectionId || s.sectionId || s.section;
+      if (rawCandidate) {
+        const trimmed = String(rawCandidate).trim();
+        if (sectionLookup.has(trimmed)) {
+          cleanSection = sectionLookup.get(trimmed)!;
+        } else if (sectionLookup.has(trimmed.toLowerCase())) {
+          cleanSection = sectionLookup.get(trimmed.toLowerCase())!;
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+          cleanSection = getCleanSectionCode(trimmed) || trimmed.replace(/^(Section|Sec)\s*/i, '').trim() || null;
+        }
       }
 
       const slNo = (page - 1) * limit + idx + 1;
@@ -1229,7 +1271,8 @@ export const getHodStudentById = async (req: AuthenticatedRequest, res: Response
           totalSessions,
           presentSessions,
           percentage: attendancePercentage,
-          isDefaulter: attendancePercentage !== null && attendancePercentage < 75,
+          threshold: student.department && (student.department as any).attendanceThreshold !== undefined ? Number((student.department as any).attendanceThreshold) : 85.0,
+          isDefaulter: attendancePercentage !== null && attendancePercentage < (student.department && (student.department as any).attendanceThreshold !== undefined ? Number((student.department as any).attendanceThreshold) : 85.0),
           recentRecords: attendanceRecords,
         },
         marks,
@@ -1338,23 +1381,72 @@ export const getHodSemesterCohort = async (
       sortOrder: 'ASC',
     });
 
-    // Resolve department section UUIDs to clean letters ('A', 'B', etc.)
-    const deptSections = await Section.findAll({
-      where: { departmentId },
-      attributes: ['id', 'name'],
+    // Collect candidate Section UUIDs from students across departments/enrollments
+    const candidateSectionUuids = new Set<string>();
+    rows.forEach((s: any) => {
+      const enc = s.academicEnrollments?.[0];
+      [enc?.sectionId, s.sectionId, s.section].forEach((val) => {
+        if (val && typeof val === 'string') {
+          const trimmed = val.trim();
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+            candidateSectionUuids.add(trimmed);
+          }
+        }
+      });
     });
+
+    const secWhereOr: any[] = [{ departmentId }];
+    if (candidateSectionUuids.size > 0) {
+      secWhereOr.push({ id: { [Op.in]: Array.from(candidateSectionUuids) } });
+    }
+    if (isSemHandling) {
+      secWhereOr.push({ semester: { [Op.in]: [1, 2] } });
+    } else {
+      secWhereOr.push({ semester });
+    }
+
+    // Resolve department and student section records to clean letters ('A', 'B', etc.)
+    const deptSections = await Section.findAll({
+      where: { [Op.or]: secWhereOr },
+      attributes: ['id', 'name', 'departmentId', 'semester', 'academicYear', 'branch', 'capacity', 'status'],
+      order: [['name', 'ASC']],
+    });
+
     const sectionLookup = new Map<string, string>();
     deptSections.forEach((sec) => {
-      const clean = sec.name.replace(/^(Section|Sec)\s*/i, '').trim() || sec.name;
+      const clean = getCleanSectionCode(sec.name) || sec.name.replace(/^(Section|Sec)\s*/i, '').trim() || sec.name;
       sectionLookup.set(sec.id, clean);
+      sectionLookup.set(sec.id.toLowerCase(), clean);
       sectionLookup.set(sec.name, clean);
+      sectionLookup.set(sec.name.toLowerCase(), clean);
+      sectionLookup.set(clean, clean);
+      sectionLookup.set(clean.toLowerCase(), clean);
     });
+
+    const resolveCleanSection = (rawVal: string | null | undefined): string => {
+      if (!rawVal) return '—';
+      const raw = String(rawVal).trim();
+      if (!raw || raw === '—' || raw === 'null' || raw === 'undefined') return '—';
+
+      // 1. Check lookup map (by UUID or name)
+      if (sectionLookup.has(raw)) return sectionLookup.get(raw)!;
+      if (sectionLookup.has(raw.toLowerCase())) return sectionLookup.get(raw.toLowerCase())!;
+
+      // 2. If it's a UUID and wasn't in our bulk fetch, NEVER return raw UUID string
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
+        return '—';
+      }
+
+      // 3. Human-readable name like 'Section D' or 'D'
+      const clean = getCleanSectionCode(raw) || raw.replace(/^(Section|Sec)\s*/i, '').trim();
+      return clean || '—';
+    };
 
     // Format students
     const students = rows.map((s: any, idx: number) => {
       const enc = s.academicEnrollments?.[0];
       const rawSec = enc?.sectionId || s.sectionId || s.section;
-      const cleanSec = rawSec ? (sectionLookup.get(rawSec) || rawSec) : null;
+      const cleanSec = resolveCleanSection(rawSec);
       const userObj = s.user || {};
       const fullName = `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim() || 'Student';
 
@@ -1386,7 +1478,7 @@ export const getHodSemesterCohort = async (
         actualBranch: actualBranchCode || rawDeptCode || fallbackDeptCode,
         branchName: s.department?.name || null,
         semester: enc?.semesterId || s.semester,
-        section: cleanSec || '—',
+        section: cleanSec,
         rollNumber: enc?.rollNumber || s.rollNumber || null,
         batchYear: cohortInfo.cohortStartYear,
         batch: cohortInfo.batchDisplay,
@@ -1409,13 +1501,21 @@ export const getHodSemesterCohort = async (
     }));
     const allocatedSections = Array.from(sectionCountMap.keys()).filter((s) => s !== 'Unallocated');
 
-    // 3. Fetch actual Section records from DB scoped to this dept + semester + AY
-    const dbSections = await Section.findAll({
-      where: { departmentId, semester, academicYear },
-      attributes: ['id', 'name', 'semester', 'capacity', 'status'],
-      order: [['name', 'ASC']],
+    // 3. Fetch actual Section records from DB scoped to this dept + semester
+    const cohortSections = deptSections.filter((sec) => {
+      const semMatches = Number(sec.semester) === semester;
+      if (!semMatches) return false;
+      return sec.departmentId === departmentId || allocatedSections.includes(getCleanSectionCode(sec.name));
     });
-    const totalSectionsCount = dbSections.length;
+
+    const distinctCleanSectionNames = Array.from(
+      new Set([
+        ...cohortSections.map((s: any) => getCleanSectionCode(s.name) || s.name),
+        ...allocatedSections,
+      ])
+    ).filter((s) => s && s !== '—' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)).sort();
+
+    const totalSectionsCount = Math.max(cohortSections.length, distinctCleanSectionNames.length);
 
     // 4. Fetch Department ERP Subjects for this semester (ACTIVE only)
     const subjects = await Subject.findAll({
@@ -1529,8 +1629,8 @@ export const getHodSemesterCohort = async (
           totalSections: totalSectionsCount,
           totalSubjects: totalSubjectsCount,
           totalFaculty: totalFacultyCount,
-          sections: totalSectionsCount > 0 ? dbSections.map((s: any) => s.name.replace(/^(Section|Sec)\s*/i, '').trim() || s.name).join(', ') : 'None',
-          sectionsList: dbSections.map((s: any) => s.name.replace(/^(Section|Sec)\s*/i, '').trim() || s.name),
+          sections: distinctCleanSectionNames.length > 0 ? distinctCleanSectionNames.join(', ') : 'None',
+          sectionsList: distinctCleanSectionNames,
           sectionsBreakdown,
         },
         sectionsBreakdown,
@@ -1876,20 +1976,6 @@ export const deleteHodSection = async (req: AuthenticatedRequest, res: Response,
     logger.error('HOD_DELETE_SECTION_ERROR:', error);
     return next(error);
   }
-};
-
-/**
- * Extract clean section code, e.g. "Section A" -> "A", "Sec B" -> "B", "A" -> "A".
- * Never returns a UUID.
- */
-export const getCleanSectionCode = (nameOrCode: string | null | undefined): string => {
-  if (!nameOrCode || typeof nameOrCode !== 'string') return '';
-  const trimmed = nameOrCode.trim();
-  // UUIDs are internal IDs and never human-readable section codes
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
-    return '';
-  }
-  return trimmed.replace(/^(Section|Sec|Division|Div)\s*/i, '').trim();
 };
 
 /**
@@ -4424,7 +4510,25 @@ export const getHodAttendanceOverview = async (req: AuthenticatedRequest, res: R
 export const getHodAttendanceDefaulters = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   try {
     const departmentId = req.departmentId;
-    const { semester, section } = req.query;
+    const { semester, section, academicYear } = req.query;
+    const targetAy = (academicYear as string)?.trim() || '2026-27';
+
+    let threshold = 85.0;
+    try {
+      const deptSetting = await DepartmentSetting.findOne({
+        where: { departmentId, academicYear: targetAy },
+      });
+      if (deptSetting) {
+        threshold = Number(deptSetting.attendanceThreshold);
+      } else {
+        const d = await Department.findByPk(departmentId);
+        if (d && (d as any).attendanceThreshold !== undefined) {
+          threshold = Number((d as any).attendanceThreshold);
+        }
+      }
+    } catch {
+      threshold = 85.0;
+    }
 
     const where: any = { departmentId };
     if (semester && semester !== 'ALL') where.semester = Number(semester);
@@ -4450,7 +4554,7 @@ export const getHodAttendanceDefaulters = async (req: AuthenticatedRequest, res:
       const pres = Number(st.present) || 0;
       const pct = tot > 0 ? Number(((pres / tot) * 100).toFixed(1)) : 0;
 
-      if (tot > 0 && pct < 75) {
+      if (tot > 0 && pct < threshold) {
         const student = await Student.findByPk(st.studentId, {
           include: [{ model: User, as: 'user', attributes: ['firstName', 'lastName', 'email', 'phone'] }],
         });
@@ -4461,11 +4565,11 @@ export const getHodAttendanceDefaulters = async (req: AuthenticatedRequest, res:
             name: `${student.user?.firstName || ''} ${student.user?.lastName || ''}`.trim(),
             usn: student.usn || 'N/A',
             semester: student.semester,
-            section: student.section || 'A',
+            section: getCleanSectionCode(student.section) || (student.section && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(student.section) ? student.section.replace(/^(Section|Sec)\s*/i, '').trim() : '—'),
             totalSessions: tot,
             presentSessions: pres,
             attendancePercentage: pct,
-            deficit: Number((75 - pct).toFixed(1)),
+            deficit: Number((threshold - pct).toFixed(1)),
             parentPhone: student.parentPhone || student.user?.phone || 'N/A',
             parentEmail: student.parentEmail || student.user?.email || 'N/A',
           });
@@ -4485,7 +4589,7 @@ export const getHodAttendanceDefaulters = async (req: AuthenticatedRequest, res:
           totalSessions: 42,
           presentSessions: 28,
           attendancePercentage: 66.7,
-          deficit: 8.3,
+          deficit: Number((threshold - 66.7).toFixed(1)),
           parentPhone: '+91 98450 12345',
           parentEmail: 'karan.parent@gmail.com',
         },
@@ -4498,7 +4602,7 @@ export const getHodAttendanceDefaulters = async (req: AuthenticatedRequest, res:
           totalSessions: 42,
           presentSessions: 30,
           attendancePercentage: 71.4,
-          deficit: 3.6,
+          deficit: Number((threshold - 71.4).toFixed(1)),
           parentPhone: '+91 98765 43210',
           parentEmail: 'megha.parent@gmail.com',
         },
@@ -4511,7 +4615,7 @@ export const getHodAttendanceDefaulters = async (req: AuthenticatedRequest, res:
           totalSessions: 40,
           presentSessions: 26,
           attendancePercentage: 65.0,
-          deficit: 10.0,
+          deficit: Number((threshold - 65.0).toFixed(1)),
           parentPhone: '+91 94481 23456',
           parentEmail: 'vikram.parent@gmail.com',
         }
@@ -4520,7 +4624,7 @@ export const getHodAttendanceDefaulters = async (req: AuthenticatedRequest, res:
 
     defaulters.sort((a, b) => a.attendancePercentage - b.attendancePercentage);
 
-    return res.json({ success: true, data: defaulters });
+    return res.json({ success: true, data: defaulters, threshold });
   } catch (error) {
     logger.error('HOD_GET_DEFAULTERS_ERROR:', error);
     return next(error);
@@ -4729,12 +4833,225 @@ export const getHodReports = async (req: AuthenticatedRequest, res: Response, ne
 
 /**
  * GET /api/hod/settings
+ * Department-level configuration and attendance shortage statistics
  */
 export const getHodSettings = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   try {
     const departmentId = req.departmentId;
+    if (!departmentId) {
+      return res.status(403).json({ success: false, error: 'Assigned HOD department not resolved.' });
+    }
+
     const department = await Department.findByPk(departmentId);
     const user = req.user;
+    const isSemHandling = Boolean(req.isSemesterHandling);
+    const { academicYear, semester, section } = req.query;
+    const targetAy = (academicYear as string)?.trim() || '2026-27';
+
+    // 1. Resolve department attendance threshold
+    let deptSetting = await DepartmentSetting.findOne({
+      where: {
+        departmentId,
+        academicYear: targetAy,
+      },
+    });
+
+    if (!deptSetting) {
+      // Check if there is an existing setting for this department or fallback to department baseline
+      deptSetting = await DepartmentSetting.findOne({
+        where: { departmentId },
+        order: [['updatedAt', 'DESC']],
+      });
+    }
+
+    const configuredThreshold = deptSetting
+      ? Number(deptSetting.attendanceThreshold)
+      : department && (department as any).attendanceThreshold !== undefined
+      ? Number((department as any).attendanceThreshold)
+      : 85.0;
+
+    // 2. Fetch students within the authorized department scope
+    const studentWhere: any = {};
+    if (isSemHandling) {
+      if (semester && semester !== 'ALL') {
+        studentWhere.semester = Number(semester);
+      } else {
+        studentWhere.semester = { [Op.in]: [1, 2] };
+      }
+    } else {
+      studentWhere.departmentId = departmentId;
+      if (semester && semester !== 'ALL') {
+        studentWhere.semester = Number(semester);
+      }
+    }
+    if (section && section !== 'ALL') {
+      studentWhere.section = section;
+    }
+
+    const students = await Student.findAll({
+      where: studentWhere,
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
+      ],
+      order: [
+        ['semester', 'ASC'],
+        ['section', 'ASC'],
+        ['usn', 'ASC'],
+      ],
+    });
+
+    const studentIds = students.map((s) => s.id);
+
+    // 3. Aggregate student attendance records
+    const attWhere: any = {
+      studentId: { [Op.in]: studentIds },
+    };
+    if (semester && semester !== 'ALL') {
+      attWhere.semester = Number(semester);
+    }
+    if (section && section !== 'ALL') {
+      attWhere.section = section;
+    }
+
+    let attStats: any[] = [];
+    if (studentIds.length > 0) {
+      attStats = await AttendanceRecord.findAll({
+        attributes: [
+          'studentId',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'total'],
+          [
+            sequelize.fn('SUM', sequelize.literal(`CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END`)),
+            'present',
+          ],
+        ],
+        where: attWhere,
+        group: ['studentId'],
+        raw: true,
+      });
+    }
+
+    const attMap = new Map<string, { total: number; present: number }>();
+    attStats.forEach((st: any) => {
+      attMap.set(st.studentId, {
+        total: Number(st.total) || 0,
+        present: Number(st.present) || 0,
+      });
+    });
+
+    let meetingCount = 0;
+    let shortageCount = 0;
+    let unavailableCount = 0;
+
+    const studentSummaries = students.map((s) => {
+      const stat = attMap.get(s.id);
+      const total = stat?.total || 0;
+      const present = stat?.present || 0;
+
+      if (total === 0) {
+        unavailableCount++;
+        return {
+          id: s.id,
+          name: `${s.user?.firstName || ''} ${s.user?.lastName || ''}`.trim() || 'Student',
+          usn: s.usn || 'N/A',
+          semester: s.semester,
+          section: s.section || 'A',
+          totalSessions: 0,
+          presentSessions: 0,
+          attendancePercentage: null,
+          deficit: null,
+          status: 'UNAVAILABLE' as const,
+        };
+      }
+
+      const pct = Number(((present / total) * 100).toFixed(1));
+      // Rule: Attendance Shortage = Attendance Percentage < Configured Threshold
+      // A student exactly at the threshold must not be classified as short of attendance.
+      const isShortage = pct < configuredThreshold;
+
+      if (isShortage) {
+        shortageCount++;
+        return {
+          id: s.id,
+          name: `${s.user?.firstName || ''} ${s.user?.lastName || ''}`.trim() || 'Student',
+          usn: s.usn || 'N/A',
+          semester: s.semester,
+          section: s.section || 'A',
+          totalSessions: total,
+          presentSessions: present,
+          attendancePercentage: pct,
+          deficit: Number((configuredThreshold - pct).toFixed(1)),
+          status: 'SHORTAGE' as const,
+        };
+      } else {
+        meetingCount++;
+        return {
+          id: s.id,
+          name: `${s.user?.firstName || ''} ${s.user?.lastName || ''}`.trim() || 'Student',
+          usn: s.usn || 'N/A',
+          semester: s.semester,
+          section: s.section || 'A',
+          totalSessions: total,
+          presentSessions: present,
+          attendancePercentage: pct,
+          deficit: 0,
+          status: 'MEETS_THRESHOLD' as const,
+        };
+      }
+    });
+
+    const auditLogs = await AuditLog.findAll({
+      where: { userId: user?.id },
+      order: [['createdAt', 'DESC']],
+      limit: 10,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        department: {
+          id: department?.id,
+          name: department?.name,
+          code: department?.code,
+          type: department?.type,
+          handlingSemesters: department?.handlingSemesters,
+          attendanceThreshold: configuredThreshold,
+          isLocked: true,
+        },
+        attendanceThreshold: configuredThreshold,
+        academicYear: targetAy,
+        shortagePolicy: {
+          threshold: configuredThreshold,
+          totalStudents: students.length,
+          meetingThreshold: meetingCount,
+          belowThreshold: shortageCount,
+          unavailable: unavailableCount,
+          students: studentSummaries,
+        },
+        profile: {
+          id: user?.id,
+          name: `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
+          email: user?.email,
+          phone: user?.phone,
+          role: user?.role,
+        },
+        auditLogs,
+      },
+    });
+  } catch (error) {
+    logger.error('HOD_GET_SETTINGS_ERROR:', error);
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/hod/profile
+ */
+export const getHodProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const departmentId = req.departmentId;
+    const department = await Department.findByPk(departmentId);
+    const user = req.user;
+    const dbUser = await User.findByPk(user?.id);
 
     const auditLogs = await AuditLog.findAll({
       where: { userId: user?.id },
@@ -4746,23 +5063,102 @@ export const getHodSettings = async (req: AuthenticatedRequest, res: Response, n
       success: true,
       data: {
         profile: {
-          id: user?.id,
-          name: `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
-          email: user?.email,
-          phone: user?.phone,
-          role: user?.role,
+          id: dbUser?.id,
+          firstName: dbUser?.firstName,
+          lastName: dbUser?.lastName,
+          name: `${dbUser?.firstName || ''} ${dbUser?.lastName || ''}`.trim(),
+          email: dbUser?.email,
+          phone: dbUser?.phone,
+          role: dbUser?.role,
+          profileImage: dbUser?.profileImage,
         },
         department: {
           id: department?.id,
           name: department?.name,
           code: department?.code,
-          isLocked: true, // HOD cannot alter department identity
+          isLocked: true,
         },
         auditLogs,
       },
     });
   } catch (error) {
-    logger.error('HOD_GET_SETTINGS_ERROR:', error);
+    logger.error('HOD_GET_PROFILE_ERROR:', error);
+    return next(error);
+  }
+};
+
+/**
+ * PATCH / PUT /api/hod/settings
+ * Updates department attendance threshold
+ */
+export const updateHodDepartmentSettings = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const departmentId = req.departmentId;
+    const user = req.user;
+    if (!departmentId || !user) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Department scope required.' });
+    }
+
+    const { attendanceThreshold, academicYear } = req.body;
+
+    if (attendanceThreshold === undefined || attendanceThreshold === null || attendanceThreshold === '') {
+      return res.status(400).json({ success: false, error: 'Minimum Required Attendance percentage is required.' });
+    }
+
+    const numericThreshold = Number(attendanceThreshold);
+    if (isNaN(numericThreshold) || numericThreshold < 0 || numericThreshold > 100) {
+      return res.status(400).json({
+        success: false,
+        error: 'Attendance threshold must be a valid percentage between 0 and 100.',
+      });
+    }
+
+    const targetAy = (academicYear as string)?.trim() || '2026-27';
+
+    // Upsert into DepartmentSetting
+    const [setting, created] = await DepartmentSetting.findOrCreate({
+      where: {
+        departmentId,
+        academicYear: targetAy,
+      },
+      defaults: {
+        departmentId,
+        academicYear: targetAy,
+        attendanceThreshold: numericThreshold,
+        updatedBy: user.id,
+      },
+    });
+
+    if (!created) {
+      await setting.update({
+        attendanceThreshold: numericThreshold,
+        updatedBy: user.id,
+      });
+    }
+
+    // Also update baseline on Department table
+    await Department.update(
+      { attendanceThreshold: numericThreshold },
+      { where: { id: departmentId } }
+    );
+
+    await logAudit(req, 'HOD_UPDATE_ATTENDANCE_THRESHOLD', {
+      departmentId,
+      academicYear: targetAy,
+      attendanceThreshold: numericThreshold,
+      updatedBy: user.id,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Attendance threshold configuration updated successfully.',
+      data: {
+        attendanceThreshold: numericThreshold,
+        academicYear: targetAy,
+      },
+    });
+  } catch (error) {
+    logger.error('HOD_UPDATE_DEPARTMENT_SETTINGS_ERROR:', error);
     return next(error);
   }
 };
@@ -5097,6 +5493,10 @@ export const updateHodSettings = async (req: AuthenticatedRequest, res: Response
   try {
     const user = req.user;
     if (!user) return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: 'User session not found.' });
+
+    if (req.body.attendanceThreshold !== undefined) {
+      return updateHodDepartmentSettings(req, res, next);
+    }
 
     const { firstName, lastName, phone } = req.body;
     await User.update(

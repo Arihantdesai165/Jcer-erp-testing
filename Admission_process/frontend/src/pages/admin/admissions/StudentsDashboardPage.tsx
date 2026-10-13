@@ -1009,24 +1009,39 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                         {(page - 1) * 10 + idx + 1}
                       </td>
                       <td className="py-4 px-3 font-bold whitespace-nowrap min-w-[160px]">
-                        <button
-                          onClick={() => handleViewStudent(app.id)}
-                          className="hover:underline text-left text-neutral-800 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors font-mono"
-                        >
-                          {app.applicationStatus === 'ENROLLED' ? app.user?.student?.enrollmentNumber || app.applicationNumber : app.applicationNumber}
-                        </button>
+                        {(() => {
+                          const rawUsn = app.usn || app.user?.student?.usn;
+                          const enrollmentNo = app.user?.student?.enrollmentNumber;
+                          // If enrollmentNo is a valid USN (does not start with JCER-), use as fallback USN
+                          const isEnrollmentUsn = enrollmentNo && !enrollmentNo.startsWith('JCER-');
+                          const assignedUsn = (rawUsn || (isEnrollmentUsn ? enrollmentNo : '') || '').trim();
+                          const displayId = assignedUsn || app.applicationNumber || enrollmentNo || 'N/A';
+
+                          return (
+                            <button
+                              onClick={() => handleViewStudent(app.id)}
+                              className="hover:underline text-left text-neutral-800 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors font-mono"
+                              title={assignedUsn && app.applicationNumber && assignedUsn !== app.applicationNumber ? `USN: ${assignedUsn} | App No: ${app.applicationNumber}` : `Identifier: ${displayId}`}
+                            >
+                              {displayId}
+                            </button>
+                          );
+                        })()}
                       </td>
                       <td className="py-4 px-4 font-bold whitespace-nowrap min-w-[220px]">
                         <button
                           onClick={() => handleViewStudent(app.id)}
                           className="hover:underline text-left text-neutral-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 transition-colors"
                         >
-                          {pd
-                            ? `${pd.firstName} ${pd.middleName ? pd.middleName + ' ' : ''}${pd.lastName}`.replace(/\s+/g, ' ').trim()
-                            : app.user
-                              ? `${app.user.firstName || ''} ${app.user.lastName || ''}`.trim()
-                              : 'N/A'
-                          }
+                          {(() => {
+                            const pdName = pd
+                              ? `${pd.firstName || ''} ${pd.middleName ? pd.middleName + ' ' : ''}${pd.lastName || ''}`.replace(/\s+/g, ' ').trim()
+                              : '';
+                            const userName = app.user
+                              ? `${app.user.firstName || ''} ${app.user.lastName || ''}`.replace(/\s+/g, ' ').trim()
+                              : '';
+                            return pdName || userName || 'N/A';
+                          })()}
                         </button>
                       </td>
                       <td className="py-4 px-3 font-extrabold text-neutral-600 dark:text-neutral-400 whitespace-nowrap">

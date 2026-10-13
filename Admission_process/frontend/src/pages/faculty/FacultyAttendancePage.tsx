@@ -11,6 +11,7 @@ import {
   Calendar,
   Save,
   ChevronRight,
+  ChevronLeft,
   ArrowLeft,
   Info,
   Users,
@@ -43,6 +44,66 @@ import facultyService, {
   ScheduledSessionItem,
 } from '../../services/faculty.service';
 import { useAcademicYear } from '../../context/AcademicYearContext';
+
+const isAssignedUsn = (val: string | null | undefined): boolean => {
+  if (!val) return false;
+  const clean = val.trim().toUpperCase();
+  if (
+    clean === '' ||
+    clean === 'N/A' ||
+    clean === 'NA' ||
+    clean === '-' ||
+    clean === '—' ||
+    clean.startsWith('JCER-') ||
+    clean.startsWith('APP-') ||
+    clean.startsWith('TEMP')
+  ) {
+    return false;
+  }
+  return true;
+};
+
+const compareStudentsByUsnOrName = (
+  usnAVal: string | null | undefined,
+  usnBVal: string | null | undefined,
+  nameAVal: string | null | undefined,
+  nameBVal: string | null | undefined,
+  rollAVal?: string | null | undefined,
+  rollBVal?: string | null | undefined
+): number => {
+  const hasUsnA = isAssignedUsn(usnAVal);
+  const hasUsnB = isAssignedUsn(usnBVal);
+
+  if (hasUsnA && hasUsnB) {
+    const cmp = (usnAVal || '').trim().localeCompare((usnBVal || '').trim(), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+    if (cmp !== 0) return cmp;
+    const nCmp = (nameAVal || '').trim().localeCompare((nameBVal || '').trim(), undefined, {
+      sensitivity: 'base',
+    });
+    if (nCmp !== 0) return nCmp;
+    return (rollAVal || '').trim().localeCompare((rollBVal || '').trim(), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  }
+
+  if (hasUsnA && !hasUsnB) return -1;
+  if (!hasUsnA && hasUsnB) return 1;
+
+  // Fallback: Student Name A-Z
+  const nCmp = (nameAVal || '').trim().localeCompare((nameBVal || '').trim(), undefined, {
+    sensitivity: 'base',
+  });
+  if (nCmp !== 0) return nCmp;
+
+  return (rollAVal || '').trim().localeCompare((rollBVal || '').trim(), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+};
 
 export const FacultyAttendancePage: React.FC = () => {
   const location = useLocation();
@@ -137,6 +198,14 @@ export const FacultyAttendancePage: React.FC = () => {
   const [correctionSessionData, setCorrectionSessionData] = useState<AttendanceSessionDetailData | null>(null);
   const [loadingCorrectionSession, setLoadingCorrectionSession] = useState<boolean>(false);
   const [correctionSearchQuery, setCorrectionSearchQuery] = useState<string>('');
+
+  // Attendance Calendar Workspace States
+  const [calendarYear, setCalendarYear] = useState<number>(() => new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState<number>(() => new Date().getMonth());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  });
 
   // Bulk / Single Correction Selection & Modal
   const [selectedStudentIdsForCorrection, setSelectedStudentIdsForCorrection] = useState<string[]>([]);
@@ -343,6 +412,7 @@ export const FacultyAttendancePage: React.FC = () => {
         loadCompleteAttendanceHistory(selectedAssignmentId);
       } else if (newTab === 'CORRECTION') {
         loadAttendanceHistory(selectedAssignmentId);
+        loadCompleteAttendanceHistory(selectedAssignmentId);
       } else if (newTab === 'HISTORY') {
         loadAttendanceHistory(selectedAssignmentId);
         loadAssignmentCorrections(selectedAssignmentId);
@@ -364,6 +434,118 @@ export const FacultyAttendancePage: React.FC = () => {
     }
     return completeHistoryData.sessions;
   }, [completeHistoryData, completeHistoryFilter]);
+
+  const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const SHORT_DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // Calendar Navigation Handlers
+  const handlePrevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear((prev) => prev - 1);
+    } else {
+      setCalendarMonth((prev) => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear((prev) => prev + 1);
+    } else {
+      setCalendarMonth((prev) => prev + 1);
+    }
+  };
+
+  const handleGoToToday = () => {
+    const now = new Date();
+    setCalendarYear(now.getFullYear());
+    setCalendarMonth(now.getMonth());
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    setSelectedCalendarDate(todayStr);
+  };
+
+  // Map all sessions by date for the calendar
+  const sessionsByDate = useMemo(() => {
+    const map: { [dateStr: string]: ScheduledSessionItem[] } = {};
+    if (completeHistoryData?.sessions) {
+      completeHistoryData.sessions.forEach((s) => {
+        if (!map[s.date]) {
+          map[s.date] = [];
+        }
+        map[s.date].push(s);
+      });
+    }
+    return map;
+  }, [completeHistoryData]);
+
+  // Calendar cells calculation
+  const calendarCells = useMemo(() => {
+    const firstDayIndex = new Date(calendarYear, calendarMonth, 1).getDay();
+    const daysInCurrentMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
+
+    const cells: Array<{
+      dateStr: string;
+      dayNumber: number;
+      isCurrentMonth: boolean;
+      isToday: boolean;
+    }> = [];
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    // Leading days from previous month
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const dayNumber = daysInPrevMonth - i;
+      const prevYear = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
+      const prevMonth = calendarMonth === 0 ? 12 : calendarMonth;
+      const dateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+      cells.push({
+        dateStr,
+        dayNumber,
+        isCurrentMonth: false,
+        isToday: dateStr === todayStr,
+      });
+    }
+
+    // Days of current month
+    for (let d = 1; d <= daysInCurrentMonth; d++) {
+      const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({
+        dateStr,
+        dayNumber: d,
+        isCurrentMonth: true,
+        isToday: dateStr === todayStr,
+      });
+    }
+
+    // Trailing days to fill 7-column rows
+    const totalSlots = Math.ceil(cells.length / 7) * 7;
+    const trailingCount = totalSlots - cells.length;
+    for (let d = 1; d <= trailingCount; d++) {
+      const nextYear = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
+      const nextMonth = calendarMonth === 11 ? 1 : calendarMonth + 2;
+      const dateStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({
+        dateStr,
+        dayNumber: d,
+        isCurrentMonth: false,
+        isToday: dateStr === todayStr,
+      });
+    }
+
+    return cells;
+  }, [calendarYear, calendarMonth]);
+
+  // Selected date sessions
+  const selectedDateSessions = useMemo(() => {
+    return sessionsByDate[selectedCalendarDate] || [];
+  }, [sessionsByDate, selectedCalendarDate]);
 
   // Action: Take Attendance for pending session
   const handleActionTakeAttendance = (sessionDate: string) => {
@@ -420,7 +602,7 @@ export const FacultyAttendancePage: React.FC = () => {
     setScheduleDate(new Date().toISOString().split('T')[0]);
     setScheduleStartTime('10:35 AM');
     setScheduleEndTime('11:30 AM');
-    setScheduleClassroom(completeHistoryData?.assignment.classroom || 'B-403');
+    setScheduleClassroom(completeHistoryData?.assignment?.classroom || '');
     setIsScheduleModalOpen(true);
   };
 
@@ -483,7 +665,26 @@ export const FacultyAttendancePage: React.FC = () => {
   // Open Correction Workspace for a specific session ID
   const handleSelectSessionForCorrection = (sessionId: string) => {
     setSelectedCorrectionSessionId(sessionId);
+    setCorrectionSessionData(null);
     loadCorrectionSessionDetail(sessionId);
+  };
+
+  // Directly open correction when clicking a date cell on the Correction Calendar
+  const handleCalendarDateClick = (cellDateStr: string) => {
+    setSelectedCalendarDate(cellDateStr);
+    const cellSessions = sessionsByDate[cellDateStr] || [];
+    const completedSession = cellSessions.find((s) => s.status === 'Completed');
+
+    if (completedSession) {
+      handleSelectSessionForCorrection(completedSession.id);
+    } else if (cellSessions.length > 0 && cellSessions[0].status === 'Pending') {
+      handleActionTakeAttendance(cellSessions[0].date);
+    } else {
+      setNotification({
+        type: 'error',
+        message: `No recorded class session on ${formatDateLong(cellDateStr)} to correct.`,
+      });
+    }
   };
 
   // Back from Session Correction Workspace to Session List
@@ -554,6 +755,38 @@ export const FacultyAttendancePage: React.FC = () => {
     if (!selectedAssignmentId) return null;
     return courses.find((c) => c.id === selectedAssignmentId) || null;
   }, [courses, selectedAssignmentId]);
+
+  // Selected subject details derived from selected assignment item or courses
+  const selectedSubject = useMemo(() => {
+    if (selectedAssignmentItem) {
+      return {
+        id: selectedAssignmentItem.subjectId,
+        name: selectedAssignmentItem.subjectName,
+        code: selectedAssignmentItem.subjectCode,
+        department: selectedAssignmentItem.departmentCode,
+        semester: selectedAssignmentItem.semester,
+        section: selectedAssignmentItem.section,
+        credits: selectedAssignmentItem.credits,
+        type: selectedAssignmentItem.type,
+      };
+    }
+    if (selectedSubjectId) {
+      const found = courses.find((c) => c.subjectId === selectedSubjectId);
+      if (found) {
+        return {
+          id: found.subjectId,
+          name: found.subjectName,
+          code: found.subjectCode,
+          department: found.departmentCode,
+          semester: found.semester,
+          section: found.section,
+          credits: found.credits,
+          type: found.type,
+        };
+      }
+    }
+    return null;
+  }, [selectedAssignmentItem, selectedSubjectId, courses]);
 
   // Navigation handlers
   const handleSelectSemester = (sem: number) => {
@@ -707,65 +940,39 @@ export const FacultyAttendancePage: React.FC = () => {
     return Number(((currentPresentCount / currentTotalCount) * 100).toFixed(1));
   }, [currentPresentCount, currentTotalCount]);
 
-  // Filtered Students for Take Workspace
+  // Filtered Students for Take Workspace (Sorted by USN ASC when assigned, fallback to Name A-Z)
   const filteredWorkspaceStudents = useMemo(() => {
     if (!workspaceData || !workspaceData.students) return [];
     let list = workspaceData.students;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((st) => {
-        const matchName = st.studentName.toLowerCase().includes(q);
-        const matchUsn = st.usn.toLowerCase().includes(q);
+        const matchName = (st.studentName || '').toLowerCase().includes(q);
+        const matchUsn = (st.usn || '').toLowerCase().includes(q);
         return matchName || matchUsn;
       });
     }
-    const isSem1 = Number(selectedAssignmentItem?.semester ?? workspaceData.assignment?.semester) === 1;
-    return [...list].sort((a, b) => {
-      if (isSem1) {
-        const nameA = (a.studentName || '').trim().toLowerCase();
-        const nameB = (b.studentName || '').trim().toLowerCase();
-        const cmp = nameA.localeCompare(nameB);
-        if (cmp !== 0) return cmp;
-        return (a.usn || '').trim().toLowerCase().localeCompare((b.usn || '').trim().toLowerCase());
-      } else {
-        const usnA = (a.usn || '').trim().toLowerCase();
-        const usnB = (b.usn || '').trim().toLowerCase();
-        const cmp = usnA.localeCompare(usnB);
-        if (cmp !== 0) return cmp;
-        return (a.studentName || '').trim().toLowerCase().localeCompare((b.studentName || '').trim().toLowerCase());
-      }
-    });
-  }, [workspaceData, searchQuery, selectedAssignmentItem]);
+    return [...list].sort((a, b) =>
+      compareStudentsByUsnOrName(a.usn, b.usn, a.studentName, b.studentName, a.rollNumber, b.rollNumber)
+    );
+  }, [workspaceData, searchQuery]);
 
-  // Filtered Students for Correction Workspace
+  // Filtered Students for Correction Workspace (Sorted by USN ASC when assigned, fallback to Name A-Z)
   const filteredCorrectionStudents = useMemo(() => {
     if (!correctionSessionData || !correctionSessionData.students) return [];
     let list = correctionSessionData.students;
     if (correctionSearchQuery.trim()) {
       const q = correctionSearchQuery.toLowerCase().trim();
       list = list.filter((st) => {
-        const matchName = st.studentName.toLowerCase().includes(q);
-        const matchUsn = st.usn.toLowerCase().includes(q);
+        const matchName = (st.studentName || '').toLowerCase().includes(q);
+        const matchUsn = (st.usn || '').toLowerCase().includes(q);
         return matchName || matchUsn;
       });
     }
-    const isSem1 = Number(correctionSessionData.assignment?.semester ?? selectedAssignmentItem?.semester) === 1;
-    return [...list].sort((a, b) => {
-      if (isSem1) {
-        const nameA = (a.studentName || '').trim().toLowerCase();
-        const nameB = (b.studentName || '').trim().toLowerCase();
-        const cmp = nameA.localeCompare(nameB);
-        if (cmp !== 0) return cmp;
-        return (a.usn || '').trim().toLowerCase().localeCompare((b.usn || '').trim().toLowerCase());
-      } else {
-        const usnA = (a.usn || '').trim().toLowerCase();
-        const usnB = (b.usn || '').trim().toLowerCase();
-        const cmp = usnA.localeCompare(usnB);
-        if (cmp !== 0) return cmp;
-        return (a.studentName || '').trim().toLowerCase().localeCompare((b.studentName || '').trim().toLowerCase());
-      }
-    });
-  }, [correctionSessionData, correctionSearchQuery, selectedAssignmentItem]);
+    return [...list].sort((a, b) =>
+      compareStudentsByUsnOrName(a.usn, b.usn, a.studentName, b.studentName, a.rollNumber, b.rollNumber)
+    );
+  }, [correctionSessionData, correctionSearchQuery]);
 
   // Toggle selection for a single student in Correction Workspace
   const handleToggleCorrectionStudentSelect = (studentId: string) => {
@@ -926,40 +1133,84 @@ export const FacultyAttendancePage: React.FC = () => {
         </div>
       )}
 
-      {/* COMPACT HEADER (SELECTION SCREENS ONLY) */}
-      {currentView !== 'WORKSPACE' && (
-        <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-tight">
-            Students Attendance Entry
-            </h1>
+      {/* ── BREADCRUMB FLOW VIEW (MATCHING FACULTY ANALYTICS STYLE) ── */}
+      <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold flex-wrap px-0.5 text-slate-500">
+        {currentView === 'SEMESTERS' ? (
+          <span className="font-bold text-slate-900"></span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleBackToSemesters}
+            className="text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+          >
             
-          </div>
+          </button>
+        )}
 
-          <div className="flex items-center space-x-2 bg-indigo-50/90 border border-indigo-200 rounded-lg px-2.5 py-1 shrink-0">
-            <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-            <span className="text-xs font-bold text-indigo-950">AY: {activeAY}</span>
-          </div>
-        </div>
-      )}
+        {selectedSemNum !== null && (
+          <>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            {currentView === 'SUBJECTS' ? (
+              <span className="font-bold text-slate-900">
+                Semester {selectedSemNum}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleBackToSubjects}
+                className="text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                Semester {selectedSemNum}
+              </button>
+            )}
+          </>
+        )}
+
+        {selectedSubject && (currentView === 'SECTIONS' || currentView === 'WORKSPACE') && (
+          <>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            {currentView === 'SECTIONS' ? (
+              <span className="font-bold text-slate-900">
+                {selectedSubject.name} ({selectedSubject.code})
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleBackToSections}
+                className="text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                {selectedSubject.name} ({selectedSubject.code})
+              </button>
+            )}
+          </>
+        )}
+
+        {currentView === 'WORKSPACE' && selectedAssignmentItem && (
+          <>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="font-bold text-slate-900">
+              {formatSectionLabel(selectedAssignmentItem.section)}
+            </span>
+          </>
+        )}
+      </div>
+
+  
 
       {/* LEVEL 1: SEMESTER CARDS */}
       {currentView === 'SEMESTERS' && (
-        <div className="w-full space-y-4">
-          <div className="flex items-center justify-between px-0.5">
-            <h2 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">SELECT SEMESTER</h2>
-            <span className="text-xs font-semibold text-slate-500">
-              {distinctSemesters.length} Assigned Semester{distinctSemesters.length !== 1 ? 's' : ''}
-            </span>
-          </div>
+        <div className="w-full space-y-3.5">
+          <h2 className="text-xs font-black text-slate-700 uppercase tracking-wider">
+            SELECT SEMESTER
+          </h2>
 
           {loading ? (
-            <div className="bg-white p-8 rounded-2xl border-[2.5px] border-black text-center">
+            <div className="bg-white p-8 rounded-[22px] border-2 border-black text-center space-y-2">
               <RefreshCw className="w-6 h-6 animate-spin text-slate-800 mx-auto mb-2" />
               <p className="text-slate-600 font-medium text-xs">Loading assigned semesters...</p>
             </div>
           ) : distinctSemesters.length === 0 ? (
-            <div className="bg-white p-8 rounded-2xl border-[2.5px] border-black text-center space-y-2">
+            <div className="bg-white p-8 rounded-[22px] border-2 border-black text-center space-y-2">
               <div className="w-10 h-10 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
                 <BookOpen className="w-5 h-5" />
               </div>
@@ -973,42 +1224,52 @@ export const FacultyAttendancePage: React.FC = () => {
               {distinctSemesters.map((sem) => {
                 const count = courses.filter((c) => c.semester === sem).length;
                 return (
-                  <button
+                  <div
                     key={sem}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleSelectSemester(sem)}
-                    className="bg-white p-5 sm:p-6 rounded-[14px] border-[3.5px] border-black shadow-sm hover:border-black hover:shadow-md hover:-translate-y-0.5 transition-all duration-160 text-left group flex flex-col justify-between min-h-[170px] cursor-pointer w-full"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectSemester(sem);
+                      }
+                    }}
+                    className="bg-white p-6 rounded-[22px] border-2 border-black shadow-xs hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 transition-all duration-150 text-left flex flex-col justify-between min-h-[175px] cursor-pointer group w-full"
                   >
                     <div>
-                      {/* TOP ROW: SEM BADGE + ARROW */}
-                      <div className="flex items-center justify-between mb-3.5">
-                        <span className="px-3 py-1 bg-slate-100 text-slate-900 text-[12px] font-extrabold rounded-[7px] border border-slate-300">
+                      {/* TOP ROW: SEM BADGE + RIGHT ARROW */}
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="px-3 py-1 bg-slate-100 text-slate-800 text-xs font-bold rounded-lg tracking-wide">
                           SEM {sem}
                         </span>
-                        <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-black group-hover:translate-x-1 transition-all" />
+                        <ChevronRight className="w-4 h-4 text-slate-800 group-hover:translate-x-0.5 transition-transform" />
                       </div>
 
                       {/* SEMESTER TITLE */}
-                      <h3 className="text-[20px] font-bold text-[#111827] group-hover:text-black transition-colors leading-snug">
+                      <h3 className="text-2xl font-bold text-slate-900 leading-snug">
                         Semester {sem}
                       </h3>
-                      <p className="text-[13px] text-[#64748b] font-medium mt-1">
+                      <p className="text-sm text-slate-600 font-medium mt-0.5">
                         Academic Attendance
                       </p>
                     </div>
 
-                    {/* FOOTER */}
-                    <div className="pt-3.5 mt-4 border-t border-slate-200 flex items-center justify-between text-xs">
-                      <div className="flex items-center space-x-1.5 text-slate-700 font-semibold">
-                        <Users className="w-3.5 h-3.5 text-slate-600" />
-                        <span>{count} Section{count !== 1 ? 's' : ''} Assigned</span>
+                    {/* DIVIDER & FOOTER */}
+                    <div>
+                      <div className="border-t border-slate-100 my-4" />
+                      <div className="flex items-center justify-between text-xs sm:text-sm">
+                        <div className="flex items-center space-x-2 text-slate-700 font-medium">
+                          <Users className="w-4 h-4 text-slate-700" />
+                          <span>{count} Section{count !== 1 ? 's' : ''} Assigned</span>
+                        </div>
+                        <span className="font-extrabold text-xs tracking-wider text-slate-900 flex items-center space-x-1 group-hover:translate-x-0.5 transition-transform">
+                          <span>OPEN</span>
+                          <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                        </span>
                       </div>
-                      <span className="font-extrabold text-slate-900 flex items-center space-x-1 group-hover:translate-x-0.5 transition-transform">
-                        <span>OPEN</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </span>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -1019,149 +1280,182 @@ export const FacultyAttendancePage: React.FC = () => {
       {/* LEVEL 2: SUBJECT CARDS */}
       {currentView === 'SUBJECTS' && (
         <div className="w-full space-y-4">
-          <div className="flex items-center justify-between px-0.5">
+          {/* BACK TO SEMESTERS BUTTON */}
+          <div>
             <button
               type="button"
               onClick={handleBackToSemesters}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border-[2.5px] border-black rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-900 border-2 border-black rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
             >
-              <ArrowLeft className="w-4 h-4 text-slate-700" />
+              <ArrowLeft className="w-4 h-4 text-slate-900 stroke-[2.5]" />
               <span>Back to Semesters</span>
             </button>
-            <span className="text-xs font-bold text-slate-500">
-              Semester {selectedSemNum} &bull; {subjectsForSelectedSem.length} Subject{subjectsForSelectedSem.length !== 1 ? 's' : ''}
-            </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 w-full">
-            {subjectsForSelectedSem.map((subj) => (
-              <button
-                key={subj.subjectId}
-                type="button"
-                onClick={() => handleSelectSubject(subj.subjectId)}
-                className="bg-white p-5 sm:p-6 rounded-[14px] border-[3.5px] border-black shadow-sm hover:border-black hover:shadow-md hover:-translate-y-0.5 transition-all duration-160 text-left group flex flex-col justify-between min-h-[175px] cursor-pointer w-full"
-              >
-                <div>
-                  {/* TOP ROW: Subject Code Badge (Never clipped, explicitly white text) + Section Count Badge */}
-                  <div className="flex items-center justify-between gap-2 mb-3.5">
-                    <span
-                      style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                      className="badge-dark text-[12px] font-extrabold tracking-[0.4px] px-3 py-1.5 rounded-[7px] whitespace-nowrap shrink-0 font-mono shadow-xs border border-slate-900"
-                    >
-                      {subj.subjectCode}
-                    </span>
-                    <span className="bg-slate-100 border border-slate-300 text-slate-800 rounded-full px-3 py-1 text-[12px] font-bold flex items-center gap-1.5 shrink-0">
-                      <Users className="w-3.5 h-3.5 text-slate-700" />
-                      <span>{subj.count} Section{subj.count !== 1 ? 's' : ''}</span>
-                    </span>
+          {subjectsForSelectedSem.length === 0 ? (
+            <div className="bg-white p-8 rounded-[22px] border-2 border-black text-center space-y-2">
+              <div className="w-10 h-10 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                <BookOpen className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-800">No Subjects Found</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                No subjects assigned for Semester {selectedSemNum} in Academic Year {activeAY}.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 w-full">
+              {subjectsForSelectedSem.map((subj) => (
+                <div
+                  key={subj.subjectId}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleSelectSubject(subj.subjectId)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSelectSubject(subj.subjectId);
+                    }
+                  }}
+                  className="bg-white p-6 rounded-[22px] border-2 border-black shadow-xs hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 transition-all duration-150 text-left flex flex-col justify-between min-h-[175px] cursor-pointer group w-full"
+                >
+                  <div>
+                    {/* TOP ROW: Subject Code Badge on LEFT, Section Count Badge on RIGHT */}
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                      <span className="bg-[#0f172a] text-white font-mono font-bold text-xs px-3.5 py-1.5 rounded-lg tracking-wide shrink-0">
+                        {subj.subjectCode}
+                      </span>
+                      <span className="bg-slate-100 text-slate-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center space-x-1.5 shrink-0">
+                        <Users className="w-3.5 h-3.5 text-slate-700" />
+                        <span>{subj.count} Section{subj.count !== 1 ? 's' : ''}</span>
+                      </span>
+                    </div>
+
+                    {/* SUBJECT NAME */}
+                    <h3 className="text-2xl font-bold text-slate-900 leading-snug">
+                      {subj.subjectName}
+                    </h3>
+
+                    {/* METADATA: Semester & Credits */}
+                    <p className="text-sm text-slate-600 font-medium mt-1">
+                      Semester {selectedSemNum} &bull; {subj.credits || 4} Credits
+                    </p>
                   </div>
 
-                  {/* SUBJECT NAME: Main title, preserving database casing */}
-                  <h3 className="text-[20px] font-bold text-[#111827] group-hover:text-black transition-colors leading-snug">
-                    {subj.subjectName}
-                  </h3>
-
-                  {/* METADATA: Semester & Credits */}
-                  <p className="text-[13px] text-[#64748b] font-medium mt-1">
-                    Semester {selectedSemNum} &bull; {subj.credits || 4} Credits
-                  </p>
+                  {/* DIVIDER & FOOTER */}
+                  <div>
+                    <div className="border-t border-slate-100 my-4" />
+                    <div className="flex items-center justify-between text-xs sm:text-sm">
+                      <span className="text-slate-600 font-medium">Sections available</span>
+                      <span className="font-extrabold text-xs tracking-wider text-slate-900 flex items-center space-x-1 group-hover:translate-x-0.5 transition-transform">
+                        <span>SELECT SECTIONS</span>
+                        <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </span>
+                    </div>
+                  </div>
                 </div>
-
-                {/* FOOTER */}
-                <div className="pt-3.5 mt-4 border-t border-slate-200 flex items-center justify-between text-xs">
-                  <span className="text-slate-600 font-medium">Sections available</span>
-                  <span className="font-extrabold text-slate-900 flex items-center space-x-1 group-hover:translate-x-1 transition-transform">
-                    <span>SELECT SECTIONS</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* LEVEL 3: SECTION CARDS */}
       {currentView === 'SECTIONS' && (
         <div className="w-full space-y-4">
-          <div className="flex items-center justify-between px-0.5">
+          {/* BACK TO SUBJECTS BUTTON */}
+          <div>
             <button
               type="button"
               onClick={handleBackToSubjects}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border-[2.5px] border-black rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-900 border-2 border-black rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
             >
-              <ArrowLeft className="w-4 h-4 text-slate-700" />
+              <ArrowLeft className="w-4 h-4 text-slate-900 stroke-[2.5]" />
               <span>Back to Subjects</span>
             </button>
-            <span className="text-xs font-bold text-slate-500">
-              {sectionsForSelectedSubject.length} Section{sectionsForSelectedSubject.length !== 1 ? 's' : ''} Available
-            </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 w-full">
-            {sectionsForSelectedSubject.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleSelectAssignment(item.id)}
-                className="bg-white p-5 sm:p-6 rounded-[14px] border-[3.5px] border-black shadow-sm hover:border-black hover:shadow-md hover:-translate-y-0.5 transition-all duration-160 text-left group flex flex-col justify-between min-h-[170px] cursor-pointer w-full"
-              >
-                <div>
-                  {/* TOP ROW: SECTION BADGE on left, DEPARTMENT BADGE on right */}
-                  <div className="flex items-center justify-between gap-2 mb-3.5">
-                    <span className="bg-slate-100 text-slate-900 border border-slate-300 text-[12px] font-bold px-2.5 py-1 rounded-[6px] uppercase tracking-wide">
-                      {formatSectionLabel(item.section).toUpperCase()}
-                    </span>
-                    <span className="bg-slate-100 border border-slate-300 text-slate-800 text-[12px] font-bold px-2.5 py-1 rounded-[6px]">
-                      {item.departmentCode || 'CSE'}
-                    </span>
+          {sectionsForSelectedSubject.length === 0 ? (
+            <div className="bg-white p-8 rounded-[22px] border-2 border-black text-center space-y-2">
+              <div className="w-10 h-10 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                <Users className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-800">No Sections Available</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                No sections assigned for this subject in Semester {selectedSemNum}.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 w-full">
+              {sectionsForSelectedSubject.map((item) => (
+                <div
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleSelectAssignment(item.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSelectAssignment(item.id);
+                    }
+                  }}
+                  className="bg-white p-6 rounded-[22px] border-2 border-black shadow-xs hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 transition-all duration-150 text-left flex flex-col justify-between min-h-[175px] cursor-pointer group w-full"
+                >
+                  <div>
+                    {/* TOP ROW: SECTION BADGE on left, DEPARTMENT BADGE on right */}
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                      <span className="bg-slate-100 border border-slate-200 text-slate-900 text-xs font-bold px-3 py-1 rounded-lg uppercase tracking-wide">
+                        {formatSectionLabel(item.section).toUpperCase()}
+                      </span>
+                      <span className="border border-slate-200 bg-white text-slate-800 text-xs font-bold px-3 py-1 rounded-lg uppercase">
+                        {item.departmentCode || 'CV'}
+                      </span>
+                    </div>
+
+                    {/* SUBJECT NAME */}
+                    <h3 className="text-2xl font-bold text-slate-900 leading-snug">
+                      {item.subjectName}
+                    </h3>
+
+                    {/* SECTION SUBJECT CODE BADGE */}
+                    <div className="mt-2.5">
+                      <span className="bg-[#0f172a] text-white font-mono font-bold text-xs px-3.5 py-1.5 rounded-lg tracking-wide inline-block">
+                        {item.subjectCode}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* SUBJECT NAME */}
-                  <h3 className="text-[20px] font-bold text-[#111827] group-hover:text-black transition-colors leading-snug">
-                    {item.subjectName}
-                  </h3>
-
-                  {/* SECTION SUBJECT CODE: Explicitly white text */}
-                  <div className="mt-2.5">
-                    <span
-                      style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                      className="badge-dark inline-block text-[12px] font-extrabold tracking-[0.4px] px-3 py-1 rounded-[6px] font-mono shadow-xs border border-slate-900"
-                    >
-                      {item.subjectCode}
-                    </span>
+                  {/* DIVIDER & FOOTER */}
+                  <div>
+                    <div className="border-t border-slate-100 my-4" />
+                    <div className="flex items-center justify-between text-xs sm:text-sm">
+                      <div className="flex items-center space-x-2 text-slate-700 font-medium">
+                        <Users className="w-4 h-4 text-slate-700" />
+                        <span>{item.totalStudents ?? 0} Students</span>
+                      </div>
+                      <span className="font-extrabold text-xs tracking-wider text-slate-900 flex items-center space-x-1 group-hover:translate-x-0.5 transition-transform">
+                        <span>OPEN WORKSPACE</span>
+                        <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </span>
+                    </div>
                   </div>
                 </div>
-
-                {/* SECTION CARD FOOTER */}
-                <div className="pt-3.5 mt-4 border-t border-slate-200 flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-1.5 text-slate-700 font-semibold">
-                    <Users className="w-3.5 h-3.5 text-slate-600" />
-                    <span>{item.totalStudents} Students</span>
-                  </div>
-                  <span className="font-extrabold text-slate-900 flex items-center space-x-1 group-hover:translate-x-1 transition-transform">
-                    <span>OPEN WORKSPACE</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-
       {/* LEVEL 4: WORKSPACE (TAKE ATTENDANCE | ATTENDANCE CORRECTION | HISTORY & AUDIT) */}
       {currentView === 'WORKSPACE' && selectedAssignmentItem && (
-        <div className="space-y-3.5">
-          {/* 1. SEPARATE BACK BUTTON ABOVE THE SUBJECT CARD */}
+        <div className="space-y-4">
+          {/* BACK TO SECTIONS BUTTON */}
           <div>
             <button
               type="button"
               onClick={handleBackToSections}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border-2 border-slate-800 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-900 border-2 border-black rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
             >
-              <ArrowLeft className="w-4 h-4 text-slate-700" />
+              <ArrowLeft className="w-4 h-4 text-slate-900 stroke-[2.5]" />
               <span>Back to Sections</span>
             </button>
           </div>
@@ -1312,22 +1606,22 @@ export const FacultyAttendancePage: React.FC = () => {
                   </button>
                   <div>
                     <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                      {selectedSubject?.name || completeHistoryData?.assignment.subjectName || 'Course Attendance'}
+                      {selectedSubject?.name || completeHistoryData?.assignment?.subjectName || selectedAssignmentItem?.subjectName || 'Course Attendance'}
                     </h2>
                     <div className="text-xs sm:text-sm font-semibold text-slate-500 mt-1 flex flex-wrap items-center gap-2">
                       <span className="font-bold text-slate-700">
-                        {selectedSubject?.code || completeHistoryData?.assignment.subjectCode}
+                        {selectedSubject?.code || completeHistoryData?.assignment?.subjectCode || selectedAssignmentItem?.subjectCode}
                       </span>
                       <span>•</span>
-                      <span>{selectedSubject?.department || completeHistoryData?.assignment.department || 'CSE'}</span>
+                      <span>{(selectedSubject as any)?.department || completeHistoryData?.assignment?.departmentName || selectedAssignmentItem?.departmentCode || 'CSE'}</span>
                       <span>•</span>
-                      <span>Semester {selectedSemNum || completeHistoryData?.assignment.semester}</span>
+                      <span>Semester {selectedSemNum || completeHistoryData?.assignment?.semester || selectedAssignmentItem?.semester}</span>
                       <span>•</span>
-                      <span>{formatSectionLabel(selectedSubject?.section || completeHistoryData?.assignment.section)}</span>
-                      {(completeHistoryData?.assignment.academicYear || activeAY) && (
+                      <span>{formatSectionLabel(selectedSubject?.section || completeHistoryData?.assignment?.section || selectedAssignmentItem?.section)}</span>
+                      {(completeHistoryData?.assignment?.academicYear || selectedAssignmentItem?.academicYear || activeAY) && (
                         <>
                           <span>•</span>
-                          <span>AY: {completeHistoryData?.assignment.academicYear || activeAY}</span>
+                          <span>AY: {completeHistoryData?.assignment?.academicYear || selectedAssignmentItem?.academicYear || activeAY}</span>
                         </>
                       )}
                     </div>
@@ -1372,7 +1666,7 @@ export const FacultyAttendancePage: React.FC = () => {
                     }`}
                   >
                     {completeHistoryFilter === 'ALL' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    <span>All ({completeHistoryData?.summary.totalSessions ?? 0})</span>
+                    <span>All ({completeHistoryData?.summary?.totalScheduled ?? (completeHistoryData?.summary as any)?.totalSessions ?? completeHistoryData?.sessions?.length ?? 0})</span>
                   </button>
 
                   <button
@@ -1385,7 +1679,7 @@ export const FacultyAttendancePage: React.FC = () => {
                     }`}
                   >
                     {completeHistoryFilter === 'PENDING' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    <span>Pending ({completeHistoryData?.summary.pendingCount ?? 0})</span>
+                    <span>Pending ({completeHistoryData?.summary?.pendingCount ?? 0})</span>
                   </button>
 
                   <button
@@ -1398,7 +1692,7 @@ export const FacultyAttendancePage: React.FC = () => {
                     }`}
                   >
                     {completeHistoryFilter === 'COMPLETED' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    <span>Completed ({completeHistoryData?.summary.completedCount ?? 0})</span>
+                    <span>Completed ({(completeHistoryData?.summary as any)?.completedCount ?? completeHistoryData?.summary?.classesHeld ?? 0})</span>
                   </button>
 
                   <button
@@ -1411,14 +1705,14 @@ export const FacultyAttendancePage: React.FC = () => {
                     }`}
                   >
                     {completeHistoryFilter === 'CANCELLED' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    <span>Cancelled ({completeHistoryData?.summary.cancelledCount ?? 0})</span>
+                    <span>Cancelled ({completeHistoryData?.summary?.cancelledCount ?? 0})</span>
                   </button>
                 </div>
 
                 {/* Right: Classes held indicator + Plus button */}
                 <div className="flex items-center space-x-3 shrink-0 self-end sm:self-auto">
                   <span className="text-xs font-bold text-slate-600">
-                    <span className="text-slate-900 font-extrabold">{completeHistoryData?.summary.classesHeld ?? 0}</span> classes held
+                    <span className="text-slate-900 font-extrabold">{completeHistoryData?.summary?.classesHeld ?? 0}</span> classes held
                   </span>
                   <button
                     type="button"
@@ -1502,11 +1796,6 @@ export const FacultyAttendancePage: React.FC = () => {
                             <div className="flex flex-wrap items-center gap-2">
                               <h4 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
                                 {formatDateLong(session.date)}
-                                {session.classroom && (
-                                  <span className="text-slate-600 font-semibold ml-1.5">
-                                    - ( {session.classroom} )
-                                  </span>
-                                )}
                               </h4>
                               {/* Accessible Status Label */}
                               {isCompleted && (
@@ -1527,12 +1816,8 @@ export const FacultyAttendancePage: React.FC = () => {
                             </div>
 
                             <div className="text-xs text-slate-500 font-medium mt-1 flex flex-wrap items-center gap-2">
-                              <span className="text-slate-600 font-semibold">
-                                {session.timeSlot || '10:35 AM – 11:30 AM'}
-                              </span>
                               {isCompleted && session.summary && (
                                 <>
-                                  <span>•</span>
                                   <span className="text-emerald-700 font-bold">
                                     {session.summary.presentCount} Present
                                   </span>
@@ -1546,13 +1831,15 @@ export const FacultyAttendancePage: React.FC = () => {
                                   </span>
                                 </>
                               )}
+                              {isPending && (
+                                <span className="text-amber-700 font-semibold">
+                                  Attendance not taken yet
+                                </span>
+                              )}
                               {isCancelled && session.cancellationReason && (
-                                <>
-                                  <span>•</span>
-                                  <span className="text-rose-600 italic">
-                                    Reason: {session.cancellationReason}
-                                  </span>
-                                </>
+                                <span className="text-rose-600 italic">
+                                  Reason: {session.cancellationReason}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -1974,104 +2261,297 @@ export const FacultyAttendancePage: React.FC = () => {
           {/* TAB 2: ATTENDANCE CORRECTION */}
           {workspaceTab === 'CORRECTION' && (
             <div className="space-y-3">
-              {/* SUB-VIEW A: SELECT CONDUCTED SESSION */}
+              {/* SUB-VIEW A: MONTHLY ATTENDANCE CALENDAR INTERFACE */}
               {!selectedCorrectionSessionId && (
-                <div className="space-y-3">
-                  <div className="bg-amber-50/70 border border-amber-200 px-3.5 py-2.5 rounded-xl flex items-start space-x-2.5 text-xs">
-                    <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="font-bold text-amber-950">Attendance Correction Workspace</h4>
-                      <p className="text-amber-800 mt-0.5 text-[11px]">
-                        Select a conducted class from the database below to correct student attendance with complete audit logs.
-                      </p>
+                <div className="space-y-4">
+                  {/* Top Workspace Header: Attendance Calendar + Subject Meta + Nav Controls */}
+                  <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start sm:items-center space-x-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0">
+                        <Calendar className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                          Attendance Calendar
+                        </h2>
+                        <div className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-slate-800">
+                            {selectedSubject?.name || completeHistoryData?.assignment?.subjectName || selectedAssignmentItem?.subjectName} ({selectedSubject?.code || completeHistoryData?.assignment?.subjectCode || selectedAssignmentItem?.subjectCode})
+                          </span>
+                          <span>•</span>
+                          <span>{(selectedSubject as any)?.department || completeHistoryData?.assignment?.departmentName || selectedAssignmentItem?.departmentCode || 'CSE'}</span>
+                          <span>•</span>
+                          <span>Semester {selectedSemNum || completeHistoryData?.assignment?.semester || selectedAssignmentItem?.semester}</span>
+                          <span>•</span>
+                          <span>{formatSectionLabel(selectedSubject?.section || completeHistoryData?.assignment?.section || selectedAssignmentItem?.section)}</span>
+                          {(completeHistoryData?.assignment?.academicYear || selectedAssignmentItem?.academicYear || activeAY) && (
+                            <>
+                              <span>•</span>
+                              <span>AY: {completeHistoryData?.assignment?.academicYear || selectedAssignmentItem?.academicYear || activeAY}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Navigation Controls: Today, Month/Year selector, Arrows & Refresh */}
+                    <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+                      {/* Today Button */}
+                      <button
+                        type="button"
+                        onClick={handleGoToToday}
+                        className="h-9 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs"
+                        title="Return to Today"
+                      >
+                        Today
+                      </button>
+
+                      {/* Previous Month Arrow */}
+                      <button
+                        type="button"
+                        onClick={handlePrevMonth}
+                        className="w-9 h-9 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg flex items-center justify-center transition cursor-pointer shadow-2xs"
+                        title="Previous Month"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+
+                      {/* Month Selector */}
+                      <select
+                        value={calendarMonth}
+                        onChange={(e) => setCalendarMonth(Number(e.target.value))}
+                        className="h-9 px-2.5 bg-white border border-slate-200 text-slate-900 font-bold text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer shadow-2xs"
+                      >
+                        {MONTH_NAMES.map((name, idx) => (
+                          <option key={name} value={idx}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Year Selector */}
+                      <select
+                        value={calendarYear}
+                        onChange={(e) => setCalendarYear(Number(e.target.value))}
+                        className="h-9 px-2.5 bg-white border border-slate-200 text-slate-900 font-bold text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer shadow-2xs"
+                      >
+                        {[2024, 2025, 2026, 2027, 2028].map((yr) => (
+                          <option key={yr} value={yr}>
+                            {yr}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Next Month Arrow */}
+                      <button
+                        type="button"
+                        onClick={handleNextMonth}
+                        className="w-9 h-9 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg flex items-center justify-center transition cursor-pointer shadow-2xs"
+                        title="Next Month"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+
+                      {/* Refresh Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedAssignmentId) {
+                            loadAttendanceHistory(selectedAssignmentId);
+                            loadCompleteAttendanceHistory(selectedAssignmentId);
+                          }
+                        }}
+                        disabled={loadingCompleteHistory || loadingHistory}
+                        className="w-9 h-9 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg flex items-center justify-center transition cursor-pointer disabled:opacity-60 shadow-2xs"
+                        title="Refresh attendance records"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${(loadingCompleteHistory || loadingHistory) ? 'animate-spin text-amber-600' : ''}`} />
+                      </button>
                     </div>
                   </div>
 
-                  {loadingHistory ? (
-                    <div className="bg-white p-8 rounded-xl border border-slate-200 text-center">
-                      <RefreshCw className="w-6 h-6 animate-spin text-amber-600 mx-auto mb-2" />
-                      <p className="text-slate-600 font-medium text-xs">Loading conducted sessions...</p>
-                    </div>
-                  ) : !historyData || historyData.sessions.length === 0 ? (
-                    <div className="bg-white p-8 rounded-xl border border-slate-200 text-center space-y-2">
-                      <div className="w-10 h-10 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
-                        <History className="w-5 h-5" />
+                  {/* Legend Bar */}
+                  <div className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="font-extrabold text-slate-500 uppercase tracking-wider text-[10px]">
+                        Legend:
+                      </span>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="w-3.5 h-3.5 rounded bg-emerald-100 border border-emerald-400 ring-1 ring-emerald-200" />
+                        <span className="font-semibold text-slate-700 text-xs">Attendance Recorded</span>
                       </div>
-                      <h3 className="text-sm font-bold text-slate-800">No Recorded Sessions Available</h3>
-                      <p className="text-xs text-slate-500 max-w-md mx-auto">
-                        No attendance sessions have been saved yet for this section.
-                      </p>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-amber-200" />
+                        <span className="font-semibold text-slate-700 text-xs">Pending Attendance</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-400 ring-2 ring-slate-200" />
+                        <span className="font-semibold text-slate-700 text-xs">Cancelled Class</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full border-2 border-amber-500 bg-amber-100" />
+                        <span className="font-semibold text-slate-700 text-xs">Selected Date</span>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {historyData.sessions.map((s) => {
-                        const isLocked = s.status === 'LOCKED';
-                        return (
-                          <div
-                            key={s.id}
-                            className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs hover:shadow-xs hover:border-amber-300 transition flex flex-col justify-between space-y-3"
-                          >
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="px-2 py-0.5 bg-slate-900 text-white font-mono text-[11px] font-bold rounded">
-                                  {s.date}
-                                </span>
-                              </div>
-                              <div className="pt-1 flex items-center justify-between text-xs">
-                                <div className="text-slate-600 font-medium">
-                                  <strong className="text-emerald-700">{s.presentCount} Present</strong> &bull;{' '}
-                                  <strong className="text-rose-600">{s.absentCount} Absent</strong>
-                                </div>
-                                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
-                                  {s.percentage}%
-                                </span>
-                              </div>
-                              {s.submittedByFacultyName && (
-                                <div className="text-[10px] text-slate-500 font-medium pt-0.5">
-                                  Recorded by: <span className="font-semibold text-slate-700">{s.submittedByFacultyName}</span>
-                                </div>
-                              )}
-                            </div>
 
-                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                              {isLocked ? (
-                                <span className="inline-flex items-center space-x-1 text-[11px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded">
-                                  <Lock className="w-3 h-3" />
-                                  <span>Locked</span>
-                                </span>
-                              ) : s.canEdit === false ? (
-                                <span className="inline-flex items-center space-x-1 text-[11px] text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded">
-                                  <Lock className="w-3 h-3" />
-                                  <span>Read-Only</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center space-x-1 text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  <span>Editable</span>
-                                </span>
-                              )}
+                    <div className="text-[11px] font-bold text-slate-500">
+                      Viewing: <span className="text-slate-800 font-extrabold">{MONTH_NAMES[calendarMonth]} {calendarYear}</span>
+                    </div>
+                  </div>
 
-                              <button
-                                type="button"
-                                onClick={() => handleSelectSessionForCorrection(s.id)}
-                                className={`px-3 py-1 text-white text-[11px] font-bold rounded-lg transition shadow-2xs flex items-center space-x-1 cursor-pointer ${
-                                  s.canEdit === false ? 'bg-slate-700 hover:bg-slate-800' : 'bg-amber-500 hover:bg-amber-600'
-                                }`}
-                              >
-                                <Edit3 className="w-3 h-3" />
-                                <span>{s.canEdit === false ? 'View Session \u2192' : 'Correct Session \u2192'}</span>
-                              </button>
-                            </div>
+                  {/* Monthly Attendance Calendar Grid */}
+                  <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+                      {/* Days of Week Header */}
+                      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-100 text-center text-xs font-black text-slate-700 uppercase tracking-wider py-2.5">
+                        {DAY_NAMES.map((day, idx) => (
+                          <div key={day} className="truncate px-1">
+                            <span className="hidden sm:inline">{day}</span>
+                            <span className="inline sm:hidden">{SHORT_DAY_NAMES[idx]}</span>
                           </div>
-                        );
-                      })}
+                        ))}
+                      </div>
+
+                      {/* Calendar Cells Grid */}
+                      <div className="grid grid-cols-7 divide-x divide-y divide-slate-100 flex-1">
+                        {calendarCells.map((cell) => {
+                          const cellSessions = sessionsByDate[cell.dateStr] || [];
+                          const completedSessions = cellSessions.filter((s) => s.status === 'Completed');
+                          const hasCompleted = completedSessions.length > 0;
+                          const hasPending = cellSessions.some((s) => s.status === 'Pending');
+                          const hasCancelled = cellSessions.some((s) => s.status === 'Cancelled');
+                          const isSelected = selectedCalendarDate === cell.dateStr;
+
+                          // Compute total attendance percentage for recorded session(s)
+                          let completedRate: number | null = null;
+                          if (hasCompleted) {
+                            const totalPresent = completedSessions.reduce((sum, s) => sum + (s.presentCount || 0), 0);
+                            const totalStudents = completedSessions.reduce((sum, s) => sum + (s.totalStudents || 0), 0);
+                            if (totalStudents > 0) {
+                              completedRate = Math.round((totalPresent / totalStudents) * 1000) / 10;
+                            } else if (completedSessions[0]?.percentage !== undefined && completedSessions[0]?.percentage !== null) {
+                              completedRate = Number(completedSessions[0].percentage);
+                            }
+                          }
+
+                          // Dynamic cell background & bright hover styling
+                          const getCellStyles = () => {
+                            if (!cell.isCurrentMonth) {
+                              return 'bg-slate-50/50 text-slate-400 hover:bg-slate-100/90 hover:ring-1 hover:ring-slate-300';
+                            }
+                            if (hasCompleted) {
+                              return 'bg-emerald-100/85 text-emerald-950 hover:bg-emerald-200 hover:ring-2 hover:ring-emerald-500 hover:shadow-md hover:z-10';
+                            }
+                            if (hasPending) {
+                              return 'bg-amber-50 text-amber-900 hover:bg-amber-100 hover:ring-2 hover:ring-amber-400 hover:shadow-md hover:z-10';
+                            }
+                            return 'bg-white text-slate-800 hover:bg-amber-100/90 hover:ring-2 hover:ring-amber-400 hover:shadow-md hover:z-10';
+                          };
+
+                          return (
+                            <button
+                              key={cell.dateStr}
+                              type="button"
+                              onClick={() => handleCalendarDateClick(cell.dateStr)}
+                              title={
+                                hasCompleted && completedRate !== null
+                                  ? `Attendance: ${completedRate}% (${completedSessions[0]?.presentCount || 0} Present, ${completedSessions[0]?.absentCount || 0} Absent) — Click to correct attendance for ${formatDateLong(cell.dateStr)}`
+                                  : hasPending
+                                  ? `Click to take attendance for ${formatDateLong(cell.dateStr)}`
+                                  : formatDateLong(cell.dateStr)
+                              }
+                              className={`min-h-[78px] sm:min-h-[92px] p-2 text-left flex flex-col justify-between transition-all duration-150 relative cursor-pointer outline-none ${getCellStyles()} ${
+                                isSelected
+                                  ? 'ring-2 ring-amber-500 ring-inset shadow-xs z-20'
+                                  : ''
+                              }`}
+                            >
+                              {/* Top row: Day number + Today pill */}
+                              <div className="flex items-center justify-between w-full">
+                                <span
+                                  className={`text-xs sm:text-sm font-black rounded-md px-1.5 py-0.5 ${
+                                    cell.isToday
+                                      ? 'bg-blue-600 text-white shadow-2xs'
+                                      : isSelected
+                                      ? 'text-amber-800 font-black'
+                                      : hasCompleted
+                                      ? 'text-emerald-950 font-black'
+                                      : cell.isCurrentMonth
+                                      ? 'text-slate-800'
+                                      : 'text-slate-400'
+                                  }`}
+                                >
+                                  {cell.dayNumber}
+                                </span>
+
+                                {cell.isToday && (
+                                  <span className="hidden sm:inline text-[9px] font-black uppercase tracking-wider text-blue-600 bg-blue-50 border border-blue-200 px-1 rounded">
+                                    Today
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Bottom area: Glass Attendance Percentage Bar or Pending/Cancelled status */}
+                              <div className="w-full mt-auto pt-1 space-y-1">
+                                {hasCompleted && completedRate !== null ? (
+                                  <div className="w-full space-y-1">
+                                    <div className="flex items-baseline justify-between leading-none">
+                                      <span className="text-xs sm:text-[13px] font-black text-slate-800 tracking-tight">
+                                        {completedRate}%
+                                      </span>
+                                      {cellSessions.length > 1 && (
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                                          {cellSessions.length} classes
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Glowing Glass Capsule Pill Bar */}
+                                    <div className="relative w-full h-2.5 sm:h-3 rounded-full bg-slate-900/15 backdrop-blur-xs p-[1.5px] border border-white/60 shadow-inner overflow-hidden flex items-center">
+                                      <div
+                                        className="h-full rounded-full bg-gradient-to-r from-lime-400 via-emerald-400 to-cyan-400 shadow-[0_0_8px_rgba(52,211,153,0.7)] transition-all duration-300"
+                                        style={{ width: `${Math.min(100, Math.max(0, completedRate))}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    {hasPending && !hasCompleted && (
+                                      <div className="text-[10px] font-bold text-amber-800 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded truncate text-center">
+                                        Pending
+                                      </div>
+                                    )}
+                                    {hasCancelled && !hasCompleted && !hasPending && (
+                                      <div className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded truncate text-center">
+                                        Cancelled
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Calendar Footer Tip */}
+                      <div className="py-2.5 px-4 bg-slate-50/80 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex items-center justify-center gap-1.5">
+                        <Info className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Click any recorded date on the calendar to directly open attendance correction.</span>
+                      </div>
                     </div>
-                  )}
                 </div>
               )}
 
               {/* SUB-VIEW B: ACTIVE CORRECTION WORKSPACE FOR CHOSEN SESSION */}
-              {selectedCorrectionSessionId && correctionSessionData && (
+              {selectedCorrectionSessionId && loadingCorrectionSession && (
+                <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3 shadow-xs">
+                  <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-800">Opening Attendance Correction Workspace...</p>
+                  <p className="text-xs text-slate-500 font-medium">Loading student roster and attendance records...</p>
+                </div>
+              )}
+
+              {selectedCorrectionSessionId && !loadingCorrectionSession && correctionSessionData && (
                 <div className="space-y-3">
                   {/* Session Header Card with Compact Horizontal Summary Tiles */}
                   <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
@@ -2082,7 +2562,7 @@ export const FacultyAttendancePage: React.FC = () => {
                         className="inline-flex items-center space-x-1.5 text-xs font-bold text-slate-600 hover:text-amber-700 transition cursor-pointer"
                       >
                         <ArrowLeft className="w-3.5 h-3.5" />
-                        <span>Back to Conducted Sessions</span>
+                        <span>Back to Attendance Calendar</span>
                       </button>
 
                       <div className="flex items-center space-x-2">
@@ -2345,7 +2825,7 @@ export const FacultyAttendancePage: React.FC = () => {
                     <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">All Conducted Attendance Sessions</h3>
                   </div>
                   <span className="text-[11px] font-bold text-slate-500">
-                    {historyData?.sessions.length || 0} Total Sessions Conducted
+                    {historyData?.sessions?.length || 0} Total Sessions Conducted
                   </span>
                 </div>
 
@@ -2354,7 +2834,7 @@ export const FacultyAttendancePage: React.FC = () => {
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-1.5 text-indigo-600" />
                     <span className="text-xs">Loading history...</span>
                   </div>
-                ) : !historyData || historyData.sessions.length === 0 ? (
+                ) : !historyData || !historyData.sessions || historyData.sessions.length === 0 ? (
                   <p className="text-xs text-slate-500 italic p-2">No attendance sessions recorded yet.</p>
                 ) : (
                   <div className="overflow-x-auto">
@@ -2370,7 +2850,7 @@ export const FacultyAttendancePage: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {historyData.sessions.map((s) => (
+                        {(historyData?.sessions || []).map((s) => (
                           <tr key={s.id} className="hover:bg-slate-50/80">
                             <td className="py-2 px-3 font-mono font-bold text-slate-900">{s.date}</td>
                             <td className="py-2 px-3 font-bold text-emerald-700">
@@ -2622,8 +3102,8 @@ export const FacultyAttendancePage: React.FC = () => {
                   Class Attendance Details
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  {viewSessionModalData
-                    ? `${formatDateLong(viewSessionModalData.session.date)} • ${viewSessionModalData.session.classroom || 'Classroom'} • ${viewSessionModalData.session.startTime || ''} - ${viewSessionModalData.session.endTime || ''}`
+                  {viewSessionModalData?.session?.date
+                    ? formatDateLong(viewSessionModalData.session.date)
                     : 'Loading attendance record...'}
                 </p>
               </div>
@@ -2644,86 +3124,105 @@ export const FacultyAttendancePage: React.FC = () => {
                   <p className="text-xs font-semibold text-slate-600">Loading student attendance...</p>
                 </div>
               ) : viewSessionModalData ? (
-                <>
-                  {/* Summary Metric Chips */}
-                  <div className="grid grid-cols-4 gap-2">
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total</div>
-                      <div className="text-base font-black text-slate-900">{viewSessionModalData.summary.total}</div>
-                    </div>
-                    <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 text-center">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Present</div>
-                      <div className="text-base font-black text-emerald-800">{viewSessionModalData.summary.present}</div>
-                    </div>
-                    <div className="bg-rose-50 p-2.5 rounded-xl border border-rose-200 text-center">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Absent</div>
-                      <div className="text-base font-black text-rose-800">{viewSessionModalData.summary.absent}</div>
-                    </div>
-                    <div className="bg-blue-50 p-2.5 rounded-xl border border-blue-200 text-center">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Rate</div>
-                      <div className="text-base font-black text-blue-800">{viewSessionModalData.summary.rate}%</div>
-                    </div>
-                  </div>
+                (() => {
+                  const totalStudents = viewSessionModalData.session?.totalStudents ?? viewSessionModalData.summary?.total ?? viewSessionModalData.students?.length ?? 0;
+                  const presentCount = viewSessionModalData.session?.presentCount ?? viewSessionModalData.summary?.present ?? viewSessionModalData.students?.filter((s) => (s.currentStatus || (s as any).status) === 'PRESENT').length ?? 0;
+                  const absentCount = viewSessionModalData.session?.absentCount ?? viewSessionModalData.summary?.absent ?? viewSessionModalData.students?.filter((s) => (s.currentStatus || (s as any).status) === 'ABSENT').length ?? 0;
+                  const rate = viewSessionModalData.session?.percentage ?? viewSessionModalData.summary?.rate ?? (totalStudents > 0 ? Number(((presentCount / totalStudents) * 100).toFixed(1)) : 100);
 
-                  {/* Search Input */}
-                  <div className="relative">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      placeholder="Search student name or USN..."
-                      value={viewSessionSearchQuery}
-                      onChange={(e) => setViewSessionSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
+                  return (
+                    <>
+                      {/* Summary Metric Chips */}
+                      <div className="grid grid-cols-4 gap-2">
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total</div>
+                          <div className="text-base font-black text-slate-900">{totalStudents}</div>
+                        </div>
+                        <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 text-center">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Present</div>
+                          <div className="text-base font-black text-emerald-800">{presentCount}</div>
+                        </div>
+                        <div className="bg-rose-50 p-2.5 rounded-xl border border-rose-200 text-center">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Absent</div>
+                          <div className="text-base font-black text-rose-800">{absentCount}</div>
+                        </div>
+                        <div className="bg-blue-50 p-2.5 rounded-xl border border-blue-200 text-center">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Rate</div>
+                          <div className="text-base font-black text-blue-800">{rate}%</div>
+                        </div>
+                      </div>
 
-                  {/* Student Table */}
-                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-[11px] font-black text-slate-600 uppercase tracking-wider border-b border-slate-200 sticky top-0">
-                        <tr>
-                          <th className="py-2 px-3 text-center w-12">#</th>
-                          <th className="py-2 px-3">USN</th>
-                          <th className="py-2 px-3">Student Name</th>
-                          <th className="py-2 px-3 text-right">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {viewSessionModalData.students
-                          .filter((st) => {
-                            if (!viewSessionSearchQuery.trim()) return true;
-                            const q = viewSessionSearchQuery.toLowerCase();
-                            return (
-                              st.usn.toLowerCase().includes(q) ||
-                              st.name.toLowerCase().includes(q)
-                            );
-                          })
-                          .map((st, idx) => (
-                            <tr key={st.id} className="hover:bg-slate-50/70 transition">
-                              <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">
-                                {String(idx + 1).padStart(2, '0')}
-                              </td>
-                              <td className="py-2 px-3 font-mono font-bold text-slate-800">{st.usn}</td>
-                              <td className="py-2 px-3 font-semibold text-slate-900">{st.name}</td>
-                              <td className="py-2 px-3 text-right">
-                                {st.status === 'PRESENT' ? (
-                                  <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[11px] font-black rounded-md inline-flex items-center space-x-1">
-                                    <Check className="w-3 h-3 stroke-[2.5]" />
-                                    <span>Present</span>
-                                  </span>
-                                ) : (
-                                  <span className="px-2.5 py-1 bg-rose-100 text-rose-800 text-[11px] font-black rounded-md inline-flex items-center space-x-1">
-                                    <X className="w-3 h-3 stroke-[2.5]" />
-                                    <span>Absent</span>
-                                  </span>
-                                )}
-                              </td>
+                      {/* Search Input */}
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          placeholder="Search student name or USN..."
+                          value={viewSessionSearchQuery}
+                          onChange={(e) => setViewSessionSearchQuery(e.target.value)}
+                          className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      {/* Student Table */}
+                      <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-black text-[11px] font-black text-white uppercase tracking-wider border-b border-neutral-800 sticky top-0">
+                            <tr>
+                              <th className="py-2.5 px-3 text-center w-12 text-neutral-300">#</th>
+                              <th className="py-2.5 px-3 text-white">USN</th>
+                              <th className="py-2.5 px-3 text-white">Student Name</th>
+                              <th className="py-2.5 px-3 text-right text-white">Status</th>
                             </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(viewSessionModalData.students || [])
+                              .filter((st) => {
+                                if (!viewSessionSearchQuery.trim()) return true;
+                                const q = viewSessionSearchQuery.toLowerCase();
+                                const usn = (st.usn || '').toLowerCase();
+                                const name = (st.studentName || (st as any).name || '').toLowerCase();
+                                return usn.includes(q) || name.includes(q);
+                              })
+                              .sort((a, b) =>
+                                compareStudentsByUsnOrName(
+                                  a.usn,
+                                  b.usn,
+                                  a.studentName || (a as any).name,
+                                  b.studentName || (b as any).name
+                                )
+                              )
+                              .map((st, idx) => {
+                                const isPresent = (st.currentStatus || (st as any).status) === 'PRESENT';
+                                return (
+                                  <tr key={st.studentId || (st as any).id || idx} className="hover:bg-slate-50/70 transition">
+                                    <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">
+                                      {String(idx + 1).padStart(2, '0')}
+                                    </td>
+                                    <td className="py-2 px-3 font-mono font-bold text-slate-800">{st.usn}</td>
+                                    <td className="py-2 px-3 font-semibold text-slate-900">{st.studentName || (st as any).name}</td>
+                                    <td className="py-2 px-3 text-right">
+                                      {isPresent ? (
+                                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[11px] font-black rounded-md inline-flex items-center space-x-1">
+                                          <Check className="w-3 h-3 stroke-[2.5]" />
+                                          <span>Present</span>
+                                        </span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-rose-100 text-rose-800 text-[11px] font-black rounded-md inline-flex items-center space-x-1">
+                                          <X className="w-3 h-3 stroke-[2.5]" />
+                                          <span>Absent</span>
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  );
+                })()
               ) : null}
             </div>
 
@@ -2733,9 +3232,9 @@ export const FacultyAttendancePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    const sid = viewSessionModalData.session.id;
+                    const sid = viewSessionModalData?.session?.id;
                     setIsViewSessionModalOpen(false);
-                    handleActionRequestCorrection(sid);
+                    if (sid) handleActionRequestCorrection(sid);
                   }}
                   className="px-3 py-1.5 bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
                 >
@@ -2765,7 +3264,7 @@ export const FacultyAttendancePage: React.FC = () => {
                   Schedule Class Session
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  {selectedSubject?.name || 'Class Session'} • {formatSectionLabel(selectedSubject?.section)}
+                  {selectedSubject?.name || selectedAssignmentItem?.subjectName || 'Class Session'} • {formatSectionLabel(selectedSubject?.section || selectedAssignmentItem?.section)}
                 </p>
               </div>
               <button
@@ -2826,7 +3325,7 @@ export const FacultyAttendancePage: React.FC = () => {
                   type="text"
                   value={scheduleClassroom}
                   onChange={(e) => setScheduleClassroom(e.target.value)}
-                  placeholder="e.g. B-403"
+                  placeholder="Optional (e.g. Room 101)"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -2999,16 +3498,6 @@ export const FacultyAttendancePage: React.FC = () => {
                   <span className="font-semibold text-slate-500">Date:</span>
                   <span className="font-bold text-slate-900">{formatDateLong(cancellationDetailSession.date)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-slate-500">Time:</span>
-                  <span className="font-bold text-slate-900">{cancellationDetailSession.timeSlot || '10:35 AM - 11:30 AM'}</span>
-                </div>
-                {cancellationDetailSession.classroom && (
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-slate-500">Classroom:</span>
-                    <span className="font-bold text-slate-900">{cancellationDetailSession.classroom}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span className="font-semibold text-slate-500">Status:</span>
                   <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-200 text-slate-800">

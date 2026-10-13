@@ -134,7 +134,11 @@ router.get('/academics/performance', hodController.getHodStudentPerformance as a
 // ─── 7. Reports & Settings Module ────────────────────────────────────────────
 router.get('/reports', hodController.getHodReports as any);
 router.get('/settings', hodController.getHodSettings as any);
-router.patch('/settings', hodController.updateHodSettings as any);
+router.patch('/settings', hodController.updateHodDepartmentSettings as any);
+router.put('/settings', hodController.updateHodDepartmentSettings as any);
+router.get('/profile', hodController.getHodProfile as any);
+router.put('/profile', hodController.updateHodProfile as any);
+router.patch('/profile', hodController.updateHodProfile as any);
 router.put('/settings/profile', hodController.updateHodProfile as any);
 router.put('/settings/password', hodController.updateHodPassword as any);
 router.post('/profile/change-password', hodController.updateHodPassword as any);
@@ -151,7 +155,20 @@ router.get('/assessments/overview', assessmentWorkflowController.getHodOverviewS
 router.get('/assessments', assessmentWorkflowController.getHodSubmissions as any);
 router.get('/assessments/:id', assessmentWorkflowController.getHodReviewDetail as any);
 router.post('/assessments/:id/approve-publish', assessmentWorkflowController.approveAndPublishAssessment as any);
-router.post('/assessments/:id/return', assessmentWorkflowController.returnAssessmentForCorrection as any);
+// ─── 11. Student Attendance & Marks Release Module ──────────────────────────
+import * as academicReleaseController from '../controllers/academicRelease.controller';
+router.get('/release/semesters', academicReleaseController.getAuthorizedSemesters as any);
+router.get('/release/semesters/:semester/subjects', academicReleaseController.getSemesterSubjects as any);
+router.get('/release/attendance/preview', academicReleaseController.previewAttendanceRelease as any);
+router.post('/release/attendance/confirm', academicReleaseController.confirmAttendanceRelease as any);
+router.post('/release/attendance/revoke', academicReleaseController.revokeAttendanceRelease as any);
+router.post('/release/semester/attendance/confirm', academicReleaseController.confirmSemesterAttendanceRelease as any);
+router.post('/release/semester/attendance/revoke', academicReleaseController.revokeSemesterAttendanceRelease as any);
+router.get('/release/marks/preview', academicReleaseController.previewMarksRelease as any);
+router.post('/release/marks/confirm', academicReleaseController.confirmMarksRelease as any);
+router.post('/release/marks/revoke', academicReleaseController.revokeMarksRelease as any);
+router.post('/release/semester/marks/confirm', academicReleaseController.confirmSemesterMarksRelease as any);
+router.post('/release/semester/marks/revoke', academicReleaseController.revokeSemesterMarksRelease as any);
 
 export default router;
 

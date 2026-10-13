@@ -7,14 +7,42 @@ import {
   Mail,
   MapPin,
   Users,
-  GraduationCap,
   ShieldCheck,
   Building2,
   Calendar,
   AlertCircle,
   RefreshCw,
-  Hash,
+  Award,
+  BookOpen,
+  FileText,
+  CheckCircle2,
 } from 'lucide-react';
+import { formatDateDDMMYYYY } from '../../utils/date.util';
+
+// Reusable FormField card component matching Admin Student Review Page (StudentViewPage.tsx)
+const FormField: React.FC<{
+  label: string;
+  value?: string | number | null;
+  mono?: boolean;
+  className?: string;
+}> = ({ label, value, mono, className = '' }) => (
+  <div
+    className={`p-3 bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-100 dark:border-neutral-800/80 rounded-xl transition-all flex flex-col gap-1.5 shadow-2xs ${className}`}
+  >
+    <p className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider leading-none">
+      {label}
+    </p>
+    <p
+      className={`text-xs font-bold text-neutral-850 dark:text-neutral-200 truncate leading-tight ${
+        mono ? 'font-mono' : ''
+      }`}
+    >
+      {value !== null && value !== undefined && String(value).trim() !== '' && String(value) !== 'N/A'
+        ? String(value)
+        : '—'}
+    </p>
+  </div>
+);
 
 export const StudentProfilePage: React.FC = () => {
   const [profile, setProfile] = useState<StudentProfileData | null>(null);
@@ -40,11 +68,14 @@ export const StudentProfilePage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="space-y-6 max-w-6xl mx-auto">
         <div className="h-44 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl animate-pulse" />
         <div className="space-y-6">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-48 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl animate-pulse" />
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div
+              key={i}
+              className="h-56 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl animate-pulse"
+            />
           ))}
         </div>
       </div>
@@ -70,217 +101,239 @@ export const StudentProfilePage: React.FC = () => {
     );
   }
 
-  const { student, academic, admission, contact, address, parent } = profile;
+  const { student, academic, admission, contact, address, parent, personal, qualifications } = profile;
 
-  // Helper field row renderer (Read-Only display item)
-  const InfoField: React.FC<{ label: string; value?: string | number | null; mono?: boolean }> = ({
-    label,
-    value,
-    mono,
-  }) => (
-    <div className="space-y-1">
-      <span className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">
-        {label}
-      </span>
-      <span
-        className={`text-xs font-bold text-neutral-900 dark:text-white block truncate ${
-          mono ? 'font-mono' : ''
-        }`}
-      >
-        {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : '—'}
-      </span>
-    </div>
-  );
+  // Resolved values
+  const firstName = personal?.firstName || student.name.split(' ')[0] || '';
+  const middleName = personal?.middleName || '';
+  const lastName = personal?.lastName || student.name.split(' ').slice(1).join(' ') || '';
+  const fullName = personal?.fullName || student.name;
+  const gender = personal?.gender || student.gender;
+  const dob = personal?.dateOfBirth || student.dob;
+  const formattedDob = dob && dob !== 'N/A' ? formatDateDDMMYYYY(dob) : '—';
+  const bloodGroup = student.bloodGroup && student.bloodGroup !== 'N/A' ? student.bloodGroup : '—';
+  const category = personal?.category || student.category;
+  const caste = personal?.caste || student.caste;
+  const religion = personal?.religion || student.religion;
+  const nationality = personal?.nationality || student.nationality || 'INDIAN';
+  const studiedInKarnataka =
+    personal?.studiedInKarnataka !== null && personal?.studiedInKarnataka !== undefined
+      ? personal.studiedInKarnataka
+        ? 'Yes'
+        : 'No'
+      : '—';
+  const areaType = personal?.areaType || '—';
+  const aadhaarMasked = personal?.aadhaarMasked || student.aadhaarNumberMasked;
+
+  // Entrance Exam details
+  const entrance = qualifications?.entranceExam;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* ── PROFILE HEADER HERO CARD ── */}
+    <div className="space-y-6 max-w-6xl mx-auto pb-10">
+      {/* ── PROFILE HERO HEADER CARD (Matching Admin Student Review Header) ── */}
       <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-xs flex flex-col sm:flex-row items-center gap-6">
         <ProfileAvatar
-          name={student.name}
+          imageUrl={(personal as any)?.profileImage}
+          name={fullName}
           size="xl"
           className="border-4 border-indigo-100 dark:border-indigo-950 shadow-md flex-shrink-0"
         />
-        <div className="space-y-1.5 text-center sm:text-left flex-1 min-w-0">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <h2 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white">
-              {student.name}
+        <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-wrap">
+            <h2 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white uppercase tracking-tight">
+              {fullName}
             </h2>
-            <span className="px-3 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-mono font-bold self-center sm:self-auto">
-              USN: {student.usn}
-            </span>
+            <div className="flex items-center justify-center sm:justify-start gap-1.5 flex-wrap">
+              <span className="px-3 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-mono font-bold">
+                USN: {student.usn}
+              </span>
+              {admission?.applicationNumber && admission.applicationNumber !== 'N/A' && (
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-neutral-300 border border-slate-200 dark:border-neutral-700 text-[11px] font-mono font-bold">
+                  App: {admission.applicationNumber}
+                </span>
+              )}
+            </div>
           </div>
+
           <p className="text-xs text-neutral-500 font-medium">
             {academic.departmentName} ({academic.departmentCode}) • {academic.program || 'Bachelor of Engineering'}
           </p>
+
           <div className="flex items-center justify-center sm:justify-start gap-2 pt-1 text-[11px] text-neutral-500 flex-wrap">
-            <span className="bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-md font-semibold">
+            <span className="bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg font-bold text-neutral-700 dark:text-neutral-300">
               Semester {academic.currentSemester}
             </span>
-            {academic.section && (
-              <span className="bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-md font-semibold">
-                Section: {academic.section}
-              </span>
-            )}
-            <span className="bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-md font-semibold">
+            <span className="bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg font-bold text-neutral-700 dark:text-neutral-300">
+              Section: {academic.section || 'Unassigned'}
+            </span>
+            <span className="bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg font-bold text-neutral-700 dark:text-neutral-300">
               Academic Year: {academic.academicYear}
             </span>
+            {admission?.quota && (
+              <span className="bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg font-bold text-neutral-700 dark:text-neutral-300">
+                Quota: {admission.quota}
+              </span>
+            )}
           </div>
         </div>
 
         {/* Read-Only Status Badge */}
-        <div className="flex-shrink-0">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-neutral-300 border border-slate-200 dark:border-neutral-700 text-xs font-bold">
+        <div className="flex-shrink-0 self-center">
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold shadow-2xs">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
             <span>Verified Official Record (Read-Only)</span>
           </span>
         </div>
       </div>
 
-      {/* ── SECTION 1: PERSONAL INFORMATION ── */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-          <User className="w-4 h-4 text-indigo-600" />
-          <h3 className="font-extrabold text-neutral-900 dark:text-white text-sm">
-            Personal Information
+      {/* ── SHEET CONTAINER MIMICKING StudentViewPage.tsx FORM SHEET ── */}
+      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl shadow-xs p-6 sm:p-8 space-y-8">
+        
+        {/* ── SECTION 1: PERSONAL DETAILS (Exact Admin Form Grid) ── */}
+        <div className="space-y-4">
+          <h3 className="text-xs uppercase font-black tracking-widest text-neutral-500 dark:text-neutral-400 border-l-4 border-violet-500 pl-2.5 flex items-center gap-2">
+            <User size={14} className="text-violet-500" /> Personal Details
           </h3>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
-          <InfoField label="Full Legal Name" value={student.name} />
-          <InfoField label="Gender" value={student.gender} />
-          <InfoField label="Date of Birth" value={student.dob ? new Date(student.dob).toLocaleDateString() : '—'} />
-          <InfoField label="Blood Group" value={student.bloodGroup} />
-          <InfoField label="Category / Reservation" value={student.category} />
-          <InfoField label="Caste" value={student.caste} />
-          <InfoField label="Religion" value={student.religion} />
-          <InfoField label="Nationality" value={student.nationality || 'Indian'} />
-          <InfoField label="Aadhaar Identifier" value={student.aadhaarNumberMasked} mono />
-        </div>
-      </div>
-
-      {/* ── SECTION 2: ADMISSION & ACADEMIC DETAILS ── */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-          <GraduationCap className="w-4 h-4 text-cyan-600" />
-          <h3 className="font-extrabold text-neutral-900 dark:text-white text-sm">
-            Admission & Academic Information
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
-          <InfoField label="Application No." value={admission?.applicationNumber} mono />
-          <InfoField label="University Seat No (USN)" value={student.usn} mono />
-          <InfoField label="Department Code" value={academic.departmentCode} />
-          <InfoField label="Department Name" value={academic.departmentName} />
-          <InfoField label="Degree Program" value={academic.program} />
-          <InfoField label="Current Semester" value={academic.currentSemester} />
-          <InfoField label="Allocated Section" value={academic.section} />
-          <InfoField label="Academic Year" value={academic.academicYear} />
-          <InfoField label="Admission Quota" value={admission?.quota} />
-          <InfoField label="Admission Type" value={admission?.admissionType} />
-          <InfoField label="Enrolled On" value={admission?.enrolledAt ? new Date(admission.enrolledAt).toLocaleDateString() : '—'} />
-          <InfoField label="Previous Board / Institution" value={academic.previousBoard || academic.previousSchool} />
-          <InfoField label="Entrance Exam Rank / Score" value={academic.rank} />
-          <InfoField label="Qualifying Percentage" value={academic.previousPercentage ? `${academic.previousPercentage}%` : '—'} />
-        </div>
-      </div>
-
-      {/* ── SECTION 3: CONTACT INFORMATION ── */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-          <Phone className="w-4 h-4 text-emerald-600" />
-          <h3 className="font-extrabold text-neutral-900 dark:text-white text-sm">
-            Contact Information
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          <InfoField label="Primary Mobile" value={contact.studentMobile || student.phone} mono />
-          <InfoField label="Official Student Email" value={contact.studentEmail || student.email} />
-          <InfoField label="Emergency Contact Number" value={contact.emergencyContact} mono />
-        </div>
-      </div>
-
-      {/* ── SECTION 4: ADDRESS INFORMATION ── */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-xs space-y-5">
-        <div className="flex items-center gap-2 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-          <MapPin className="w-4 h-4 text-amber-600" />
-          <h3 className="font-extrabold text-neutral-900 dark:text-white text-sm">
-            Address Information
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Permanent Address */}
-          <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-850/60 border border-neutral-200/60 dark:border-neutral-800 space-y-2">
-            <span className="text-[11px] font-black text-neutral-400 uppercase tracking-wider block">
-              Permanent Address
-            </span>
-            <div className="text-xs space-y-1 text-neutral-800 dark:text-neutral-200 font-semibold leading-relaxed">
-              <p>{address.permanent.line1 || '—'}</p>
-              {address.permanent.line2 && <p>{address.permanent.line2}</p>}
-              <p>
-                {address.permanent.city ? `${address.permanent.city}, ` : ''}
-                {address.permanent.district ? `${address.permanent.district}, ` : ''}
-                {address.permanent.state || ''}
-              </p>
-              <p className="font-mono text-neutral-500">
-                Pincode: {address.permanent.pincode || '—'}
-              </p>
-            </div>
-          </div>
-
-          {/* Correspondence Address */}
-          <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-850/60 border border-neutral-200/60 dark:border-neutral-800 space-y-2">
-            <span className="text-[11px] font-black text-neutral-400 uppercase tracking-wider block">
-              Correspondence / Current Address
-            </span>
-            <div className="text-xs space-y-1 text-neutral-800 dark:text-neutral-200 font-semibold leading-relaxed">
-              <p>{address.correspondence.line1 || address.permanent.line1 || '—'}</p>
-              {address.correspondence.line2 && <p>{address.correspondence.line2}</p>}
-              <p>
-                {address.correspondence.city || address.permanent.city ? `${address.correspondence.city || address.permanent.city}, ` : ''}
-                {address.correspondence.district || address.permanent.district ? `${address.correspondence.district || address.permanent.district}, ` : ''}
-                {address.correspondence.state || address.permanent.state || ''}
-              </p>
-              <p className="font-mono text-neutral-500">
-                Pincode: {address.correspondence.pincode || address.permanent.pincode || '—'}
-              </p>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+            <FormField label="First Name" value={firstName} />
+            <FormField label="Middle Name" value={middleName} />
+            <FormField label="Last Name" value={lastName} />
+            <FormField label="Full Legal Name" value={fullName} />
+            <FormField label="Gender" value={gender} />
+            <FormField label="Date of Birth" value={formattedDob} />
+            <FormField label="Blood Group" value={bloodGroup} />
+            <FormField label="Nationality" value={nationality} />
+            <FormField label="Religion" value={religion} />
+            <FormField label="Caste" value={caste} />
+            <FormField label="Category / Reservation" value={category} />
+            <FormField label="Area Type" value={areaType} />
+            <FormField label="Studied in Karnataka" value={studiedInKarnataka} />
+            <FormField label="Aadhaar Number (Masked)" value={aadhaarMasked} mono />
           </div>
         </div>
-      </div>
 
-      {/* ── SECTION 5: PARENT / GUARDIAN INFORMATION ── */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-          <Users className="w-4 h-4 text-purple-600" />
-          <h3 className="font-extrabold text-neutral-900 dark:text-white text-sm">
-            Parent & Guardian Information
+        <hr className="border-neutral-100 dark:border-neutral-800" />
+
+        {/* ── SECTION 2: PARENT / GUARDIAN DETAILS ── */}
+        <div className="space-y-4">
+          <h3 className="text-xs uppercase font-black tracking-widest text-neutral-500 dark:text-neutral-400 border-l-4 border-violet-500 pl-2.5 flex items-center gap-2">
+            <Users size={14} className="text-violet-500" /> Parent / Guardian Details
           </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+            <FormField label="Father's Full Name" value={parent.fatherName} />
+            <FormField label="Father's Occupation" value={parent.fatherOccupation} />
+            <FormField label="Father's Phone" value={parent.fatherPhone} mono />
+            <FormField label="Father's Email" value={parent.fatherEmail} />
+            <FormField label="Mother's Full Name" value={parent.motherName} />
+            <FormField label="Mother's Occupation" value={parent.motherOccupation} />
+            <FormField label="Mother's Phone" value={parent.motherPhone} mono />
+            <FormField label="Mother's Email" value={parent.motherEmail} />
+            {parent.guardianName && parent.guardianName !== 'N/A' && (
+              <>
+                <FormField label="Guardian Name" value={parent.guardianName} />
+                <FormField label="Guardian Phone" value={parent.guardianPhone} mono />
+              </>
+            )}
+            <FormField label="Annual Family Income" value={parent.annualIncome} />
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
-          <InfoField label="Father's Full Name" value={parent.fatherName} />
-          <InfoField label="Father's Occupation" value={parent.fatherOccupation} />
-          <InfoField label="Father's Mobile Number" value={parent.fatherPhone} mono />
-          <InfoField label="Father's Email" value={parent.fatherEmail} />
+        <hr className="border-neutral-100 dark:border-neutral-800" />
 
-          <InfoField label="Mother's Full Name" value={parent.motherName} />
-          <InfoField label="Mother's Occupation" value={parent.motherOccupation} />
-          <InfoField label="Mother's Mobile Number" value={parent.motherPhone} mono />
-          <InfoField label="Mother's Email" value={parent.motherEmail} />
-
-          {parent.guardianName && (
-            <>
-              <InfoField label="Guardian Name" value={parent.guardianName} />
-              <InfoField label="Guardian Mobile" value={parent.guardianPhone} mono />
-            </>
-          )}
-
-          <InfoField label="Annual Family Income" value={parent.annualIncome} />
+        {/* ── SECTION 3: CONTACT INFORMATION ── */}
+        <div className="space-y-4">
+          <h3 className="text-xs uppercase font-black tracking-widest text-neutral-500 dark:text-neutral-400 border-l-4 border-violet-500 pl-2.5 flex items-center gap-2">
+            <Phone size={14} className="text-violet-500" /> Contact Information
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <FormField label="Candidate Email" value={contact.studentEmail || student.email} />
+            <FormField label="Candidate Mobile" value={contact.studentMobile || student.phone} mono />
+            <FormField label="Emergency Contact Number" value={contact.emergencyContact} mono />
+          </div>
         </div>
+
+        <hr className="border-neutral-100 dark:border-neutral-800" />
+
+        {/* ── SECTION 4: ADDRESS DETAILS (Current & Permanent Sub-Cards) ── */}
+        <div className="space-y-4">
+          <h3 className="text-xs uppercase font-black tracking-widest text-neutral-500 dark:text-neutral-400 border-l-4 border-violet-500 pl-2.5 flex items-center gap-2">
+            <MapPin size={14} className="text-violet-500" /> Address Details
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Current Residence */}
+            <div className="p-4.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 space-y-3 bg-neutral-50/40 dark:bg-neutral-850/30">
+              <p className="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest">
+                Current Residence
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <FormField label="Address Line" value={address.correspondence.line1} />
+                </div>
+                {address.correspondence.line2 && (
+                  <div className="col-span-2">
+                    <FormField label="Address Line 2" value={address.correspondence.line2} />
+                  </div>
+                )}
+                <FormField label="City" value={address.correspondence.city} />
+                <FormField label="District" value={address.correspondence.district} />
+                <FormField label="State" value={address.correspondence.state} />
+                <FormField label="Pincode" value={address.correspondence.pincode} mono />
+              </div>
+            </div>
+
+            {/* Permanent Residence */}
+            <div className="p-4.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 space-y-3 bg-neutral-50/40 dark:bg-neutral-850/30">
+              <p className="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest">
+                Permanent Residence
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <FormField label="Address Line" value={address.permanent.line1} />
+                </div>
+                {address.permanent.line2 && (
+                  <div className="col-span-2">
+                    <FormField label="Address Line 2" value={address.permanent.line2} />
+                  </div>
+                )}
+                <FormField label="City" value={address.permanent.city} />
+                <FormField label="District" value={address.permanent.district} />
+                <FormField label="State" value={address.permanent.state} />
+                <FormField label="Pincode" value={address.permanent.pincode} mono />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr className="border-neutral-100 dark:border-neutral-800" />
+
+        {/* ── SECTION 5: ADMISSION & INSTITUTIONAL ENROLLMENT ── */}
+        <div className="space-y-4">
+          <h3 className="text-xs uppercase font-black tracking-widest text-neutral-500 dark:text-neutral-400 border-l-4 border-violet-500 pl-2.5 flex items-center gap-2">
+            <Award size={14} className="text-violet-500" /> Admission & Institutional Enrollment
+          </h3>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+            <FormField label="Application Number" value={admission?.applicationNumber} mono />
+            <FormField label="University Seat No (USN)" value={student.usn} mono />
+            <FormField label="Admission Quota" value={admission?.quota || 'KCET'} />
+            <FormField label="Admission Type" value={admission?.admissionType || 'KCET'} />
+            <FormField label="KCET / DCET Number" value={entrance?.cetNumber || entrance?.dcetNumber || admission?.applicationNumber} mono />
+            <FormField label="Entrance Exam Rank" value={entrance?.cetRank || academic.rank} mono />
+            {entrance?.cetScore && <FormField label="Entrance Score" value={entrance.cetScore} />}
+            <FormField
+              label="Enrolled On / Admission Date"
+              value={admission?.enrolledAt ? formatDateDDMMYYYY(admission.enrolledAt) : '—'}
+            />
+            <FormField label="Degree Program" value={academic.program} />
+            <FormField label="Department Code" value={academic.departmentCode} />
+            <FormField label="Department Name" value={academic.departmentName} />
+            <FormField label="Current Semester" value={`Semester ${academic.currentSemester}`} />
+            <FormField label="Allocated Section" value={academic.section || 'Unassigned'} />
+            <FormField label="Academic Year" value={academic.academicYear} />
+          </div>
+        </div>
+
       </div>
     </div>
   );
