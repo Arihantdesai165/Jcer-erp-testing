@@ -96,6 +96,8 @@ import HodBitwiseAnalysisPage from './pages/hod/HodBitwiseAnalysisPage';
 import HodStudentPerformancePage from './pages/hod/HodStudentPerformancePage';
 import HodReportsPage from './pages/hod/HodReportsPage';
 import HodSettingsPage from './pages/hod/HodSettingsPage';
+import HodProfilePage from './pages/hod/HodProfilePage';
+import HodPublishAttendanceMarksPage from './pages/hod/HodPublishAttendanceMarksPage';
 
 // ─── Admission Portal ─────────────────────────────────────────────────────────
 import { AuthProvider as AdmissionAuthProvider } from './pages/admission/src/context/AuthContext';
@@ -439,11 +441,13 @@ export const App: React.FC = () => (
               <Route path="academics/subjects" element={<HodAcademicsOverviewPage />} />
               <Route path="academics/bitwise" element={<HodBitwiseAnalysisPage />} />
               <Route path="academics/performance" element={<HodStudentPerformancePage />} />
+              <Route path="publish" element={<HodPublishAttendanceMarksPage />} />
+              <Route path="release" element={<Navigate to="/hod/publish" replace />} />
 
               {/* Reports & Settings */}
               <Route path="reports" element={<HodReportsPage />} />
               <Route path="settings" element={<HodSettingsPage />} />
-              <Route path="profile" element={<HodSettingsPage />} />
+              <Route path="profile" element={<HodProfilePage />} />
             </Route>
 
             {/* ── Faculty Portal ── */}

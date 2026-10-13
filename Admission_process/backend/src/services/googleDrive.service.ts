@@ -1023,6 +1023,32 @@ export const googleDriveService = {
       throw err;
     }
   },
+
+  /**
+   * Downloads a binary file buffer directly from Google Drive
+   */
+  async downloadFileBuffer(fileId: string): Promise<Buffer> {
+    if (!fileId) throw new Error('File ID is required to download from Google Drive.');
+    const { drive } = await this.getAuthorizedDriveClient();
+    const res = await drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'arraybuffer' }
+    );
+    return Buffer.from(res.data as ArrayBuffer);
+  },
+
+  /**
+   * Retrieves full file metadata from Google Drive
+   */
+  async getFileMetadata(fileId: string): Promise<any> {
+    if (!fileId) throw new Error('File ID is required to fetch metadata.');
+    const { drive } = await this.getAuthorizedDriveClient();
+    const res = await drive.files.get({
+      fileId,
+      fields: 'id, name, modifiedTime, version, md5Checksum, size, trashed',
+    });
+    return res.data;
+  },
 };
 
 export default googleDriveService;

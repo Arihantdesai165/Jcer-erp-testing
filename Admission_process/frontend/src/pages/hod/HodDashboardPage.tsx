@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { RootState } from '../../store';
@@ -188,8 +187,8 @@ export const HodDashboardPage: React.FC = () => {
             ) : (
               <>
                 <option value="ALL">All Semesters</option>
-                <option value="1">Semester 1</option>
-                <option value="2">Semester 2</option>
+                <option value="1">Semester 1 (AS)</option>
+                <option value="2">Semester 2 (AS)</option>
                 <option value="3">Semester 3</option>
                 <option value="4">Semester 4</option>
                 <option value="5">Semester 5</option>
@@ -812,7 +811,7 @@ export const HodDashboardPage: React.FC = () => {
         )}
       </div>
 
-      </div>
+    </div>
   );
 };
 

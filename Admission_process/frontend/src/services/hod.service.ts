@@ -467,10 +467,45 @@ export interface HodTeachingAssignment {
   assignedAt: string;
 }
 
+export interface HodSubjectHandlingRequestItem {
+  id: string;
+  hodUserId: string;
+  departmentId: string;
+  departmentName?: string;
+  departmentCode?: string;
+  semester: number;
+  subjectId: string;
+  subjectName: string;
+  subjectCode: string;
+  academicYear: string;
+  reason?: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejectionReason?: string | null;
+  reviewedBy?: string | null;
+  reviewerName?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface HodAvailableSubject {
+  id: string;
+  name: string;
+  code: string;
+  semester: number;
+  credits: number;
+  type: string;
+  departmentId: string | null;
+  departmentName: string;
+  departmentCode: string;
+  isAlreadyAssigned: boolean;
+  hasPendingRequest: boolean;
+}
+
 export interface HodTeachingResponsibilitiesData {
   activeAssignments: HodTeachingAssignment[];
   totalSubjectsCount: number;
-  myRequests?: any[];
+  myRequests: HodSubjectHandlingRequestItem[];
   academicYear: string;
 }
 
@@ -1029,9 +1064,13 @@ export const hodService = {
     return res.data.data;
   },
 
-  getAttendanceDefaulters: async (params?: { semester?: string | number; section?: string }): Promise<HodDefaulterItem[]> => {
+  getAttendanceDefaulters: async (params?: { semester?: string | number; section?: string; academicYear?: string }): Promise<HodDefaulterItem[]> => {
     const res = await API.get('/hod/attendance/defaulters', { params });
-    return res.data.data;
+    const data = res.data.data;
+    if (Array.isArray(data)) {
+      (data as any).threshold = res.data.threshold ?? 85.0;
+    }
+    return data;
   },
 
   getAttendanceSessions: async (): Promise<any[]> => {
@@ -1082,19 +1121,29 @@ export const hodService = {
     return res.data.data;
   },
 
-  // 7. Reports & Settings
+  // 7. Reports & Settings & Profile
   getReports: async (): Promise<any> => {
     const res = await API.get('/hod/reports');
     return res.data.data;
   },
 
-  getSettings: async (): Promise<any> => {
-    const res = await API.get('/hod/settings');
+  getSettings: async (params?: { academicYear?: string; semester?: string | number; section?: string }): Promise<any> => {
+    const res = await API.get('/hod/settings', { params });
+    return res.data.data;
+  },
+
+  updateDepartmentSettings: async (data: { attendanceThreshold: number; academicYear?: string }): Promise<any> => {
+    const res = await API.patch('/hod/settings', data);
+    return res.data;
+  },
+
+  getProfile: async (): Promise<any> => {
+    const res = await API.get('/hod/profile');
     return res.data.data;
   },
 
   updateProfile: async (data: { firstName?: string; lastName?: string; phone?: string }): Promise<any> => {
-    const res = await API.put('/hod/settings/profile', data);
+    const res = await API.put('/hod/profile', data);
     return res.data;
   },
 
@@ -1108,6 +1157,289 @@ export const hodService = {
     const res = await API.get('/hod/subject-handling/teaching-responsibilities');
     return res.data.data;
   },
+
+  getAvailableSubjectsForHandling: async (semester: number | string): Promise<HodAvailableSubject[]> => {
+    const res = await API.get('/hod/subject-handling/available-subjects', { params: { semester } });
+    return res.data.data;
+  },
+
+  submitSubjectHandlingRequest: async (data: {
+    semester: number;
+    subjectId: string;
+    academicYear?: string;
+    reason?: string;
+  }): Promise<{ success: boolean; message: string; data: HodSubjectHandlingRequestItem }> => {
+    const res = await API.post('/hod/subject-handling/requests', data);
+    return res.data;
+  },
+
+  getMySubjectHandlingRequests: async (): Promise<HodSubjectHandlingRequestItem[]> => {
+    const res = await API.get('/hod/subject-handling/requests');
+    return res.data.data;
+  },
+
+  // 10. Student Attendance & Marks Release Module
+  getReleaseSemesters: async (params?: { academicYear?: string }): Promise<HodReleaseSemesterCard[]> => {
+    const res = await API.get('/hod/release/semesters', { params });
+    return res.data.semesters;
+  },
+
+  getReleaseSemesterSubjects: async (
+    semester: number,
+    params?: { academicYear?: string }
+  ): Promise<HodReleaseSubjectItem[]> => {
+    const res = await API.get(`/hod/release/semesters/${semester}/subjects`, { params });
+    return res.data.subjects;
+  },
+
+  previewAttendanceRelease: async (params: {
+    semester: number;
+    subjectId: string;
+    academicYear?: string;
+  }): Promise<AttendanceReleasePreviewData> => {
+    const res = await API.get('/hod/release/attendance/preview', { params });
+    return res.data.data;
+  },
+
+  confirmAttendanceRelease: async (payload: {
+    semester: number;
+    subjectId: string;
+    academicYear?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/attendance/confirm', payload);
+    return res.data;
+  },
+
+  previewMarksRelease: async (params: {
+    semester: number;
+    subjectId: string;
+    assessmentType: string;
+    academicYear?: string;
+  }): Promise<MarksReleasePreviewData> => {
+    const res = await API.get('/hod/release/marks/preview', { params });
+    return res.data.data;
+  },
+
+  confirmMarksRelease: async (payload: {
+    semester: number;
+    subjectId: string;
+    assessmentType: string;
+    academicYear?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/marks/confirm', payload);
+    return res.data;
+  },
+
+  revokeAttendanceRelease: async (payload: {
+    semester: number;
+    subjectId: string;
+    academicYear?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/attendance/revoke', payload);
+    return res.data;
+  },
+
+  revokeMarksRelease: async (payload: {
+    semester: number;
+    subjectId: string;
+    assessmentType?: string;
+    academicYear?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/marks/revoke', payload);
+    return res.data;
+  },
+
+  confirmSemesterAttendanceRelease: async (payload: {
+    semester: number;
+    academicYear?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/semester/attendance/confirm', payload);
+    return res.data;
+  },
+
+  revokeSemesterAttendanceRelease: async (payload: {
+    semester: number;
+    academicYear?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/semester/attendance/revoke', payload);
+    return res.data;
+  },
+
+  confirmSemesterMarksRelease: async (payload: {
+    semester: number;
+    academicYear?: string;
+    assessmentType?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/semester/marks/confirm', payload);
+    return res.data;
+  },
+
+  revokeSemesterMarksRelease: async (payload: {
+    semester: number;
+    academicYear?: string;
+    assessmentType?: string;
+  }): Promise<any> => {
+    const res = await API.post('/hod/release/semester/marks/revoke', payload);
+    return res.data;
+  },
 };
+
+export interface HodReleaseSemesterCard {
+  semester: number;
+  name: string;
+  departmentScope: string;
+  departmentCode: string;
+  departmentName: string;
+  totalSubjects: number;
+  attendanceRelease: {
+    total: number;
+    released: number;
+    percentage: number;
+    status: 'NOT_RELEASED' | 'PARTIALLY_RELEASED' | 'RELEASED';
+  };
+  marksRelease: {
+    totalAssessments: number;
+    releasedAssessments: number;
+    percentage: number;
+    status: 'NOT_RELEASED' | 'PARTIALLY_RELEASED' | 'RELEASED';
+  };
+}
+
+export interface HodReleaseSubjectItem {
+  id: string;
+  code: string;
+  name: string;
+  credits: number;
+  semester: number;
+  type: string;
+  cycle: string | null;
+  attendance: {
+    status: string;
+    isReleased: boolean;
+    releasedAt: string | null;
+    releasedBy: string | null;
+    totalStudents: number;
+    hasDriveFile: boolean;
+    fileName: string | null;
+    isSourceUpdated?: boolean;
+  };
+  marks: {
+    status: string;
+    releasedCount: number;
+    totalAssessments: number;
+    assessments: Record<string, {
+      type: string;
+      label: string;
+      status: string;
+      releasedAt: string | null;
+      releasedBy: string | null;
+      totalStudents: number;
+      isSourceUpdated?: boolean;
+    }>;
+    hasDriveFile: boolean;
+    fileName: string | null;
+    isSourceUpdated?: boolean;
+  };
+}
+
+export interface AttendanceReleasePreviewData {
+  sourceInfo: {
+    fileName: string;
+    googleDriveFileId: string | null;
+    googleDriveFileUrl: string | null;
+    sourceType: string;
+    lastSyncedAt: string | null;
+    fingerprint: string;
+  };
+  subject: {
+    id: string;
+    code: string;
+    name: string;
+    credits: number;
+    semester: number;
+    academicYear: string;
+  };
+  stats: {
+    totalStudents: number;
+    eligibleCount: number;
+    shortageCount: number;
+    missingCount: number;
+    averagePercentage: number | null;
+  };
+  students: Array<{
+    sl: number;
+    studentId: string;
+    usn: string;
+    name: string;
+    section: string;
+    conducted: number;
+    attended: number;
+    percentage: number | null;
+    eligibility: string;
+  }>;
+  validation: {
+    isValid: boolean;
+    warnings: string[];
+    errors: string[];
+  };
+  isAlreadyReleased: boolean;
+  isSourceUpdated: boolean;
+  currentRelease: {
+    id: string;
+    releasedAt: string;
+    releasedBy: string | null;
+  } | null;
+}
+
+export interface MarksReleasePreviewData {
+  sourceInfo: {
+    fileName: string;
+    sheetName: string;
+    googleDriveFileId: string | null;
+    sourceType: string;
+    lastSyncedAt: string | null;
+    fingerprint: string;
+  };
+  subject: {
+    id: string;
+    code: string;
+    name: string;
+    semester: number;
+    academicYear: string;
+  };
+  assessmentType: string;
+  assessmentLabel: string;
+  maxMarks: number;
+  stats: {
+    totalStudents: number;
+    evaluatedCount: number;
+    missingCount: number;
+    averageMarks: number;
+    highestMarks: number;
+    lowestMarks: number;
+  };
+  students: Array<{
+    sl: number;
+    studentId: string;
+    usn: string;
+    name: string;
+    marksObtained: number | null;
+    maxMarks: number;
+    percentage: number | null;
+    status: string;
+  }>;
+  validation: {
+    isValid: boolean;
+    warnings: string[];
+    errors: string[];
+  };
+  isAlreadyReleased: boolean;
+  isSourceUpdated: boolean;
+  currentRelease: {
+    id: string;
+    releasedAt: string;
+    releasedBy: string | null;
+  } | null;
+}
 
 export default hodService;

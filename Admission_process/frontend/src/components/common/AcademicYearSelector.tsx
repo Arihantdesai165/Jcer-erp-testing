@@ -59,7 +59,7 @@ export const AcademicYearSelector: React.FC<AcademicYearSelectorProps> = ({
             ? `Viewing Historical Session: ${academicYear} (Institutional Active: ${activeAcademicYear})`
             : `Active Academic Year: ${academicYear}`
         }
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all select-none shadow-xs font-bold text-xs cursor-pointer ${
+        className={`flex items-center gap-1 sm:gap-1.5 ${compact ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-xs'} rounded-full border transition-all select-none shadow-xs font-bold cursor-pointer ${
           isOpen
             ? 'bg-neutral-900 text-white border-neutral-950 dark:bg-white dark:text-neutral-900 ring-2 ring-blue-500/20'
             : isHistoricalViewing
@@ -67,7 +67,7 @@ export const AcademicYearSelector: React.FC<AcademicYearSelectorProps> = ({
             : 'border-neutral-200/90 dark:border-neutral-800 bg-white/90 dark:bg-neutral-900/90 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 hover:border-neutral-300'
         }`}
       >
-        {showIcon && (
+        {showIcon && !compact && (
           isHistoricalViewing ? (
             <History className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
           ) : (
@@ -78,10 +78,10 @@ export const AcademicYearSelector: React.FC<AcademicYearSelectorProps> = ({
             />
           )
         )}
-        <span className="text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">
+        <span className="text-[10px] sm:text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">
           AY:
         </span>
-        <span className="font-extrabold font-mono tracking-tight text-xs">
+        <span className="font-extrabold font-mono tracking-tight text-[11px] sm:text-xs">
           {academicYear}
         </span>
 
@@ -92,7 +92,7 @@ export const AcademicYearSelector: React.FC<AcademicYearSelectorProps> = ({
         )}
 
         <ChevronDown
-          className={`w-3.5 h-3.5 ml-0.5 transition-transform duration-200 ${
+          className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ml-0.5 transition-transform duration-200 ${
             isOpen ? 'rotate-180 text-white dark:text-neutral-900' : 'text-neutral-400'
           }`}
         />

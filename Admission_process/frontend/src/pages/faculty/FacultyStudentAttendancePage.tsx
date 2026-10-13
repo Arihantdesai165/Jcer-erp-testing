@@ -184,7 +184,7 @@ export const FacultyStudentAttendancePage: React.FC = () => {
       )}
 
       {/* Compact ERP Page Header */}
-      <div className="bg-white px-4 py-3 sm:px-5 sm:py-3.5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+      <div>
         {/* Left: Compact Back Button */}
         <div className="flex items-center gap-4 min-w-0">
           <button
@@ -198,14 +198,11 @@ export const FacultyStudentAttendancePage: React.FC = () => {
           </button>
 
           {/* Center/Main: Title + Muted Subtitle */}
-          
+
         </div>
 
-        {/* Right: Academic Year Badge */}
-        <div className="flex items-center space-x-1.5 bg-indigo-50/90 border border-indigo-200 text-indigo-950 rounded-lg px-2.5 py-1 text-xs font-bold shrink-0 self-start sm:self-auto">
-          <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-          <span>AY: {activeAY}</span>
-        </div>
+
+
       </div>
 
       {/* SEARCH CARD */}

@@ -206,15 +206,26 @@ export interface ScheduledSessionItem {
   classroom: string;
   startTime: string;
   endTime: string;
+  timeSlot?: string;
   status: 'Completed' | 'Pending' | 'Cancelled';
   rawStatus: string;
+  canEdit?: boolean;
+  isLocked?: boolean;
+  sessionPeriod?: number;
   totalStudents: number;
   presentCount: number;
   absentCount: number;
   percentage: number;
   submittedAt: string;
+  submittedById?: string;
   cancellationReason: string | null;
   cancelledAt: string | null;
+  summary?: {
+    total: number;
+    presentCount: number;
+    absentCount: number;
+    attendanceRate: number;
+  };
 }
 
 export interface CompleteAttendanceData {
@@ -293,6 +304,12 @@ export interface AttendanceSessionDetailData {
     academicYear: string;
   };
   students: CorrectionStudentRow[];
+  summary?: {
+    total: number;
+    present: number;
+    absent: number;
+    rate: number;
+  };
   corrections: AttendanceCorrectionLogItem[];
 }
 
@@ -321,6 +338,221 @@ export interface FacultyAnalyticsData {
   }>;
   defaultersCount: number;
   termStatus: string;
+}
+
+export interface AnalyticsSemesterItem {
+  semester: number;
+  semesterName: string;
+  academicYear: string;
+  assignedSubjectsCount: number;
+  assignedSectionsCount: number;
+  assignedSections: string[];
+  totalStudentsCovered: number;
+  attendanceSummary: {
+    sessionsConducted: number;
+    averageAttendance: number;
+    defaultersCount: number;
+    threshold: number;
+  };
+  marksSummary: {
+    configuredAssessments: number;
+    publishedAssessments: number;
+    statusText: string;
+    hasMarksData: boolean;
+  };
+}
+
+export interface AnalyticsSubjectItem {
+  subjectId: string;
+  subjectName: string;
+  subjectCode: string;
+  semester: number;
+  sections: string[];
+  assignmentIds: string[];
+  totalStudents: number;
+  conductedSessions: number;
+  averageAttendance: number;
+  attendanceStatus: 'EXCELLENT' | 'GOOD' | 'NEEDS_ATTENTION' | 'NO_DATA';
+  marksStatus: string;
+  marksAvailability: 'AVAILABLE' | 'PARTIAL' | 'NOT_CONFIGURED';
+}
+
+export interface AttendanceAnalyticsResult {
+  subject: {
+    id: string;
+    name: string;
+    code: string;
+    semester: number;
+    selectedSection: string;
+    availableSections: string[];
+    academicYear: string;
+  };
+  kpis: {
+    enrolledStudents: number;
+    conductedSessions: number;
+    totalAttendanceRecords: number;
+    averageAttendance: number;
+    meetingThresholdCount: number;
+    belowThresholdCount: number;
+    unrecordedSessionsCount: number | null;
+    unrecordedSessionsNote: string;
+    latestRecordedDate: string | null;
+    threshold: number;
+  };
+  charts: {
+    distribution: Array<{
+      range: string;
+      min: number;
+      max: number;
+      count: number;
+      percentage: number;
+    }>;
+    statusDistribution: Array<{
+      name: string;
+      value: number;
+      percentage: number;
+      color: string;
+    }>;
+    trend: Array<{
+      date: string;
+      sessionPeriod: number;
+      label: string;
+      attendancePercentage: number;
+      presentCount: number;
+      totalStudents: number;
+    }>;
+    sessionWise: Array<{
+      sessionNumber: number;
+      date: string;
+      period: number;
+      label: string;
+      presentCount: number;
+      absentCount: number;
+      attendancePercentage: number;
+    }>;
+    sectionComparison?: Array<{
+      section: string;
+      averageAttendance: number;
+      studentCount: number;
+      sessionsCount: number;
+    }>;
+  };
+  students: Array<{
+    studentId: string;
+    usn: string;
+    studentName: string;
+    section: string;
+    totalSessions: number;
+    presentCount: number;
+    absentCount: number;
+    attendancePercentage: number;
+    status: 'ELIGIBLE' | 'SHORTAGE';
+    lastRecordedDate: string | null;
+  }>;
+  defaulters: Array<{
+    studentId: string;
+    usn: string;
+    studentName: string;
+    section: string;
+    totalSessions: number;
+    presentCount: number;
+    absentCount: number;
+    attendancePercentage: number;
+    shortageDelta: number;
+  }>;
+}
+
+export interface MarksAnalyticsResult {
+  subject: {
+    id: string;
+    name: string;
+    code: string;
+    semester: number;
+    selectedSection: string;
+    availableSections: string[];
+    academicYear: string;
+  };
+  assessmentType: 'CIE1' | 'CIE2' | 'SEE';
+  availableAssessments: Array<{
+    type: 'CIE1' | 'CIE2' | 'SEE';
+    label: string;
+    status: string;
+    maxMarks: number;
+    isPublished: boolean;
+  }>;
+  kpis: {
+    enrolledStudents: number;
+    submittedCount: number;
+    pendingCount: number;
+    classAverage: number | null;
+    highestMark: number | null;
+    lowestMark: number | null;
+    medianMark: number | null;
+    passCount: number;
+    passPercentage: number;
+    failCount: number;
+    maximumMarks: number;
+    passingMarks: number;
+    assessmentStatus: string;
+    isPublished: boolean;
+  };
+  charts: {
+    distribution: Array<{
+      range: string;
+      min: number;
+      max: number;
+      count: number;
+      percentage: number;
+    }>;
+    assessmentComparison: Array<{
+      metric: string;
+      cie1Value: number | null;
+      cie2Value: number | null;
+      seeValue?: number | null;
+      unit: string;
+    }>;
+    performanceTrend: Array<{
+      assessment: string;
+      averageMark: number | null;
+      maxMarks: number;
+      averagePercentage: number | null;
+    }>;
+    passDistribution: Array<{
+      name: string;
+      value: number;
+      percentage: number;
+      color: string;
+    }>;
+    summaryStats: {
+      classAverage: number | null;
+      medianScore: number | null;
+      highestScore: number | null;
+      lowestScore: number | null;
+      scoreSpread: number | null;
+      assessedStudentsCount: number;
+    };
+  };
+  students: Array<{
+    studentId: string;
+    usn: string;
+    studentName: string;
+    section: string;
+    cie1Marks: number | null;
+    cie1Max: number | null;
+    cie1Status: string;
+    cie2Marks: number | null;
+    cie2Max: number | null;
+    cie2Status: string;
+    finalScore: number | null;
+    finalCieMarks?: number | null;
+    externalMarks?: number | null;
+    seeScaledMarks?: number | null;
+    totalMarks?: number | null;
+    vtuStatus?: 'PASS' | 'FAIL' | 'NOT_ENTERED';
+    vtuReason?: string;
+    completionStatus: string;
+    performanceCategory: string;
+  }>;
 }
 
 export interface FacultyStudentSearchResult {
@@ -493,6 +725,68 @@ export const facultyService = {
   },
 
   /**
+   * Step 1: Fetches assigned semesters for authenticated faculty
+   */
+  async getAnalyticsSemesters(academicYear?: string): Promise<AnalyticsSemesterItem[]> {
+    const params = new URLSearchParams();
+    if (academicYear && academicYear !== 'ALL') params.append('academicYear', academicYear);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await axios.get(`${API_BASE_URL}/faculty/analytics/semesters${qs}`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
+   * Step 2: Fetches assigned subjects for a semester
+   */
+  async getAnalyticsSubjects(semester: number, academicYear?: string): Promise<AnalyticsSubjectItem[]> {
+    const params = new URLSearchParams();
+    params.append('semester', semester.toString());
+    if (academicYear && academicYear !== 'ALL') params.append('academicYear', academicYear);
+    const res = await axios.get(`${API_BASE_URL}/faculty/analytics/subjects?${params.toString()}`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
+   * Step 3: Fetches deep attendance analytics for a subject & section
+   */
+  async getAnalyticsAttendance(params: {
+    subjectId: string;
+    semester: number;
+    section?: string;
+    academicYear?: string;
+    dateRange?: string;
+  }): Promise<AttendanceAnalyticsResult> {
+    const q = new URLSearchParams();
+    q.append('subjectId', params.subjectId);
+    q.append('semester', params.semester.toString());
+    if (params.section && params.section !== 'ALL') q.append('section', params.section);
+    if (params.academicYear && params.academicYear !== 'ALL') q.append('academicYear', params.academicYear);
+    if (params.dateRange && params.dateRange !== 'ALL') q.append('dateRange', params.dateRange);
+    const res = await axios.get(`${API_BASE_URL}/faculty/analytics/attendance?${q.toString()}`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
+   * Step 3: Fetches deep academic marks analytics for a subject & section
+   */
+  async getAnalyticsMarks(params: {
+    subjectId: string;
+    semester: number;
+    section?: string;
+    academicYear?: string;
+    assessmentType?: 'CIE1' | 'CIE2' | 'SEE';
+  }): Promise<MarksAnalyticsResult> {
+    const q = new URLSearchParams();
+    q.append('subjectId', params.subjectId);
+    q.append('semester', params.semester.toString());
+    if (params.section && params.section !== 'ALL') q.append('section', params.section);
+    if (params.academicYear && params.academicYear !== 'ALL') q.append('academicYear', params.academicYear);
+    if (params.assessmentType) q.append('assessmentType', params.assessmentType);
+    const res = await axios.get(`${API_BASE_URL}/faculty/analytics/marks?${q.toString()}`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
    * Fetches complete attendance history for an assignment
    */
   async getAttendanceHistory(assignmentId: string): Promise<AttendanceHistoryData> {
@@ -503,8 +797,9 @@ export const facultyService = {
   /**
    * Fetches date-wise complete scheduled, completed, and cancelled attendance history
    */
-  async getCompleteAttendanceHistory(assignmentId: string): Promise<CompleteAttendanceData> {
-    const res = await axios.get(`${API_BASE_URL}/faculty/attendance/complete-history/${assignmentId}`, getAuthHeaders());
+  async getCompleteAttendanceHistory(assignmentId: string, month?: string): Promise<CompleteAttendanceData> {
+    const qs = month ? `?month=${month}` : '';
+    const res = await axios.get(`${API_BASE_URL}/faculty/attendance/complete-history/${assignmentId}${qs}`, getAuthHeaders());
     return res.data.data;
   },
 

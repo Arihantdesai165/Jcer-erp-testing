@@ -8,7 +8,11 @@ import User from '../models/User';
 import Student from '../models/Student';
 import AttendanceSession from '../models/AttendanceSession';
 import AttendanceRecord from '../models/AttendanceRecord';
-import { getEnrolledStudentsForAssignment, buildAssignmentCohortWhere } from './faculty.service';
+import {
+  getEnrolledStudentsForAssignment,
+  buildAssignmentCohortWhere,
+  compareStudentsByUsnOrName,
+} from './faculty.service';
 
 /**
  * Normalizes section string to remove "Section " prefix
@@ -74,28 +78,13 @@ export const attendanceExcelService = {
       throw new Error('No students enrolled in this section roster.');
     }
 
-    // Sort students deterministically based on semester rule:
-    // Sem 1: Name A-Z (case-insensitive), tie-breaker USN ASC
-    // Sem 2+: USN ASC (case-insensitive), tie-breaker Name A-Z
-    const isSemester1 = Number(semester) === 1;
+    // Sort students deterministically: Prioritize assigned USN ASC; fallback to Student Name A-Z
     students.sort((a: any, b: any) => {
-      if (isSemester1) {
-        const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim().toLowerCase();
-        const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim().toLowerCase();
-        const cmp = nameA.localeCompare(nameB);
-        if (cmp !== 0) return cmp;
-        const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-        const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-        return usnA.localeCompare(usnB);
-      } else {
-        const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-        const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-        const cmp = usnA.localeCompare(usnB);
-        if (cmp !== 0) return cmp;
-        const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim().toLowerCase();
-        const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim().toLowerCase();
-        return nameA.localeCompare(nameB);
-      }
+      const usnA = (a.usn || a.enrollmentNumber || '').trim();
+      const usnB = (b.usn || b.enrollmentNumber || '').trim();
+      const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim();
+      const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim();
+      return compareStudentsByUsnOrName(usnA, usnB, nameA, nameB, a.rollNumber, b.rollNumber);
     });
 
     // Fetch attendance sessions and records chronologically across transfer lineage
@@ -127,25 +116,13 @@ export const attendanceExcelService = {
         include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }],
       });
       students.push(...extraStudents);
-      // Re-sort students deterministically
+      // Re-sort students deterministically: Prioritize assigned USN ASC; fallback to Student Name A-Z
       students.sort((a: any, b: any) => {
-        if (isSemester1) {
-          const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim().toLowerCase();
-          const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim().toLowerCase();
-          const cmp = nameA.localeCompare(nameB);
-          if (cmp !== 0) return cmp;
-          const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-          const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-          return usnA.localeCompare(usnB);
-        } else {
-          const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-          const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-          const cmp = usnA.localeCompare(usnB);
-          if (cmp !== 0) return cmp;
-          const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim().toLowerCase();
-          const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim().toLowerCase();
-          return nameA.localeCompare(nameB);
-        }
+        const usnA = (a.usn || a.enrollmentNumber || '').trim();
+        const usnB = (b.usn || b.enrollmentNumber || '').trim();
+        const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim();
+        const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim();
+        return compareStudentsByUsnOrName(usnA, usnB, nameA, nameB, a.rollNumber, b.rollNumber);
       });
     }
 

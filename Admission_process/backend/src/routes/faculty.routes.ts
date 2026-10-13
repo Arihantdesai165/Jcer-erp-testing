@@ -2,6 +2,7 @@ import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { authorizeRoles } from '../middleware/rbac.middleware';
 import * as facultyController from '../controllers/faculty.controller';
+import * as facultyAnalyticsController from '../controllers/facultyAnalytics.controller';
 
 const router = express.Router();
 
@@ -35,6 +36,10 @@ router.post('/attendance/session/:sessionId/correction', ...facultyAuthGuard, fa
 router.get('/attendance/corrections/:assignmentId', ...facultyAuthGuard, facultyController.getFacultyAttendanceCorrections as any);
 
 // ── Faculty Analytics ────────────────────────────────────────────────────────
+router.get('/analytics/semesters', ...facultyAuthGuard, facultyAnalyticsController.getFacultyAnalyticsSemesters as any);
+router.get('/analytics/subjects', ...facultyAuthGuard, facultyAnalyticsController.getFacultyAnalyticsSubjects as any);
+router.get('/analytics/attendance', ...facultyAuthGuard, facultyAnalyticsController.getFacultyAnalyticsAttendance as any);
+router.get('/analytics/marks', ...facultyAuthGuard, facultyAnalyticsController.getFacultyAnalyticsMarks as any);
 router.get('/analytics', ...facultyAuthGuard, facultyController.getFacultyAnalytics as any);
 
 export default router;

@@ -357,51 +357,6 @@ export const DeanFacultyRegeneratePasswordPage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* ── SECURITY INFORMATION CARD ── */}
-      <div className="p-6 rounded-3xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 shrink-0">
-            <ShieldAlert size={18} />
-          </div>
-          <div>
-            <h3 className="text-xs uppercase font-black tracking-widest text-amber-800 dark:text-amber-300">
-              Security Protocol Notice
-            </h3>
-            <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
-              Please review the following security implications before proceeding:
-            </p>
-          </div>
-        </div>
-
-        <ul className="space-y-2.5 text-xs text-amber-900 dark:text-amber-200/90 pl-2">
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-            <span>
-              <strong>Credential Invalidation:</strong> The faculty member's current password will be immediately invalidated upon successful regeneration. Existing active sessions will terminate.
-            </span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-            <span>
-              <strong>Cryptographic Randomization:</strong> A high-entropy temporary password will be created securely by the backend and stored using bcrypt hashing.
-            </span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-            <span>
-              <strong>Authorized One-Time Display:</strong> The temporary password is provided in the immediate server response for one-time display. It will not be visible again after leaving this page.
-            </span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-            <span>
-              <strong>Enforced Password Reset:</strong> Institutional compliance requires the faculty member to select a new confidential password during their next sign-in.
-            </span>
-          </li>
-        </ul>
-      </div>
-
       {/* ── ARCHIVED STATUS WARNING (IF APPLICABLE) ── */}
       {isArchived && (
         <div className="p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 flex items-start gap-3">

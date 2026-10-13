@@ -705,12 +705,16 @@ export const StudentViewPage: React.FC = () => {
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-bold text-neutral-500 mt-4">
               <span>App No: <strong className="text-neutral-700 dark:text-neutral-300">{student.applicationNumber || '—'}</strong></span>
-              {student.user?.student?.enrollmentNumber && (
-                <>
-                  <span className="hidden sm:inline">•</span>
-                  <span>USN: <strong className="text-neutral-700 dark:text-neutral-300">{student.user.student.enrollmentNumber}</strong></span>
-                </>
-              )}
+              {(() => {
+                const assignedUsn = student.usn || student.user?.student?.usn || (student.user?.student?.enrollmentNumber && !student.user.student.enrollmentNumber.startsWith('JCER-') ? student.user.student.enrollmentNumber : null);
+                if (!assignedUsn) return null;
+                return (
+                  <>
+                    <span className="hidden sm:inline">•</span>
+                    <span>USN: <strong className="text-neutral-700 dark:text-neutral-300 font-mono">{assignedUsn}</strong></span>
+                  </>
+                );
+              })()}
               <span className="hidden sm:inline">•</span>
               <span>Branch: <strong className="text-neutral-700 dark:text-neutral-300">{student.branch?.name || 'N/A'}</strong></span>
               <span className="hidden sm:inline">•</span>

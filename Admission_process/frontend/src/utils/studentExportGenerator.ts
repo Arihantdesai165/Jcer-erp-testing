@@ -55,9 +55,14 @@ export function mapSummaryExportData(applications: AdmissionApplication[]) {
     const pd = app.studentpersonaldetails;
     const user = app.user;
     const branch = app.branch;
+    const rawUsn = app.usn || app.user?.student?.usn;
+    const enrollmentNo = app.user?.student?.enrollmentNumber;
+    const isEnrollmentUsn = enrollmentNo && !enrollmentNo.startsWith('JCER-');
+    const assignedUsn = (rawUsn || (isEnrollmentUsn ? enrollmentNo : '') || '').trim();
 
     return {
       'Sl No': index + 1,
+      'USN': assignedUsn || 'N/A',
       'Admission Number': app.applicationNumber || 'N/A',
       'Student Name': user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'N/A',
       'Gender': pd?.gender || 'N/A',
@@ -91,9 +96,14 @@ export function mapCompleteExportData(applications: AdmissionApplication[]) {
     const acad = app.studentacademicdetails;
     const docs = app.studentdocuments;
     const branch = app.branch;
+    const rawUsn = app.usn || app.user?.student?.usn;
+    const enrollmentNo = app.user?.student?.enrollmentNumber;
+    const isEnrollmentUsn = enrollmentNo && !enrollmentNo.startsWith('JCER-');
+    const assignedUsn = (rawUsn || (isEnrollmentUsn ? enrollmentNo : '') || '').trim();
 
     return {
       // SECTION A: ADMISSION DETAILS
+      'USN': assignedUsn || 'N/A',
       'Admission Number': app.applicationNumber || 'N/A',
       'Academic Year': app.academicYear || 'N/A',
       'Branch': branch ? `${branch.name} (${branch.code})` : 'N/A',

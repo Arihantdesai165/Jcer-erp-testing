@@ -26,6 +26,7 @@ import {
   ChevronDown,
   Check,
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { RootState } from '../../store';
 import hodService, {
   HodBranchOverviewItem,
@@ -75,7 +76,14 @@ export const HodStudentsSectionPage: React.FC = () => {
   const [cohortError, setCohortError] = useState<string | null>(null);
   const [allocatedStudentsError, setAllocatedStudentsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const setNotification = (notif: { type: 'success' | 'error'; message: string } | null) => {
+    if (!notif) return;
+    if (notif.type === 'success') {
+      toast.success(notif.message);
+    } else {
+      toast.error(notif.message);
+    }
+  };
 
   // Allocate View states
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -125,14 +133,6 @@ export const HodStudentsSectionPage: React.FC = () => {
 
   const isAlphabetAlreadyUsed = Boolean(selectedAlphabet && existingAlphabets.has(selectedAlphabet));
   const allAlphabetsUsed = existingAlphabets.size >= 26;
-
-  // Auto-dismiss notification
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 4500);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
 
   // Close alphabet dropdown on outside click or Escape key
   useEffect(() => {
@@ -810,31 +810,6 @@ export const HodStudentsSectionPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* ── NOTIFICATION TOAST ─────────────────────────────────────────────────── */}
-      {notification && (
-        <div
-          className={`flex items-center justify-between p-4 rounded-2xl border shadow-sm transition-all animate-in fade-in slide-in-from-top-2 ${
-            notification.type === 'success'
-              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-              : 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            {notification.type === 'success' ? (
-              <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-            ) : (
-              <AlertCircle size={18} className="text-rose-600 dark:text-rose-400 shrink-0" />
-            )}
-            <span className="text-xs font-bold">{notification.message}</span>
-          </div>
-          <button
-            onClick={() => setNotification(null)}
-            className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
 
       {/* ── VIEW 1: MAIN SECTION ALLOCATION PAGE (BRANCHES OVERVIEW) ───────────── */}
       {activeView === 'OVERVIEW' && (

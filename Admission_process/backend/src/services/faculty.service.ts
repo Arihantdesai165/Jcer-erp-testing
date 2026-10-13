@@ -154,6 +154,75 @@ export const resolveSectionForAssignment = async (assignment: any): Promise<Sect
 };
 
 /**
+ * Helper to determine if a string is a valid assigned University Seat Number (USN).
+ */
+export const isAssignedUsn = (val: string | null | undefined): boolean => {
+  if (!val) return false;
+  const clean = val.trim().toUpperCase();
+  if (
+    clean === '' ||
+    clean === 'N/A' ||
+    clean === 'NA' ||
+    clean === '-' ||
+    clean === '—' ||
+    clean.startsWith('JCER-') ||
+    clean.startsWith('APP-') ||
+    clean.startsWith('TEMP')
+  ) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Authoritative comparator for student rosters:
+ * 1. When USNs are assigned, sort by USN ascending using natural alphanumeric collation.
+ * 2. If one has USN and the other does not, student with assigned USN comes first.
+ * 3. When USNs are not assigned (e.g. before allocation), fall back to Student Name A-Z.
+ */
+export const compareStudentsByUsnOrName = (
+  usnAVal: string | null | undefined,
+  usnBVal: string | null | undefined,
+  nameAVal: string | null | undefined,
+  nameBVal: string | null | undefined,
+  rollAVal?: string | null | undefined,
+  rollBVal?: string | null | undefined
+): number => {
+  const hasUsnA = isAssignedUsn(usnAVal);
+  const hasUsnB = isAssignedUsn(usnBVal);
+
+  if (hasUsnA && hasUsnB) {
+    const cmp = (usnAVal || '').trim().localeCompare((usnBVal || '').trim(), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+    if (cmp !== 0) return cmp;
+    const nCmp = (nameAVal || '').trim().localeCompare((nameBVal || '').trim(), undefined, {
+      sensitivity: 'base',
+    });
+    if (nCmp !== 0) return nCmp;
+    return (rollAVal || '').trim().localeCompare((rollBVal || '').trim(), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  }
+
+  if (hasUsnA && !hasUsnB) return -1;
+  if (!hasUsnA && hasUsnB) return 1;
+
+  // Fallback: Student Name A-Z
+  const nCmp = (nameAVal || '').trim().localeCompare((nameBVal || '').trim(), undefined, {
+    sensitivity: 'base',
+  });
+  if (nCmp !== 0) return nCmp;
+
+  return (rollAVal || '').trim().localeCompare((rollBVal || '').trim(), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+};
+
+/**
  * Queries all students authoritatively allocated to a section for a FacultyAssignment.
  */
 export const getEnrolledStudentsForAssignment = async (assignment: any, matchedSection?: Section | null) => {
@@ -183,21 +252,12 @@ export const getEnrolledStudentsForAssignment = async (assignment: any, matchedS
     orConditions.push({ section: rawSec });
   }
 
-  const isSemester1 = Number(assignment.semester) === 1;
-
-  const dbOrder: any[] = isSemester1
-    ? [
-        [{ model: User, as: 'user' }, 'firstName', 'ASC'],
-        [{ model: User, as: 'user' }, 'lastName', 'ASC'],
-        ['usn', 'ASC'],
-        ['enrollmentNumber', 'ASC'],
-      ]
-    : [
-        ['usn', 'ASC'],
-        ['enrollmentNumber', 'ASC'],
-        [{ model: User, as: 'user' }, 'firstName', 'ASC'],
-        [{ model: User, as: 'user' }, 'lastName', 'ASC'],
-      ];
+  const dbOrder: any[] = [
+    ['usn', 'ASC'],
+    ['enrollmentNumber', 'ASC'],
+    [{ model: User, as: 'user' }, 'firstName', 'ASC'],
+    [{ model: User, as: 'user' }, 'lastName', 'ASC'],
+  ];
 
   const students = await Student.findAll({
     where: {
@@ -213,7 +273,7 @@ export const getEnrolledStudentsForAssignment = async (assignment: any, matchedS
     order: dbOrder,
   });
 
-  // Ensure uniqueness by student ID while preserving semester-specific order
+  // Ensure uniqueness by student ID while preserving canonical order
   const seenIds = new Set<string>();
   const uniqueStudents: typeof students = [];
   for (const s of students) {
@@ -223,27 +283,15 @@ export const getEnrolledStudentsForAssignment = async (assignment: any, matchedS
     }
   }
 
-  // Authoritative sorting guarantee based on semester business rule:
-  // Semester 1: Student Name A-Z (case-insensitive), tie-breaker USN ASC
-  // Semester 2+: USN ASC (case-insensitive), tie-breaker Student Name A-Z
+  // Authoritative sorting guarantee:
+  // When USNs are assigned (e.g. 2JR26CV001), sort by USN ASC (natural alphanumeric order).
+  // When USNs are not assigned (e.g. null, 'N/A', placeholder), fall back to Student Name A-Z.
   uniqueStudents.sort((a: any, b: any) => {
-    if (isSemester1) {
-      const nameA = a.user ? `${a.user.firstName || ''} ${a.user.lastName || ''}`.trim().toLowerCase() : '';
-      const nameB = b.user ? `${b.user.firstName || ''} ${b.user.lastName || ''}`.trim().toLowerCase() : '';
-      const cmp = nameA.localeCompare(nameB);
-      if (cmp !== 0) return cmp;
-      const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-      const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-      return usnA.localeCompare(usnB);
-    } else {
-      const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-      const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-      const cmp = usnA.localeCompare(usnB);
-      if (cmp !== 0) return cmp;
-      const nameA = a.user ? `${a.user.firstName || ''} ${a.user.lastName || ''}`.trim().toLowerCase() : '';
-      const nameB = b.user ? `${b.user.firstName || ''} ${b.user.lastName || ''}`.trim().toLowerCase() : '';
-      return nameA.localeCompare(nameB);
-    }
+    const usnA = (a.usn || a.enrollmentNumber || '').trim();
+    const usnB = (b.usn || b.enrollmentNumber || '').trim();
+    const nameA = a.user ? `${a.user.firstName || ''} ${a.user.lastName || ''}`.trim() : '';
+    const nameB = b.user ? `${b.user.firstName || ''} ${b.user.lastName || ''}`.trim() : '';
+    return compareStudentsByUsnOrName(usnA, usnB, nameA, nameB, a.rollNumber, b.rollNumber);
   });
 
   return { students: uniqueStudents, matchedSection: sec };
@@ -1026,7 +1074,7 @@ export const facultyService = {
   /**
    * Retrieves complete scheduled and recorded attendance history for an assignment
    */
-  async getFacultyCompleteAttendanceHistory(userId: string, assignmentId: string) {
+  async getFacultyCompleteAttendanceHistory(userId: string, assignmentId: string, month?: string) {
     const teacher = await Teacher.findOne({ where: { userId } });
     const teacherId = teacher?.id;
 
@@ -1050,9 +1098,15 @@ export const facultyService = {
     }
 
     const { matchedSection } = await getEnrolledStudentsForAssignment(assignment);
-    const defaultClassroom = matchedSection?.classroom || 'B-403';
+    const defaultClassroom = matchedSection?.classroom || null;
 
-    const cohortWhere = buildAssignmentCohortWhere(assignment);
+    const cohortWhere: any = buildAssignmentCohortWhere(assignment);
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      cohortWhere.attendanceDate = {
+        [Op.like]: `${month}%`,
+      };
+    }
+
     const sessions = await AttendanceSession.findAll({
       where: cohortWhere,
       order: [
@@ -1084,21 +1138,36 @@ export const facultyService = {
         completedCount++;
       }
 
+      const canEdit = s.status !== 'LOCKED' && (s.submittedById === userId || !s.submittedById);
+      const isLocked = s.status === 'LOCKED';
+      const timeSlot = s.startTime && s.endTime ? `${s.startTime} – ${s.endTime}` : '10:35 AM – 11:30 AM';
+
       return {
         id: s.id,
         date: dStr,
         classroom: s.classroom || defaultClassroom,
         startTime: s.startTime || '10:35 AM',
         endTime: s.endTime || '11:30 AM',
+        timeSlot,
         status: resolvedStatus,
         rawStatus: s.status,
+        canEdit,
+        isLocked,
+        sessionPeriod: s.sessionPeriod || 1,
         totalStudents: total,
         presentCount: present,
         absentCount: absent,
         percentage: pct,
         submittedAt: s.submittedAt || s.createdAt,
+        submittedById: s.submittedById,
         cancellationReason: s.cancellationReason || null,
         cancelledAt: s.cancelledAt || null,
+        summary: {
+          total,
+          presentCount: present,
+          absentCount: absent,
+          attendanceRate: pct,
+        },
       };
     });
 
@@ -1165,7 +1234,7 @@ export const facultyService = {
     const sessionDate = payload.date;
     const startTime = payload.startTime || '10:35 AM';
     const endTime = payload.endTime || '11:30 AM';
-    const classroom = payload.classroom || matchedSection?.classroom || 'B-403';
+    const classroom = payload.classroom || matchedSection?.classroom || null;
 
     // Check if session already exists for this date
     const existing = await AttendanceSession.findOne({
@@ -1426,6 +1495,12 @@ export const facultyService = {
         academicYear: session.academicYear,
       },
       students: studentRows,
+      summary: {
+        total: totalStudents,
+        present: presentCount,
+        absent: absentCount,
+        rate: pct,
+      },
       corrections: sessionLogs,
     };
   },
@@ -1786,6 +1861,7 @@ export const facultyService = {
       semester: number;
       section: string;
       sectionId: string | null;
+      rollNumber?: string | null;
       assignedSubjectsCount: number;
     }>();
 
@@ -1821,6 +1897,7 @@ export const facultyService = {
               semester: st.semester,
               section: sSec,
               sectionId: matchedSection?.id || (a as any).sectionId || null,
+              rollNumber: (st as any).rollNumber || null,
               assignedSubjectsCount: 1,
             });
           } else {
@@ -1832,20 +1909,7 @@ export const facultyService = {
     }
 
     const results = Array.from(studentMap.values()).sort((a, b) => {
-      if (a.semester === 1 && b.semester === 1) {
-        const nameA = (a.name || '').trim().toLowerCase();
-        const nameB = (b.name || '').trim().toLowerCase();
-        const cmp = nameA.localeCompare(nameB);
-        if (cmp !== 0) return cmp;
-        return (a.usn || '').trim().toLowerCase().localeCompare((b.usn || '').trim().toLowerCase());
-      }
-      if (a.semester === 1 && b.semester !== 1) return -1;
-      if (a.semester !== 1 && b.semester === 1) return 1;
-      const usnA = (a.usn || '').trim().toLowerCase();
-      const usnB = (b.usn || '').trim().toLowerCase();
-      const cmp = usnA.localeCompare(usnB);
-      if (cmp !== 0) return cmp;
-      return (a.name || '').trim().toLowerCase().localeCompare((b.name || '').trim().toLowerCase());
+      return compareStudentsByUsnOrName(a.usn, b.usn, a.name, b.name, a.rollNumber, b.rollNumber);
     });
     return results;
   },

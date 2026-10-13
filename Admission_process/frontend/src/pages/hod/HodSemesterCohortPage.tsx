@@ -118,13 +118,29 @@ export const HodSemesterCohortPage: React.FC = () => {
     fetchCohortData();
   }, [semesterNum, academicYear]);
 
+  // Clean section helper: handles "Section D" -> "D", hides internal UUID strings
+  const formatSectionDisplay = (sec: string | null | undefined): string => {
+    if (!sec) return '—';
+    const trimmed = String(sec).trim();
+    if (!trimmed || trimmed === '—') return '—';
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+      return '—';
+    }
+    const clean = trimmed.replace(/^(Section|Sec)\s*/i, '').trim();
+    return clean || '—';
+  };
+
   // Filtered students for table
   const filteredStudents = useMemo(() => {
     if (!data?.students) return [];
     let list = data.students;
 
     if (selectedSectionFilter !== 'ALL') {
-      list = list.filter((s) => s.section === selectedSectionFilter);
+      const targetClean = formatSectionDisplay(selectedSectionFilter);
+      list = list.filter((s) => {
+        const sClean = formatSectionDisplay(s.section);
+        return sClean === targetClean || s.section === selectedSectionFilter;
+      });
     }
 
     if (searchQuery.trim()) {
@@ -353,7 +369,7 @@ export const HodSemesterCohortPage: React.FC = () => {
           </p>
           {!loading && sectionsList.length > 0 && (
             <div className="flex items-center gap-1 flex-wrap mt-1.5">
-              {sectionsList.map((sec) => (
+              {Array.from(new Set(sectionsList.map((sec) => formatSectionDisplay(sec)).filter((sec) => sec !== '—'))).map((sec) => (
                 <span key={sec} className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300">
                   {sec}
                 </span>
@@ -432,9 +448,15 @@ export const HodSemesterCohortPage: React.FC = () => {
                 <tr>
                   <td colSpan={isAppliedScience ? 7 : 6} className="py-10 text-center">
                     <BookOpen className="w-9 h-9 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No subjects found</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {cycleFilter !== 'ALL'
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      {!isAppliedScience && (semesterNum === 1 || semesterNum === 2)
+                        ? 'Handled by Applied Science Department'
+                        : 'No subjects found'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5 max-w-sm mx-auto">
+                      {!isAppliedScience && (semesterNum === 1 || semesterNum === 2)
+                        ? '1st and 2nd Semester subjects and faculty teaching allocations are handled by the Applied Science (AS) Department.'
+                        : cycleFilter !== 'ALL'
                         ? `No subjects for ${CYCLE_LABELS[cycleFilter]} in Semester ${semesterNum}.`
                         : `No active subjects configured for Semester ${semesterNum}.`}
                     </p>
@@ -624,14 +646,14 @@ export const HodSemesterCohortPage: React.FC = () => {
             </div>
 
             {/* Optional Section Filter inside this Semester */}
-            {sectionsList && sectionsList.length > 1 && (
+            {sectionsList && sectionsList.length > 0 && (
               <select
                 value={selectedSectionFilter}
                 onChange={(e) => setSelectedSectionFilter(e.target.value)}
                 className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20"
               >
                 <option value="ALL">All Sections</option>
-                {sectionsList.map((sec) => (
+                {Array.from(new Set(sectionsList.map((sec) => formatSectionDisplay(sec)).filter((sec) => sec !== '—'))).map((sec) => (
                   <option key={sec} value={sec}>Section {sec}</option>
                 ))}
               </select>
@@ -706,7 +728,7 @@ export const HodSemesterCohortPage: React.FC = () => {
                       <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-semibold">{st.department || deptCode}</td>
                       <td className="py-3 px-4 text-center">
                         <span className="inline-block px-2.5 py-0.5 rounded-md font-extrabold text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                          {st.section || '—'}
+                          {formatSectionDisplay(st.section)}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-mono">{st.rollNumber || '—'}</td>

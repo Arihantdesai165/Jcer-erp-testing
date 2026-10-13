@@ -768,7 +768,7 @@ input.light-input-mode::placeholder,
 
 /* Table Header styling: solid black background with white texts */
 .glass-table-container thead {
-  background-color: #1a1a1a !important;
+  background-color: #000000 !important;
 }
 
 .glass-table-container thead th,
@@ -912,22 +912,23 @@ table {
   border-spacing: 0 !important;
 }
 
-/* 2nd Image Dark Header Style */
-table thead {
-  background-color: #111111 !important; /* Deep black bg */
+/* Table Header Style: Solid Pure Black */
+table thead,
+table thead tr,
+table thead th,
+.dark table thead,
+.dark table thead tr,
+.dark table thead th {
+  background-color: #000000 !important; /* Pure solid black */
   color: #ffffff !important;
 }
 
-.dark table thead {
-  background-color: #18181b !important; /* Deep zinc-900 bg for dark mode */
-  color: #ffffff !important;
-}
-
-table thead th {
+table thead th,
+.dark table thead th {
   color: #ffffff !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
-  font-size: 0.75rem !important; /* xs size matching image */
+  font-size: 0.75rem !important; /* xs size */
   letter-spacing: 0.05em !important;
   padding: 12px 16px !important;
   border-right: 1px solid rgba(255, 255, 255, 0.15) !important; /* Vertical columns grid in header */

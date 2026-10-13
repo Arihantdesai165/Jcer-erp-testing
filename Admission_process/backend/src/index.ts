@@ -192,6 +192,59 @@ async function startServer() {
         CREATE INDEX IF NOT EXISTS "idx_consolidated_att_backup_files_status" ON "consolidated_attendance_backup_files"("status");
         CREATE INDEX IF NOT EXISTS "idx_consolidated_att_backup_files_drive_id" ON "consolidated_attendance_backup_files"("googleDriveFileId");
 
+        -- Safe additive migration: Student Attendance & Marks Release Module tables
+        CREATE TABLE IF NOT EXISTS "academic_releases" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "academicYear" VARCHAR(50) NOT NULL,
+          "semester" INTEGER NOT NULL,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "releaseType" VARCHAR(30) NOT NULL,
+          "assessmentType" VARCHAR(50) NOT NULL,
+          "status" VARCHAR(30) NOT NULL DEFAULT 'RELEASED',
+          "sourceType" VARCHAR(50) NOT NULL DEFAULT 'GOOGLE_DRIVE',
+          "googleDriveFileId" VARCHAR(255) NULL,
+          "googleDriveFileName" VARCHAR(255) NULL,
+          "sourceFingerprint" VARCHAR(255) NULL,
+          "sourceVersion" VARCHAR(100) NULL,
+          "totalStudentsCount" INTEGER NOT NULL DEFAULT 0,
+          "releasedByUserId" UUID NULL REFERENCES "users"("id") ON DELETE SET NULL,
+          "releasedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "lastReviewedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "metadata" JSONB NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_academic_release_item" UNIQUE ("departmentId", "academicYear", "semester", "subjectId", "releaseType", "assessmentType")
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_academic_releases_lookup" ON "academic_releases"("academicYear", "departmentId", "semester", "subjectId");
+
+        CREATE TABLE IF NOT EXISTS "student_released_academic_data" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "academicReleaseId" UUID NOT NULL REFERENCES "academic_releases"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "usn" VARCHAR(50) NOT NULL,
+          "studentName" VARCHAR(255) NULL,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(50) NOT NULL,
+          "releaseType" VARCHAR(30) NOT NULL,
+          "assessmentType" VARCHAR(50) NOT NULL,
+          "attendancePercentage" NUMERIC(6, 2) NULL,
+          "conductedClasses" INTEGER NULL,
+          "attendedClasses" INTEGER NULL,
+          "marksObtained" NUMERIC(6, 2) NULL,
+          "maxMarks" NUMERIC(6, 2) NULL,
+          "percentage" NUMERIC(6, 2) NULL,
+          "status" VARCHAR(50) NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_student_released_data_item" UNIQUE ("studentId", "subjectId", "academicYear", "semester", "releaseType", "assessmentType")
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_student_released_data_lookup" ON "student_released_academic_data"("studentId", "releaseType", "semester");
+        CREATE INDEX IF NOT EXISTS "idx_student_released_data_release_id" ON "student_released_academic_data"("academicReleaseId");
+
         -- Add columns for subject deletion and archive lifecycle synchronization
         ALTER TABLE "attendance_backup_files" ADD COLUMN IF NOT EXISTS "archivedAt" TIMESTAMP WITH TIME ZONE NULL;
         ALTER TABLE "attendance_backup_files" ADD COLUMN IF NOT EXISTS "lastSyncAttemptAt" TIMESTAMP WITH TIME ZONE NULL;
@@ -206,6 +259,28 @@ async function startServer() {
       console.log('✓ Google Drive Attendance, Marks & Consolidated Backup tables verified/created.');
     } catch (gdriveDdlErr: any) {
       console.warn('Google Drive Attendance & Marks Backup migration notice:', gdriveDdlErr.message);
+    }
+
+    // Safe migration: Add attendanceThreshold to departments and create department_settings table
+    try {
+      await sequelize.query(`
+        ALTER TABLE "departments" ADD COLUMN IF NOT EXISTS "attendanceThreshold" DOUBLE PRECISION DEFAULT 85.0;
+        UPDATE "departments" SET "attendanceThreshold" = 85.0 WHERE "attendanceThreshold" IS NULL;
+
+        CREATE TABLE IF NOT EXISTS "department_settings" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "academicYear" VARCHAR(50) NOT NULL DEFAULT '2026-27',
+          "attendanceThreshold" DOUBLE PRECISION NOT NULL DEFAULT 85.0,
+          "updatedBy" UUID NULL REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_dept_settings_dept_ay" UNIQUE ("departmentId", "academicYear")
+        );
+      `);
+      console.log('✓ Department settings and attendanceThreshold verified/created.');
+    } catch (deptSettingsErr: any) {
+      console.warn('Department settings migration notice:', deptSettingsErr.message);
     }
 
     // Pre-cast: fix admission_parent_details.fatherAnnualIncome column type to DECIMAL(38, 2).

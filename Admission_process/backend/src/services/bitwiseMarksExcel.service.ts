@@ -108,15 +108,15 @@ export const bitwiseMarksExcelService = {
 
     workbook.creator = 'JCER ERP Assessment Cell';
     workbook.lastModifiedBy = 'JCER ERP Faculty Portal';
-    workbook.created = new Date();
-    workbook.modified = new Date();
+    const isSemHandling = department?.type === 'SEMESTER_HANDLING' || department?.code === 'AS';
 
     // 1. Fetch Consolidated Students for this cohort
+    const studentWhere: any = { semester };
+    if (!isSemHandling) {
+      studentWhere.departmentId = departmentId;
+    }
     const students = await Student.findAll({
-      where: {
-        departmentId,
-        semester,
-      },
+      where: studentWhere,
       include: [{ model: User, as: 'user', attributes: ['firstName', 'lastName', 'email'] }],
       order: [['usn', 'ASC'], ['enrollmentNumber', 'ASC']],
     });

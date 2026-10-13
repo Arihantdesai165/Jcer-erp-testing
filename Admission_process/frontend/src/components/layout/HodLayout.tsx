@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   Lock,
   UserCheck,
+  Send,
 } from 'lucide-react';
 import hodService, { HodDashboardData } from '../../services/hod.service';
 import usePwa from '../../hooks/usePwa';
@@ -185,6 +186,7 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Attendance', path: '/hod/attendance', icon: CalendarCheck },
         { name: 'Attendance Defaulters', path: '/hod/attendance/defaulters', icon: AlertTriangle, badge: defaultersCount > 0 ? defaultersCount : undefined },
+        { name: 'Publish Attendance & Marks', path: '/hod/publish', icon: Send },
         { name: 'Marks / IA', path: '/hod/academics/performance', icon: TrendingUp },
         { name: 'Bit-Wise Marks', path: '/hod/academics/bitwise', icon: BarChart3 },
       ],
@@ -231,6 +233,7 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Subjects', path: '/hod/subjects', icon: BookOpen },
         { name: 'Attendance', path: '/hod/attendance', icon: CalendarCheck },
+        { name: 'Publish Attendance & Marks', path: '/hod/publish', icon: Send },
         { name: 'Analytics', path: '/hod/academics', icon: BarChart3 },
       ],
     },
@@ -260,12 +263,14 @@ export const HodLayout: React.FC = () => {
     '/hod/subjects': 'Department Subjects Directory',
     '/hod/attendance': 'Department Attendance Overview',
     '/hod/attendance/defaulters': 'Attendance Defaulters List',
+    '/hod/publish': 'Publish Student Attendance & Marks',
+    '/hod/release': 'Publish Student Attendance & Marks',
     '/hod/academics': 'Academic Performance Overview',
     '/hod/academics/bitwise': 'Bit-Wise Component Analysis',
     '/hod/academics/performance': 'Student Academic Performance',
     '/hod/reports': 'Department Reports Generator',
-    '/hod/settings': 'My Profile & Settings',
-    '/hod/profile': 'My Profile & Settings',
+    '/hod/settings': 'Department Settings',
+    '/hod/profile': 'My Profile',
   };
 
   const getPageTitle = () => {
@@ -638,12 +643,20 @@ export const HodLayout: React.FC = () => {
 
                   <div className="py-1">
                     <Link
-                      to="/hod/settings"
+                      to="/hod/profile"
                       onClick={() => setProfileMenuOpen(false)}
                       className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                     >
                       <User className="w-3.5 h-3.5 text-neutral-500" />
-                      <span>My Profile & Settings</span>
+                      <span>My Profile</span>
+                    </Link>
+                    <Link
+                      to="/hod/settings"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>Department Settings</span>
                     </Link>
                   </div>
 

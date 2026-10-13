@@ -128,20 +128,6 @@ export const StudentAttendancePage: React.FC = () => {
       {/* 4 Summary Metric Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {/* Overall Percentage */}
-        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-4 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
-            Overall Attendance
-          </span>
-          <div className="flex items-baseline gap-2">
-            <span className={`text-2xl font-black ${isShortage ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-              {overallPct.toFixed(1)}%
-            </span>
-          </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-block ${isShortage ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
-            {isShortage ? 'Shortage (<75%)' : 'Eligible'}
-          </span>
-        </div>
-
         {/* Conducted Sessions */}
         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-4 shadow-xs space-y-1">
           <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
@@ -176,74 +162,116 @@ export const StudentAttendancePage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── SUBJECT-WISE ATTENDANCE ROSTER ── */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-indigo-600" />
-            <h3 className="font-extrabold text-neutral-900 dark:text-white text-sm">
-              Subject-wise Breakdown
-            </h3>
-          </div>
-          <span className="text-xs text-neutral-500">{summary.subjects.length} Courses</span>
-        </div>
-
+      {/* ── SUBJECT-WISE ATTENDANCE ROSTER (SEMESTER GROUPED) ── */}
+      <div className="space-y-6">
         {summary.subjects.length === 0 ? (
-          <div className="py-8 text-center text-xs text-neutral-400">
-            No subjects with recorded attendance sessions yet.
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-12 text-center space-y-3 shadow-xs">
+            <Clock className="w-10 h-10 text-neutral-300 dark:text-neutral-600 mx-auto" />
+            <h3 className="font-extrabold text-neutral-800 dark:text-neutral-200 text-sm">
+              Attendance Records Are Not Yet Released
+            </h3>
+            <p className="text-xs text-neutral-500 max-w-md mx-auto">
+              Attendance records for your cohort are currently undergoing HOD review and have not yet been released. Officially released attendance from the consolidated semester register will appear here once published.
+            </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-neutral-200 dark:border-neutral-800 text-[11px] uppercase font-bold text-neutral-500">
-                  <th className="py-3 px-4">Subject</th>
-                  <th className="py-3 px-4 text-center">Conducted</th>
-                  <th className="py-3 px-4 text-center">Attended</th>
-                  <th className="py-3 px-4 text-center">Absent</th>
-                  <th className="py-3 px-4 text-center">Percentage</th>
-                  <th className="py-3 px-4 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {summary.subjects.map((s) => {
-                  const isSubShortage = s.percentage < 75;
-                  return (
-                    <tr
-                      key={s.subjectId}
-                      className="hover:bg-neutral-50/60 dark:hover:bg-neutral-850/60 transition-colors"
-                    >
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-neutral-900 dark:text-white">
-                          {s.subjectCode}
-                        </div>
-                        <div className="text-[11px] text-neutral-500">{s.subjectName}</div>
-                      </td>
-                      <td className="py-3 px-4 text-center font-bold text-neutral-700 dark:text-neutral-300">
-                        {s.totalSessions}
-                      </td>
-                      <td className="py-3 px-4 text-center font-bold text-emerald-600 dark:text-emerald-400">
-                        {s.attendedSessions}
-                      </td>
-                      <td className="py-3 px-4 text-center font-bold text-rose-600 dark:text-rose-400">
-                        {s.absentSessions}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className={`font-black text-xs px-2.5 py-0.5 rounded-full ${isSubShortage ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'}`}>
-                          {s.percentage.toFixed(1)}%
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`text-[11px] font-bold ${isSubShortage ? 'text-amber-600' : 'text-emerald-600'}`}>
-                          {isSubShortage ? '⚠️ Shortage' : '✅ Eligible'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          (() => {
+            const semGroups: Record<number, { semester: number; academicYear?: string; subjects: StudentSubjectAttendance[] }> = {};
+            for (const sub of summary.subjects) {
+              const sem = sub.semester || 1;
+              if (!semGroups[sem]) {
+                semGroups[sem] = {
+                  semester: sem,
+                  academicYear: sub.academicYear,
+                  subjects: [],
+                };
+              }
+              semGroups[sem].subjects.push(sub);
+            }
+
+            const sortedGroups = Object.values(semGroups).sort((a, b) => a.semester - b.semester);
+
+            return sortedGroups.map((grp) => (
+              <div
+                key={grp.semester}
+                className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl shadow-xs overflow-hidden"
+              >
+                {/* Semester Heading Banner */}
+                <div className="p-5 sm:px-6 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-850/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black text-sm">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-base text-neutral-900 dark:text-white">
+                        Semester {grp.semester}
+                      </h3>
+                      <span className="text-[11px] text-neutral-500 font-medium">
+                        Academic Year {grp.academicYear || '2026-27'} • {grp.subjects.length} Released Subjects
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 self-start sm:self-center">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Released by HOD</span>
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-neutral-200 dark:border-neutral-800 text-[11px] uppercase font-bold text-neutral-500 bg-neutral-50/30 dark:bg-neutral-850/30">
+                        <th className="py-3.5 px-4 font-extrabold min-w-[200px]">Subject</th>
+                        <th className="py-3.5 px-4 text-center font-extrabold">Conducted</th>
+                        <th className="py-3.5 px-4 text-center font-extrabold">Attended</th>
+                        <th className="py-3.5 px-4 text-center font-extrabold">Absent</th>
+                        <th className="py-3.5 px-4 text-center font-extrabold">Percentage</th>
+                        <th className="py-3.5 px-4 text-center font-extrabold">Release Status</th>
+                        <th className="py-3.5 px-4 text-right font-extrabold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                      {grp.subjects.map((s) => {
+                        const isSubShortage = s.percentage < 85;
+                        return (
+                          <tr
+                            key={s.subjectId}
+                            className="hover:bg-neutral-50/60 dark:hover:bg-neutral-850/60 transition-colors"
+                          >
+                            <td className="py-3.5 px-4">
+                              <div className="font-extrabold text-neutral-900 dark:text-white">
+                                {s.subjectCode}
+                              </div>
+                              <div className="text-[11px] text-neutral-500">{s.subjectName}</div>
+                            </td>
+                            <td className="py-3.5 px-4 text-center font-medium text-neutral-900 dark:text-white">
+                              {s.totalSessions || s.conductedClasses || 0}
+                            </td>
+                            <td className="py-3.5 px-4 text-center font-medium text-neutral-900 dark:text-white">
+                              {s.attendedSessions || s.attendedClasses || 0}
+                            </td>
+                            <td className="py-3.5 px-4 text-center font-medium text-neutral-900 dark:text-white">
+                              {s.absentSessions || s.absentClasses || 0}
+                            </td>
+                            <td className="py-3.5 px-4 text-center font-medium text-neutral-900 dark:text-white">
+                              {s.percentage.toFixed(1)}%
+                            </td>
+                            <td className="py-3.5 px-4 text-center font-medium text-neutral-900 dark:text-white">
+                              Released
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-medium text-neutral-900 dark:text-white">
+                              {isSubShortage ? 'Shortage' : 'Eligible'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ));
+          })()
         )}
       </div>
 
@@ -325,22 +353,8 @@ export const StudentAttendancePage: React.FC = () => {
                       </span>{' '}
                       <span className="text-neutral-500">• {item.subjectName}</span>
                     </td>
-                    <td className="py-3 px-4 text-right">
-                      {item.status === 'PRESENT' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[11px] font-extrabold">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>PRESENT</span>
-                        </span>
-                      ) : item.status === 'ABSENT' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 text-[11px] font-extrabold">
-                          <XCircle className="w-3 h-3 text-rose-600" />
-                          <span>ABSENT</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 text-[11px] font-extrabold">
-                          <span>EXCUSED</span>
-                        </span>
-                      )}
+                    <td className="py-3 px-4 text-right font-medium text-neutral-900 dark:text-white">
+                      {item.status}
                     </td>
                   </tr>
                 ))}

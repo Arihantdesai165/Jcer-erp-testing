@@ -12,7 +12,7 @@ import AttendanceRecord from '../models/AttendanceRecord';
 import ConsolidatedAttendanceBackupFile from '../models/ConsolidatedAttendanceBackupFile';
 import GoogleDriveIntegration from '../models/GoogleDriveIntegration';
 import googleDriveService from './googleDrive.service';
-import { ATTENDANCE_THRESHOLD } from './faculty.service';
+import { ATTENDANCE_THRESHOLD, compareStudentsByUsnOrName } from './faculty.service';
 import logger from '../utils/logger.util';
 import { Op } from 'sequelize';
 import {
@@ -92,15 +92,22 @@ export const semesterAttendanceConsolidationService = {
 
     const deptCode = (department.code || 'CSE').trim().toUpperCase();
     const deptName = department.name || deptCode;
+    const isSemHandling = department.type === 'SEMESTER_HANDLING' || deptCode === 'AS';
 
     // 2. Resolve all active Sections for AY + Dept + Semester
+    const sectionWhere: any = {
+      semester,
+      status: 'ACTIVE',
+    };
+    if (academicYear) {
+      sectionWhere.academicYear = academicYear;
+    }
+    if (!isSemHandling) {
+      sectionWhere.departmentId = departmentId;
+    }
+
     const dbSections = await Section.findAll({
-      where: {
-        departmentId,
-        semester,
-        academicYear,
-        status: 'ACTIVE',
-      },
+      where: sectionWhere,
       order: [['name', 'ASC']],
     });
 
@@ -113,70 +120,81 @@ export const semesterAttendanceConsolidationService = {
       sectionNames.add(clean);
     });
 
-    // 3. Resolve all Students belonging to these sections / cohort
-    const studentWhere: any = {
-      departmentId,
-      semester,
-    };
+    // 3. Resolve all Students belonging to this cohort
+    let dbStudents: Student[] = [];
 
     if (dbSections.length > 0) {
       const secIds = dbSections.map((s) => s.id);
-      studentWhere[Op.or] = [
-        { sectionId: { [Op.in]: secIds } },
-        { section: { [Op.in]: Array.from(sectionNames).flatMap((name) => [name, `Section ${name}`, `Section  ${name}`]) } },
-      ];
+      const studentWhere: any = {
+        semester,
+        [Op.or]: [
+          { sectionId: { [Op.in]: secIds } },
+          { section: { [Op.in]: Array.from(sectionNames).flatMap((name) => [name, `Section ${name}`, `Section  ${name}`]) } },
+        ],
+      };
+      if (!isSemHandling) {
+        studentWhere.departmentId = departmentId;
+      }
+      dbStudents = await Student.findAll({
+        where: studentWhere,
+        include: [
+          { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+          { model: Section, as: 'sectionEntity', attributes: ['id', 'name'] },
+        ],
+      });
     }
 
-    const dbStudents = await Student.findAll({
-      where: studentWhere,
-      include: [
-        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
-        { model: Section, as: 'sectionEntity', attributes: ['id', 'name'] },
-      ],
-    });
-
-    // Sort students deterministically based on semester rule:
-    // Semester 1: Student Name A-Z (case-insensitive), tie-breaker USN ASC
-    // Semester 2+: USN ASC (case-insensitive), tie-breaker Student Name A-Z
-    const isSemester1 = Number(semester) === 1;
-    const sortedStudents = [...dbStudents].sort((a: any, b: any) => {
-      const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim().toLowerCase();
-      const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim().toLowerCase();
-      const usnA = (a.usn || a.enrollmentNumber || '').trim().toLowerCase();
-      const usnB = (b.usn || b.enrollmentNumber || '').trim().toLowerCase();
-
-      if (isSemester1) {
-        const cmp = nameA.localeCompare(nameB);
-        if (cmp !== 0) return cmp;
-        return usnA.localeCompare(usnB);
-      } else {
-        const cmp = usnA.localeCompare(usnB);
-        if (cmp !== 0) return cmp;
-        return nameA.localeCompare(nameB);
+    // Fallback: If section mapping yielded 0 students, query all students in this semester & dept scope
+    if (dbStudents.length === 0) {
+      const fallbackWhere: any = { semester };
+      if (!isSemHandling) {
+        fallbackWhere.departmentId = departmentId;
       }
+      dbStudents = await Student.findAll({
+        where: fallbackWhere,
+        include: [
+          { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+          { model: Section, as: 'sectionEntity', attributes: ['id', 'name'] },
+        ],
+      });
+    }
+
+    // Sort students deterministically: Prioritize assigned USN ASC; fallback to Student Name A-Z
+    const sortedStudents = [...dbStudents].sort((a: any, b: any) => {
+      const usnA = (a.usn || a.enrollmentNumber || '').trim();
+      const usnB = (b.usn || b.enrollmentNumber || '').trim();
+      const nameA = `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim();
+      const nameB = `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim();
+      return compareStudentsByUsnOrName(usnA, usnB, nameA, nameB, a.rollNumber, b.rollNumber);
     });
 
     // 4. Resolve all Subjects for this Semester & Department
+    const subjectWhere: any = {
+      semester,
+      status: 'ACTIVE',
+    };
+    if (!isSemHandling) {
+      subjectWhere[Op.or] = [
+        { departmentId },
+        { departmentId: null as any },
+      ];
+    }
     const dbSubjects = await Subject.findAll({
-      where: {
-        semester,
-        [Op.or]: [
-          { departmentId },
-          { departmentId: null as any },
-        ],
-        status: 'ACTIVE',
-      },
+      where: subjectWhere,
       order: [['code', 'ASC']],
     });
 
     // Also check active faculty assignments to ensure no assigned subject is missed
+    const assignmentWhere: any = {
+      semester,
+      academicYear,
+      status: 'ACTIVE',
+    };
+    if (!isSemHandling) {
+      assignmentWhere.departmentId = departmentId;
+    }
     const assignments = await FacultyAssignment.findAll({
-      where: {
-        departmentId,
-        semester,
-        academicYear,
-        status: 'ACTIVE',
-      },
+      where: assignmentWhere,
       include: [{ model: Subject, as: 'subject' }],
     });
 
@@ -207,13 +225,24 @@ export const semesterAttendanceConsolidationService = {
 
     // 5. Fetch all AttendanceSessions for this cohort
     const assignmentIds = assignments.map((a) => a.id);
+    const sessionWhere: any = {
+      semester,
+      academicYear,
+    };
+    if (!isSemHandling) {
+      sessionWhere.departmentId = departmentId;
+      if (assignmentIds.length > 0) {
+        sessionWhere.facultyAssignmentId = { [Op.in]: assignmentIds };
+      }
+    } else {
+      sessionWhere[Op.or] = [
+        { departmentId },
+        ...(assignmentIds.length > 0 ? [{ facultyAssignmentId: { [Op.in]: assignmentIds } }] : []),
+        { subjectId: { [Op.in]: Array.from(subjectMap.keys()) } },
+      ];
+    }
     const sessions = await AttendanceSession.findAll({
-      where: {
-        departmentId,
-        semester,
-        academicYear,
-        ...(assignmentIds.length > 0 ? { facultyAssignmentId: { [Op.in]: assignmentIds } } : {}),
-      },
+      where: sessionWhere,
       order: [['attendanceDate', 'ASC'], ['sessionPeriod', 'ASC']],
     });
 
@@ -221,17 +250,23 @@ export const semesterAttendanceConsolidationService = {
     const sessionIds = sessions.map((s) => s.id);
     const studentIds = sortedStudents.map((st) => st.id);
 
+    const recordOrConditions: any[] = [];
+    if (sessionIds.length > 0) {
+      recordOrConditions.push({ attendanceSessionId: { [Op.in]: sessionIds } });
+    }
+    const fallbackRecordWhere: any = {
+      semester,
+      academicYear,
+    };
+    if (!isSemHandling) {
+      fallbackRecordWhere.departmentId = departmentId;
+    }
+    recordOrConditions.push(fallbackRecordWhere);
+
     const records = await AttendanceRecord.findAll({
       where: {
-        studentId: { [Op.in]: studentIds },
-        [Op.or]: [
-          ...(sessionIds.length > 0 ? [{ attendanceSessionId: { [Op.in]: sessionIds } }] : []),
-          {
-            departmentId,
-            semester,
-            academicYear,
-          },
-        ],
+        ...(studentIds.length > 0 ? { studentId: { [Op.in]: studentIds } } : {}),
+        [Op.or]: recordOrConditions,
       },
     });
 

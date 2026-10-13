@@ -1,651 +1,286 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import React, { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { RootState } from '../../store';
-import { updateUser } from '../../store/authSlice';
 import { toast } from 'react-toastify';
-import API from '../../services/api';
-import { ProfileAvatar } from '../../components/common/ProfileAvatar';
-import UpdateEmailModal from '../../components/profile/UpdateEmailModal';
-import hodService from '../../services/hod.service';
 import {
-  User,
-  Mail,
-  Phone,
-  Lock,
-  Camera,
-  Building,
+  Settings,
   Building2,
-  Loader2,
-  Eye,
-  EyeOff,
-  Edit2,
-  Check,
-  X,
-  ShieldCheck,
-  Award,
-  Clock,
-  CheckCircle2,
+  Lock,
+  Percent,
   AlertTriangle,
+  RefreshCw,
+  Save,
+  RotateCcw,
+  Info,
+  Calendar,
+  Send,
+  Layers,
+  ChevronRight,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import hodService from '../../services/hod.service';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 export const HodSettingsPage: React.FC = () => {
-  const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
+  const { academicYear } = useAcademicYear();
 
-  const [settingsData, setSettingsData] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [settingsData, setSettingsData] = useState<any | null>(null);
 
-  // Profile Form States
-  const [phone, setPhone] = useState(user?.phone || '');
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [firstName, setFirstName] = useState(user?.firstName || user?.name?.split(' ')[0] || '');
-  const [lastName, setLastName] = useState(user?.lastName || user?.name?.split(' ').slice(1).join(' ') || '');
-  const [savingName, setSavingName] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  // Attendance Threshold Form State
+  const [thresholdInput, setThresholdInput] = useState<string>('85');
+  const [savedThreshold, setSavedThreshold] = useState<number>(85);
+  const [savingThreshold, setSavingThreshold] = useState<boolean>(false);
+  const [inputError, setInputError] = useState<string | null>(null);
 
-  // Password Form States
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const deptCode = user?.department?.code || 'AS';
+  const deptName = user?.department?.name || 'Department';
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    fetchSettings();
+  }, [academicYear]);
 
   const fetchSettings = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const data = await hodService.getSettings();
+      const data = await hodService.getSettings({ academicYear });
       setSettingsData(data);
-      if (data?.profile) {
-        if (!phone && data.profile.phone) setPhone(data.profile.phone);
-        if (!isEditingName) {
-          const parts = (data.profile.name || user?.name || '').trim().split(/\s+/);
-          if (!firstName) setFirstName(user?.firstName || parts[0] || '');
-          if (!lastName && parts.length > 1) setLastName(user?.lastName || parts.slice(1).join(' '));
-        }
-      }
+      const currentThreshold = data?.attendanceThreshold ?? data?.department?.attendanceThreshold ?? 85;
+      setSavedThreshold(Number(currentThreshold));
+      setThresholdInput(String(currentThreshold));
+      setInputError(null);
     } catch (err) {
-      console.error('Failed to load HOD settings:', err);
+      console.error('Failed to load department settings:', err);
+      toast.error('Failed to load department configuration.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      if (user.phone && !phone) setPhone(user.phone);
-      if (!isEditingName) {
-        const parts = (user.name || '').trim().split(/\s+/);
-        setFirstName(user.firstName || parts[0] || '');
-        setLastName(user.lastName !== undefined ? user.lastName : parts.slice(1).join(' '));
-      }
-    }
-  }, [user, isEditingName]);
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select a valid image file (PNG, JPG, JPEG, WEBP).');
+  const handleThresholdInputChange = (val: string) => {
+    setThresholdInput(val);
+    if (val.trim() === '') {
+      setInputError('Threshold percentage is required.');
       return;
     }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size must be less than 5MB.');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('avatar', file);
-
-    setUploadingImage(true);
-    try {
-      const res = await API.post('/auth/profile-image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      if (res.data?.success && res.data?.data?.profileImage) {
-        const newUrl = res.data.data.profileImage;
-        dispatch(updateUser({ profileImage: newUrl }));
-        toast.success('🎉 Profile picture updated successfully!');
-      } else {
-        toast.error('Failed to upload profile picture.');
-      }
-    } catch (err: any) {
-      console.error('Avatar upload error:', err);
-      toast.error(err.response?.data?.error || 'Failed to upload profile picture.');
-    } finally {
-      setUploadingImage(false);
-      if (e.target) e.target.value = '';
+    const num = Number(val);
+    if (isNaN(num)) {
+      setInputError('Must be a valid numeric percentage.');
+    } else if (num < 0 || num > 100) {
+      setInputError('Percentage must be between 0 and 100.');
+    } else {
+      setInputError(null);
     }
   };
 
-  const handleSaveName = async () => {
-    const cleanFirst = firstName.trim();
-    const cleanLast = lastName.trim();
-    const cleanFullName = `${cleanFirst} ${cleanLast}`.trim();
-
-    if (!cleanFirst) {
-      toast.error('First name cannot be empty.');
-      return;
-    }
-    if (cleanFullName.length < 2) {
-      toast.error('Full name must be at least 2 characters.');
-      return;
-    }
-    if (cleanFullName.length > 100) {
-      toast.error('Full name cannot exceed 100 characters.');
-      return;
-    }
-
-    setSavingName(true);
-    try {
-      await hodService.updateProfile({
-        firstName: cleanFirst,
-        lastName: cleanLast,
-      });
-
-      dispatch(updateUser({
-        firstName: cleanFirst,
-        lastName: cleanLast,
-        name: cleanFullName,
-      }));
-      setIsEditingName(false);
-      toast.success('🎉 Profile name updated successfully!');
-      fetchSettings();
-    } catch (err: any) {
-      console.error('Failed to update name:', err);
-      toast.error(err.response?.data?.error || 'Failed to update profile name.');
-    } finally {
-      setSavingName(false);
-    }
+  const handleResetThreshold = () => {
+    setThresholdInput(String(savedThreshold));
+    setInputError(null);
   };
 
-  const handleSaveProfile = async () => {
-    setSavingProfile(true);
-    try {
-      const cleanFirst = firstName.trim();
-      const cleanLast = lastName.trim();
-      const cleanFullName = `${cleanFirst} ${cleanLast}`.trim();
-
-      await hodService.updateProfile({
-        phone: phone.trim(),
-        firstName: cleanFirst || undefined,
-        lastName: cleanLast || undefined,
-      });
-
-      dispatch(updateUser({
-        phone: phone.trim(),
-        firstName: cleanFirst || undefined,
-        lastName: cleanLast || undefined,
-        name: cleanFullName || undefined,
-      }));
-
-      toast.success('🎉 Profile changes saved successfully!');
-      fetchSettings();
-    } catch (err: any) {
-      console.error('Failed to update profile:', err);
-      toast.error(err.response?.data?.error || 'Failed to update profile.');
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const handleUpdatePassword = async (e: React.FormEvent) => {
+  const handleSaveThreshold = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPasswordMsg(null);
-
-    if (newPassword !== confirmPassword) {
-      const msg = 'New password and confirm password do not match.';
-      setPasswordMsg({ type: 'error', text: msg });
-      toast.error(msg);
+    if (inputError || thresholdInput.trim() === '') {
+      toast.error(inputError || 'Please provide a valid attendance threshold.');
       return;
     }
 
-    if (newPassword.length < 8) {
-      const msg = 'New password must be at least 8 characters long.';
-      setPasswordMsg({ type: 'error', text: msg });
-      toast.error(msg);
+    const num = Number(thresholdInput);
+    if (isNaN(num) || num < 0 || num > 100) {
+      toast.error('Attendance threshold must be a valid percentage between 0 and 100.');
       return;
     }
 
-    setSavingPassword(true);
+    setSavingThreshold(true);
     try {
-      await hodService.updatePassword({ currentPassword, newPassword });
-      setPasswordMsg({ type: 'success', text: 'Password updated successfully!' });
-      toast.success('🔒 Access credentials updated successfully!');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      const res = await hodService.updateDepartmentSettings({
+        attendanceThreshold: num,
+        academicYear,
+      });
+
+      const updatedVal = res?.data?.attendanceThreshold ?? num;
+      setSavedThreshold(updatedVal);
+      setThresholdInput(String(updatedVal));
+      setInputError(null);
+      toast.success(`🎉 Department Attendance Threshold updated to ${updatedVal}%!`);
+      fetchSettings();
     } catch (err: any) {
-      const errText = err?.response?.data?.error || 'Failed to update password. Please check your current password.';
-      setPasswordMsg({ type: 'error', text: errText });
-      toast.error(errText);
+      console.error('Failed to save threshold:', err);
+      const errMsg = err?.response?.data?.error || 'Failed to save attendance threshold.';
+      toast.error(errMsg);
     } finally {
-      setSavingPassword(false);
+      setSavingThreshold(false);
     }
   };
 
-  const deptName = settingsData?.department?.name || user?.department?.name || 'Computer Science & Engineering';
-  const deptCode = settingsData?.department?.code || user?.department?.code || 'CSE';
-  const displayName = user?.name || `${firstName} ${lastName}`.trim() || 'Head of Department';
+  const isDirty = thresholdInput !== String(savedThreshold);
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* Hidden File Input for Avatar Upload */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleAvatarChange}
-        accept="image/*"
-        className="hidden"
-      />
+    <div className="max-w-5xl mx-auto space-y-6">
 
-      {/* ── Page Header Notice ── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white tracking-tight">
-            HOD Profile & Department Settings
-          </h1>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-            Manage your official profile photo, personal information, locked department credentials, and portal security
+      {/* ── Page Header ──────────────────────────────────────────────────────── */}
+      <div className="glass-card rounded-3xl p-6 sm:p-8 border border-white/60 dark:border-slate-800/60 shadow-sm bg-white/80 dark:bg-slate-900/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold shadow-xs">
+              <Settings className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                Department Settings
+              </h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              to="/hod/publish"
+              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-colors"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Publish Attendance & Marks</span>
+            </Link>
+            <span className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+              <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+              <span>AY: {academicYear}</span>
+            </span>
+            <button
+              onClick={fetchSettings}
+              disabled={loading}
+              title="Refresh Configuration"
+              className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-xs cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Assigned Department Scope (Locked Context Card) ────────────────────── */}
+      <div className="glass-card rounded-3xl p-6 border border-white/60 dark:border-slate-800/60 shadow-sm bg-white/80 dark:bg-slate-900/80 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-indigo-600" />
+            <span>Assigned Department Scope</span>
+          </h2>
+              <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full bg-indigo-600 text-white shadow-xs">
+                <Lock className="w-3 h-3" /> PERMANENTLY LOCKED
+              </span>
+            </div>
+
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-slate-400 font-medium block">Department Name:</span>
+              <strong className="text-slate-900 dark:text-white text-sm">
+                {settingsData?.department?.name || deptName}
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-400 font-medium block">Department Code:</span>
+              <strong className="text-slate-900 dark:text-white font-mono text-sm">
+                {settingsData?.department?.code || deptCode}
+              </strong>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+            Note: HOD accounts are strictly scoped to their appointed department. Settings and attendance policies configured here apply only to students and cohorts under this department.
           </p>
         </div>
       </div>
 
-      {/* ── Two-Column Main Layout ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        {/* ── LEFT PROFILE CARD (5 cols) ── */}
-        <div className="lg:col-span-5 rounded-[32px] p-6 bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-sm flex flex-col items-center justify-between text-center space-y-6">
-          <div className="space-y-4 w-full flex flex-col items-center">
-            
-            {/* Avatar with Camera Overlay */}
-            <div className="relative">
-              <ProfileAvatar
-                imageUrl={user?.profileImage}
-                name={displayName}
-                size="2xl"
-                className="w-28 h-28 rounded-[28px] object-cover border-4 border-violet-500/20 dark:border-neutral-800 shadow-md"
-              />
-              <button
-                type="button"
-                onClick={handleAvatarClick}
-                disabled={uploadingImage}
-                title="Change Profile Picture"
-                className="absolute bottom-1 right-1 w-8 h-8 bg-neutral-900 text-white rounded-full flex items-center justify-center border border-white/20 hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-lg disabled:opacity-50"
-              >
-                {uploadingImage ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Camera className="w-3.5 h-3.5" />
-                )}
-              </button>
+      {/* ── Attendance Threshold Configuration Card ──────────────────────────── */}
+      <div className="glass-card rounded-3xl p-6 sm:p-8 border border-white/60 dark:border-slate-800/60 shadow-sm bg-white/80 dark:bg-slate-900/80 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-950 text-violet-600 dark:text-violet-400 flex items-center justify-center font-bold">
+              <Percent className="w-5 h-5" />
             </div>
-
-            {/* Role Badge and Name */}
-            <div className="w-full">
-              <span className="px-3 py-1 bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400 rounded-full text-xs font-black uppercase inline-flex items-center gap-1.5">
-                <Award className="w-3.5 h-3.5" />
-                HEAD OF DEPARTMENT
-              </span>
-
-              {!isEditingName ? (
-                <div className="mt-2 flex flex-col items-center justify-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <h3 className="text-lg font-black text-neutral-900 dark:text-white">
-                      {displayName}
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsEditingName(true);
-                        const parts = (user?.name || '').trim().split(/\s+/);
-                        setFirstName(user?.firstName || parts[0] || '');
-                        setLastName(user?.lastName !== undefined ? user?.lastName : parts.slice(1).join(' '));
-                      }}
-                      className="p-1.5 text-neutral-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40 rounded-lg transition-colors cursor-pointer"
-                      title="Edit Profile Name"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                  </div>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 font-semibold mt-0.5">
-                    Department of {deptName} ({deptCode})
-                  </p>
-                </div>
-              ) : (
-                <div className="w-full mt-3 p-4 bg-violet-50/60 dark:bg-violet-950/30 border border-violet-200/80 dark:border-violet-800/60 rounded-2xl space-y-3 animate-fade-in text-left">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-violet-700 dark:text-violet-400 flex items-center gap-1.5">
-                      <Edit2 size={12} /> Edit Display Name
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingName(false)}
-                      className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block mb-1">First Name *</label>
-                      <input
-                        type="text"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        placeholder="First Name"
-                        className="w-full px-3 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-bold focus:outline-none focus:border-violet-500 text-neutral-900 dark:text-white"
-                        autoFocus
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block mb-1">Last Name</label>
-                      <input
-                        type="text"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        placeholder="Last Name"
-                        className="w-full px-3 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-bold focus:outline-none focus:border-violet-500 text-neutral-900 dark:text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingName(false)}
-                      disabled={savingName}
-                      className="px-3 py-1.5 text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveName}
-                      disabled={savingName}
-                      className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-lg text-xs font-black transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-                    >
-                      {savingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check size={13} />}
-                      <span>Save Name</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Institutional, Contact & Department Scope Details */}
-          <div className="w-full bg-neutral-50 dark:bg-neutral-800/30 rounded-2xl p-4 text-xs space-y-3.5 text-left border border-neutral-200/60 dark:border-neutral-800">
-            
-            {/* Institution */}
-            <div className="flex items-start space-x-2 text-neutral-600 dark:text-neutral-300">
-              <Building className="w-4 h-4 text-violet-600 dark:text-violet-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Institution</p>
-                <p className="font-bold text-neutral-800 dark:text-neutral-200">Jain College of Engineering & Research, Belagavi</p>
-              </div>
-            </div>
-
-            {/* Email Address with Update Action */}
-            <div className="flex items-center justify-between space-x-2 text-neutral-600 dark:text-neutral-300">
-              <div className="flex items-center space-x-2 min-w-0">
-                <Mail className="w-4 h-4 text-violet-600 dark:text-violet-400 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Email Address</p>
-                  <p className="font-bold text-neutral-800 dark:text-neutral-200 truncate">{user?.email || settingsData?.profile?.email || 'hod@jcer.edu'}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsEmailModalOpen(true)}
-                className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/60 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-800/80 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex-shrink-0 shadow-sm"
-              >
-                Update Email
-              </button>
-            </div>
-
-            {/* Mobile Number */}
-            <div className="flex items-center space-x-2 text-neutral-600 dark:text-neutral-300">
-              <Phone className="w-4 h-4 text-violet-600 dark:text-violet-400 flex-shrink-0" />
-              <div className="w-full">
-                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Mobile Number</p>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="e.g. 9876543210"
-                  className="w-full mt-0.5 px-3 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-bold text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-violet-500"
-                />
-              </div>
-            </div>
-
-            {/* Assigned Department Scope (Locked) */}
-            <div className="pt-2 border-t border-neutral-200/60 dark:border-neutral-700/60 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4 text-violet-600 dark:text-violet-400 flex-shrink-0" />
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Assigned Department Scope</span>
-                </div>
-                <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-neutral-900 dark:bg-neutral-800 text-white shadow-xs">
-                  <Lock className="w-2.5 h-2.5 text-violet-400" /> PERMANENTLY LOCKED
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-700/80">
-                <div>
-                  <span className="text-[10px] text-neutral-400 block font-medium">Department Name</span>
-                  <span className="font-bold text-xs text-neutral-800 dark:text-neutral-200 truncate block">
-                    {deptName}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-neutral-400 block font-medium">Department Code</span>
-                  <span className="font-mono font-bold text-xs text-violet-600 dark:text-violet-400 block">
-                    {deptCode}
-                  </span>
-                </div>
-              </div>
-
-              <p className="text-[10px] text-neutral-500 dark:text-neutral-400 leading-relaxed italic">
-                Note: HOD accounts are strictly scoped to their appointed department. To transfer departments or change institution codes, contact the Dean Academics or Super Admin.
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                Attendance Threshold Configuration
+              </h2>
+              <p className="text-xs text-slate-500">
+                Define the minimum expected attendance percentage for students in the department.
               </p>
             </div>
-
           </div>
 
-          {/* Save Profile Changes Action */}
-          <div className="w-full">
-            <button
-              type="button"
-              onClick={handleSaveProfile}
-              disabled={savingProfile}
-              className="w-full py-2.5 bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-800 dark:hover:bg-neutral-700 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
-            >
-              {savingProfile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-              <span>Save Profile Changes</span>
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-medium">Current Threshold:</span>
+            <span className="px-3 py-1 rounded-xl bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 font-mono font-black text-sm border border-violet-200 dark:border-violet-800">
+              {savedThreshold}%
+            </span>
           </div>
         </div>
 
-        {/* ── RIGHT SECURITY CARD (7 cols) ── */}
-        <div className="lg:col-span-7 rounded-[32px] p-6 bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-sm flex flex-col justify-between space-y-6">
-          <div>
-            <div className="flex items-center gap-2.5 mb-6 border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <ShieldCheck className="w-5 h-5 text-violet-600 dark:text-violet-400" />
-              <div>
-                <h3 className="font-extrabold text-neutral-900 dark:text-white text-md">
-                  SECURITY & CREDENTIALS MANAGEMENT
-                </h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  Manage your HOD portal login password and account credentials
-                </p>
+        {/* Threshold Edit Form */}
+        <form onSubmit={handleSaveThreshold} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Minimum Required Attendance (%)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={thresholdInput}
+                  onChange={(e) => handleThresholdInputChange(e.target.value)}
+                  placeholder="e.g. 85"
+                  className={`w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border text-sm font-bold text-slate-900 dark:text-white outline-none transition-all ${
+                    inputError
+                      ? 'border-rose-500 ring-2 ring-rose-200 dark:ring-rose-950/40'
+                      : 'border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500'
+                  }`}
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                  %
+                </span>
               </div>
+              {inputError && (
+                <p className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>{inputError}</span>
+                </p>
+              )}
             </div>
 
-            {passwordMsg && (
-              <div
-                className={`mb-4 p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
-                  passwordMsg.type === 'success'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                }`}
+            <div className="sm:pt-6 flex flex-col justify-end">
+              <p className="text-[11px] text-slate-500">
+                Institutional Default: <strong className="text-slate-700 dark:text-slate-300">85.0%</strong>. Valid range: 0.0% – 100.0%. Saved thresholds are scoped to <strong>{deptCode}</strong> and <strong>AY {academicYear}</strong>.
+              </p>
+            </div>
+          </div>
+
+          {/* Form Actions */}
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={savingThreshold || Boolean(inputError) || !isDirty}
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              <span>{savingThreshold ? 'Saving Changes...' : 'Save Changes'}</span>
+            </button>
+
+            {isDirty && (
+              <button
+                type="button"
+                onClick={handleResetThreshold}
+                disabled={savingThreshold}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                {passwordMsg.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                )}
-                <span>{passwordMsg.text}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleUpdatePassword} className="space-y-4 text-xs">
-              
-              {/* Current Password */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-wider block">
-                  Current Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showCurrentPassword ? 'text' : 'password'}
-                    placeholder="Enter your current password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full px-4 py-2.5 pr-10 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:outline-none focus:border-violet-500 text-neutral-900 dark:text-white font-medium"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
-                  >
-                    {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* New Password */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-wider block">
-                  New Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showNewPassword ? 'text' : 'password'}
-                    placeholder="Enter new password (min. 8 characters)"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-4 py-2.5 pr-10 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:outline-none focus:border-violet-500 text-neutral-900 dark:text-white font-medium"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
-                  >
-                    {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Confirm New Password */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-wider block">
-                  Confirm New Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    placeholder="Re-enter new password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-4 py-2.5 pr-10 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:outline-none focus:border-violet-500 text-neutral-900 dark:text-white font-medium"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
-                  >
-                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={savingPassword}
-                  className="py-3 px-6 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  {savingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock size={14} />}
-                  <span>Update Access Credentials</span>
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* ── Recent Administrative Activity Log ── */}
-          <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 space-y-3">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-400 flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-              <span>Recent Administrative Activity Log</span>
-            </h4>
-
-            {settingsData?.auditLogs && settingsData.auditLogs.length > 0 ? (
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {settingsData.auditLogs.slice(0, 5).map((log: any) => (
-                  <div
-                    key={log.id}
-                    className="p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-100 dark:border-neutral-800 text-[11px] flex items-center justify-between"
-                  >
-                    <div className="truncate pr-2">
-                      <p className="font-bold text-neutral-800 dark:text-neutral-200 truncate">{log.action}</p>
-                      <p className="text-[10px] text-neutral-400">IP: {log.ipAddress || '127.0.0.1'}</p>
-                    </div>
-                    <span className="text-[10px] text-neutral-400 font-medium flex-shrink-0">
-                      {new Date(log.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-neutral-400 italic">No recent activity recorded.</p>
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Changes</span>
+              </button>
             )}
           </div>
-        </div>
-
+        </form>
       </div>
-
-      {/* ── Secure Email Change Verification Modal ── */}
-      <UpdateEmailModal
-        isOpen={isEmailModalOpen}
-        onClose={() => setIsEmailModalOpen(false)}
-        currentEmail={user?.email || settingsData?.profile?.email || 'hod@jcer.edu'}
-        onSuccess={(updatedEmail) => {
-          dispatch(updateUser({ email: updatedEmail }));
-          fetchSettings();
-        }}
-      />
     </div>
   );
 };
