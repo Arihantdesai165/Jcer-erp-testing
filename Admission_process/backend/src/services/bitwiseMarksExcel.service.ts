@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { embedOfficialCollegeBanner } from '../utils/excelBranding.util';
 import AssessmentConfiguration from '../models/AssessmentConfiguration';
 import StudentQuestionMarks from '../models/StudentQuestionMarks';
 import StudentAssessmentSummary from '../models/StudentAssessmentSummary';
@@ -198,49 +199,31 @@ export const bitwiseMarksExcelService = {
       },
     });
 
-    // 1. Top-Left Corner Metadata (Rows 1-3, Cols A-C)
-    sheet.mergeCells('A1:C1');
-    const facCell = sheet.getCell('A1');
-    facCell.value = `Faculty Name : ${facultyName || 'Staff'}`;
-    facCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    facCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    // 1. Institutional Official Banner (Rows 1 - 2)
+    sheet.getRow(1).height = 36;
+    sheet.getRow(2).height = 36;
+    embedOfficialCollegeBanner(workbook, sheet, {
+      totalCols: 18,
+      startCol: 1,
+      startRow: 0.10,
+    });
 
-    sheet.mergeCells('A2:C2');
-    const subjCell = sheet.getCell('A2');
-    subjCell.value = `Subject Name : ${subjName}`;
-    subjCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    subjCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    sheet.mergeCells('A3:C3');
-    const codeCell = sheet.getCell('A3');
-    codeCell.value = `Subject Code : ${subjCode}`;
-    codeCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF475569' } };
-    codeCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    // 2. Centered College Header (Rows 1-3, Cols D onwards)
-    sheet.mergeCells('D1:Z1');
-    const titleCell = sheet.getCell('D1');
-    titleCell.value = 'JAIN COLLEGE OF ENGINEERING AND RESEARCH, BELAGAVI';
-    titleCell.font = { name: 'Times New Roman', size: 14, bold: true, color: { argb: 'FF1E293B' } };
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(1).height = 24;
-
-    sheet.mergeCells('D2:Z2');
-    const deptCell = sheet.getCell('D2');
+    // 2. Department & Assessment Title (Row 3, below banner)
+    sheet.mergeCells('A3:Z3');
+    const deptCell = sheet.getCell('A3');
     deptCell.value = `Department of ${deptName} — Continuous Internal Evaluation (${assessmentType === 'CIE1' ? 'CIE-1' : 'CIE-2'})`;
-    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF334155' } };
+    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF1E293B' } };
     deptCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(2).height = 22;
+    sheet.getRow(3).height = 22;
 
-    sheet.mergeCells('D3:Z3');
-    const subCell = sheet.getCell('D3');
+    // 3. Academic Metadata Header (Row 4)
+    sheet.mergeCells('A4:Z4');
+    const subCell = sheet.getCell('A4');
     const maxMarksVal = Math.round(Number(config?.maximumMarks || 50));
-    subCell.value = `Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear} | Max Marks: ${maxMarksVal}`;
-    subCell.font = { name: 'Times New Roman', size: 11, bold: true, italic: true, color: { argb: 'FF475569' } };
+    subCell.value = `Faculty: ${facultyName || 'Staff'} | Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear} | Max Marks: ${maxMarksVal}`;
+    subCell.font = { name: 'Times New Roman', size: 10.5, bold: true, italic: true, color: { argb: 'FF475569' } };
     subCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(3).height = 20;
-
-    sheet.getRow(4).height = 8; // Spacer
+    sheet.getRow(4).height = 20;
 
     if (!config || !Array.isArray(config.questionPattern) || config.questionPattern.length === 0) {
       sheet.mergeCells('A5:H5');
@@ -520,48 +503,30 @@ export const bitwiseMarksExcelService = {
       },
     });
 
-    // 1. Top-Left Corner Metadata (Rows 1-3, Cols A-C)
-    sheet.mergeCells('A1:C1');
-    const facCell = sheet.getCell('A1');
-    facCell.value = `Faculty Name : ${facultyName || 'Staff'}`;
-    facCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    facCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    // 1. Institutional Official Banner (Rows 1 - 2)
+    sheet.getRow(1).height = 36;
+    sheet.getRow(2).height = 36;
+    embedOfficialCollegeBanner(workbook, sheet, {
+      totalCols: 10,
+      startCol: 1,
+      startRow: 0.10,
+    });
 
-    sheet.mergeCells('A2:C2');
-    const subjCell = sheet.getCell('A2');
-    subjCell.value = `Subject Name : ${subjName}`;
-    subjCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    subjCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    sheet.mergeCells('A3:C3');
-    const codeCell = sheet.getCell('A3');
-    codeCell.value = `Subject Code : ${subjCode}`;
-    codeCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF475569' } };
-    codeCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    // 2. Centered College Header (Rows 1-3, Cols D onwards)
-    sheet.mergeCells('D1:J1');
-    const titleCell = sheet.getCell('D1');
-    titleCell.value = 'JAIN COLLEGE OF ENGINEERING AND RESEARCH, BELAGAVI';
-    titleCell.font = { name: 'Times New Roman', size: 14, bold: true, color: { argb: 'FF1E293B' } };
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(1).height = 24;
-
-    sheet.mergeCells('D2:J2');
-    const deptCell = sheet.getCell('D2');
+    // 2. Department & Assessment Title (Row 3, below banner)
+    sheet.mergeCells('A3:J3');
+    const deptCell = sheet.getCell('A3');
     deptCell.value = `Department of ${deptName} — Assignment Assessment Register`;
-    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF334155' } };
+    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF1E293B' } };
     deptCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(2).height = 22;
+    sheet.getRow(3).height = 22;
 
-    sheet.mergeCells('D3:J3');
-    const subCell = sheet.getCell('D3');
-    subCell.value = `Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear} | Max Marks: ${config?.maximumMarks || 25}`;
-    subCell.font = { name: 'Times New Roman', size: 11, bold: true, italic: true, color: { argb: 'FF475569' } };
+    // 3. Academic Metadata Header (Row 4)
+    sheet.mergeCells('A4:J4');
+    const subCell = sheet.getCell('A4');
+    subCell.value = `Faculty: ${facultyName || 'Staff'} | Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear} | Max Marks: ${config?.maximumMarks || 25}`;
+    subCell.font = { name: 'Times New Roman', size: 10.5, bold: true, italic: true, color: { argb: 'FF475569' } };
     subCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(3).height = 20;
-
-    sheet.getRow(4).height = 8; // Spacer
+    sheet.getRow(4).height = 20;
 
     // Columns Header (Row 5)
     const headerRow = sheet.getRow(5);
@@ -714,48 +679,30 @@ export const bitwiseMarksExcelService = {
       pageSetup: { orientation: 'portrait', fitToPage: true },
     });
 
-    // 1. Top-Left Corner Metadata (Rows 1-3, Cols A-C)
-    sheet.mergeCells('A1:C1');
-    const facCell = sheet.getCell('A1');
-    facCell.value = `Faculty Name : ${facultyName || 'Staff'}`;
-    facCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    facCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    // 1. Institutional Official Banner (Rows 1 - 2)
+    sheet.getRow(1).height = 36;
+    sheet.getRow(2).height = 36;
+    embedOfficialCollegeBanner(workbook, sheet, {
+      totalCols: 10,
+      startCol: 1,
+      startRow: 0.10,
+    });
 
-    sheet.mergeCells('A2:C2');
-    const subjCell = sheet.getCell('A2');
-    subjCell.value = `Subject Name : ${subjName}`;
-    subjCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    subjCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    sheet.mergeCells('A3:C3');
-    const codeCell = sheet.getCell('A3');
-    codeCell.value = `Subject Code : ${subjCode}`;
-    codeCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF475569' } };
-    codeCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    // 2. Centered College Header (Rows 1-3, Cols D onwards)
-    sheet.mergeCells('D1:I1');
-    const titleCell = sheet.getCell('D1');
-    titleCell.value = 'JAIN COLLEGE OF ENGINEERING AND RESEARCH, BELAGAVI';
-    titleCell.font = { name: 'Times New Roman', size: 14, bold: true, color: { argb: 'FF1E293B' } };
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(1).height = 24;
-
-    sheet.mergeCells('D2:I2');
-    const deptCell = sheet.getCell('D2');
+    // 2. Department & Assessment Title (Row 3, below banner)
+    sheet.mergeCells('A3:I3');
+    const deptCell = sheet.getCell('A3');
     deptCell.value = `Department of ${deptName} — Final Continuous Internal Evaluation (CIE) Marks Statement`;
-    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF334155' } };
+    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF1E293B' } };
     deptCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(2).height = 22;
+    sheet.getRow(3).height = 22;
 
-    sheet.mergeCells('D3:I3');
-    const subCell = sheet.getCell('D3');
-    subCell.value = `Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear} | Max Final CIE Marks: 50`;
-    subCell.font = { name: 'Times New Roman', size: 11, bold: true, italic: true, color: { argb: 'FF475569' } };
+    // 3. Academic Metadata Header (Row 4)
+    sheet.mergeCells('A4:I4');
+    const subCell = sheet.getCell('A4');
+    subCell.value = `Faculty: ${facultyName || 'Staff'} | Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear} | Max Final CIE Marks: 50`;
+    subCell.font = { name: 'Times New Roman', size: 10.5, bold: true, italic: true, color: { argb: 'FF475569' } };
     subCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(3).height = 20;
-
-    sheet.getRow(4).height = 8; // Spacer
+    sheet.getRow(4).height = 20;
 
     // Columns Header (Row 5)
     const headerRow = sheet.getRow(5);
@@ -971,48 +918,30 @@ export const bitwiseMarksExcelService = {
       pageSetup: { orientation: 'portrait', fitToPage: true },
     });
 
-    // 1. Top-Left Corner Metadata (Rows 1-3, Cols A-C)
-    sheet.mergeCells('A1:C1');
-    const facCell = sheet.getCell('A1');
-    facCell.value = `Faculty Name : ${facultyName || 'Staff'}`;
-    facCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    facCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    // 1. Institutional Official Banner (Rows 1 - 2)
+    sheet.getRow(1).height = 36;
+    sheet.getRow(2).height = 36;
+    embedOfficialCollegeBanner(workbook, sheet, {
+      totalCols: 8,
+      startCol: 1,
+      startRow: 0.10,
+    });
 
-    sheet.mergeCells('A2:C2');
-    const subjCell = sheet.getCell('A2');
-    subjCell.value = `Subject Name : ${subjName}`;
-    subjCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF1E293B' } };
-    subjCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    sheet.mergeCells('A3:C3');
-    const codeCell = sheet.getCell('A3');
-    codeCell.value = `Subject Code : ${subjCode}`;
-    codeCell.font = { name: 'Times New Roman', size: 11, bold: true, color: { argb: 'FF475569' } };
-    codeCell.alignment = { horizontal: 'left', vertical: 'middle' };
-
-    // 2. Centered College Header (Rows 1-3, Cols D onwards)
-    sheet.mergeCells('D1:G1');
-    const titleCell = sheet.getCell('D1');
-    titleCell.value = 'JAIN COLLEGE OF ENGINEERING AND RESEARCH, BELAGAVI';
-    titleCell.font = { name: 'Times New Roman', size: 14, bold: true, color: { argb: 'FF1E293B' } };
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(1).height = 24;
-
-    sheet.mergeCells('D2:G2');
-    const deptCell = sheet.getCell('D2');
+    // 2. Department & Assessment Title (Row 3, below banner)
+    sheet.mergeCells('A3:G3');
+    const deptCell = sheet.getCell('A3');
     deptCell.value = `Department of ${deptName} — VTU External Semester Examination Marks`;
-    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF334155' } };
+    deptCell.font = { name: 'Times New Roman', size: 12, bold: true, color: { argb: 'FF1E293B' } };
     deptCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(2).height = 22;
+    sheet.getRow(3).height = 22;
 
-    sheet.mergeCells('D3:G3');
-    const subCell = sheet.getCell('D3');
-    subCell.value = `Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear}`;
-    subCell.font = { name: 'Times New Roman', size: 11, bold: true, italic: true, color: { argb: 'FF475569' } };
+    // 3. Academic Metadata Header (Row 4)
+    sheet.mergeCells('A4:G4');
+    const subCell = sheet.getCell('A4');
+    subCell.value = `Faculty: ${facultyName || 'Staff'} | Subject: ${subjCode} - ${subjName} | Semester: ${semester} | Academic Year: ${academicYear}`;
+    subCell.font = { name: 'Times New Roman', size: 10.5, bold: true, italic: true, color: { argb: 'FF475569' } };
     subCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(3).height = 20;
-
-    sheet.getRow(4).height = 8; // Spacer
+    sheet.getRow(4).height = 20;
 
     const headerRow = sheet.getRow(5);
     headerRow.height = 24;

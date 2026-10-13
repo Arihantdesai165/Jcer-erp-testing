@@ -66,11 +66,17 @@ const getUserPayload = async (user: User) => {
 
   const isHod = user.role === 'HOD' || (await HOD.findOne({ where: { userId: user.id, isActive: true } })) !== null;
   const isTeacher = user.role === 'TEACHER' || (user.role as string) === 'FACULTY';
+  const isDean = user.role === 'DEAN';
+  const isPrincipal = user.role === 'PRINCIPAL';
   const hasFacultyAssignment = (await FacultyAssignment.count({ where: { userId: user.id, status: 'ACTIVE' } })) > 0;
-  const isFaculty = isTeacher || isHod || hasFacultyAssignment;
+  const teacherProfile = await Teacher.findOne({ where: { userId: user.id, status: 'ACTIVE' } });
+  const isTeachingConfigured = teacherProfile !== null && !!teacherProfile.departmentId;
+  const isFaculty = isTeacher || isHod || isDean || isPrincipal || hasFacultyAssignment || isTeachingConfigured;
 
   const workspaces: string[] = [];
   if (isHod) workspaces.push('hod');
+  if (isDean) workspaces.push('dean');
+  if (isPrincipal) workspaces.push('principal');
   if (isFaculty) workspaces.push('faculty');
 
   return {
@@ -1145,8 +1151,12 @@ export const getUserWorkspaces = async (req: Request, res: Response, next: NextF
 
     const isHod = user.role === 'HOD' || (await HOD.findOne({ where: { userId: user.id, isActive: true } })) !== null;
     const isTeacher = user.role === 'TEACHER' || (user.role as string) === 'FACULTY';
+    const isDean = user.role === 'DEAN';
+    const isPrincipal = user.role === 'PRINCIPAL';
     const hasFacultyAssignment = (await FacultyAssignment.count({ where: { userId: user.id, status: 'ACTIVE' } })) > 0;
-    const isFaculty = isTeacher || isHod || hasFacultyAssignment;
+    const teacherProfile = await Teacher.findOne({ where: { userId: user.id, status: 'ACTIVE' } });
+    const isTeachingConfigured = teacherProfile !== null && !!teacherProfile.departmentId;
+    const isFaculty = isTeacher || isHod || isDean || isPrincipal || hasFacultyAssignment || isTeachingConfigured;
 
     const workspaces: Array<{ type: string; label: string; route: string }> = [];
 

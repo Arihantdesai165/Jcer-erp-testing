@@ -27,11 +27,16 @@ import {
   FileCheck2,
   Archive,
   Cloud,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import deanService from '../../services/dean.service';
 import usePwa from '../../hooks/usePwa';
 import useDeanNotificationCount from '../../hooks/useDeanNotificationCount';
 import PwaConfirmationModal from '../common/PwaConfirmationModal';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
+import AcademicYearSelector from '../common/AcademicYearSelector';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { ProfileAvatar } from '../common/ProfileAvatar';
 
 interface MenuItem {
@@ -52,18 +57,13 @@ export const DeanLayout: React.FC = () => {
   const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
 
-  const [academicYear, setAcademicYear] = useState<string>('2026-27');
+  const { academicYear, setAcademicYear } = useAcademicYear();
   const { count: pendingAuthCount, refreshCount } = useDeanNotificationCount({ pollingIntervalMs: 10000 });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [isDark, setIsDark] = useState(false);
 
   const refreshDeanMetadata = () => {
-    deanService.getDashboardData()
-      .then((data) => {
-        if (data.academicYear) setAcademicYear(data.academicYear);
-      })
-      .catch((err) => console.warn('Could not load Dean dashboard metadata:', err));
     refreshCount();
   };
 
@@ -298,26 +298,39 @@ export const DeanLayout: React.FC = () => {
           })()}
         </div>
 
-        {/* Bottom User Info & Logout */}
-        <div className="pt-3 border-t border-neutral-105 dark:border-neutral-800/40 flex flex-col gap-2.5 w-full">
+        {/* Bottom Footer matching Principal and HOD style */}
+        <div className="pt-3 border-t border-neutral-105 dark:border-neutral-800/40 flex flex-col gap-2.5 w-full shrink-0">
           <div className="rounded-xl p-2.5 border text-[10px] space-y-1 bg-neutral-50/50 dark:bg-neutral-800/25 border-neutral-200/50 dark:border-neutral-800/55">
             <div className="flex justify-between items-center">
               <span className="text-neutral-400 font-medium">Role</span>
-              <span className="font-bold text-cyan-600 dark:text-cyan-400">Dean Academics</span>
+              <span className="font-extrabold text-neutral-805 dark:text-neutral-200">DEAN ACADEMICS</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-neutral-400 font-medium">Academic Year</span>
-              <span className="font-bold text-neutral-800 dark:text-neutral-200">{academicYear}</span>
+              <span className="font-extrabold text-neutral-805 dark:text-neutral-200">{academicYear}</span>
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-all border border-rose-200/40 dark:border-rose-900/40"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out</span>
-          </button>
+          <WorkspaceSwitcher currentWorkspace="dean" />
+
+          <div className="flex flex-col gap-1.5">
+            {pendingAuthCount > 0 ? (
+              <Link
+                to="/dean/faculty/authorizations"
+                className="flex items-center space-x-2 text-[10px] font-bold hover:underline px-1 py-0.5 shrink-0 text-cyan-600 dark:text-cyan-400"
+              >
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">
+                  {pendingAuthCount} Pending Faculty {pendingAuthCount === 1 ? 'Authorization' : 'Authorizations'}
+                </span>
+              </Link>
+            ) : (
+              <div className="flex items-center space-x-2 text-[10px] font-bold text-neutral-400 px-1 py-0.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                <span>All Queues Clear</span>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -333,11 +346,8 @@ export const DeanLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Academic Year Pill */}
-            <div className="flex items-center space-x-2 px-3 py-1.5 rounded-full border border-blue-500/20 bg-blue-500/10 text-blue-800 dark:text-cyan-300 text-xs font-bold shadow-xs">
-              <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-cyan-400" />
-              <span>AY: {academicYear}</span>
-            </div>
+            {/* Authoritative Global Academic Year Selector */}
+            <AcademicYearSelector />
 
             {/* Profile Dropdown */}
             <div className="relative" ref={profileMenuRef}>

@@ -29,6 +29,7 @@ import facultyAuthorizationService from '../services/facultyAuthorization.servic
 import semesterAttendanceConsolidationService from '../services/semesterAttendanceConsolidation.service';
 import subjectDriveSyncService from '../services/subjectDriveSync.service';
 import { getAcademicYearVariants } from '../services/faculty.service';
+import { areAcademicYearsEqual, normalizeAcademicYear } from '../utils/academicYear.util';
 import logger from '../utils/logger.util';
 import { calculateStudentCohort, formatBatchCohort } from '../utils/batchCohort.util';
 import { findDepartmentCanonical, getBranchEquivalents } from '../utils/departmentCanonical.util';
@@ -542,19 +543,16 @@ export const getHodDepartmentStudents = async (options: {
 
   const offset = (page - 1) * limit;
 
+  const currentActiveAy = await AcademicYear.findOne({ where: { isCurrent: true } });
+  const activeYear = currentActiveAy?.year || '2026-27';
+
+  const ayVal = academicYear || academicYearId;
+  const isHistorical = Boolean(ayVal && ayVal !== 'ALL' && !areAcademicYearsEqual(ayVal, activeYear));
+
   // Build academic enrollment filter
-  const saeWhere: any = {
-    status: { [Op.notIn]: ['INACTIVE', 'DROPPED'] },
-  };
+  const saeWhere: any = {};
 
   const semVal = semester || semesterId;
-  if (semVal && semVal !== 'ALL') {
-    const semNum = Number(semVal);
-    if (!isNaN(semNum)) saeWhere.semesterId = semNum;
-  } else if (isSemesterHandling) {
-    saeWhere.semesterId = { [Op.in]: [1, 2] };
-  }
-
   const secVal = section || sectionId;
   const isSectionFilterActive = Boolean(secVal && secVal !== 'ALL');
   let possibleSectionIds: string[] = [];
@@ -632,21 +630,6 @@ export const getHodDepartmentStudents = async (options: {
     saeWhere.sectionId = null;
   }
 
-  const ayVal = academicYear || academicYearId;
-  const isAyFilterActive = Boolean(ayVal && ayVal !== 'ALL');
-  if (isAyFilterActive) {
-    const rawAy = String(ayVal).trim();
-    const startYear = rawAy.split(/[-–]/)[0].trim();
-    saeWhere.academicYearId = {
-      [Op.or]: [
-        { [Op.iLike]: `${startYear}-%` },
-        { [Op.iLike]: `${startYear}–%` },
-        { [Op.eq]: rawAy },
-        { [Op.eq]: startYear },
-      ],
-    };
-  }
-
   // If branch is specified (e.g. 'CSE', 'AIML', 'ECE', 'ME', 'CV'), find that department canonically
   let branchDeptId: string | null = null;
   let isBranchFilterActive = false;
@@ -670,16 +653,41 @@ export const getHodDepartmentStudents = async (options: {
     studentWhere.departmentId = departmentId;
   }
 
-  if (semVal && semVal !== 'ALL') {
-    const semNum = Number(semVal);
-    if (!isNaN(semNum)) {
-      studentWhere[Op.or] = [
-        { semester: semNum },
-        { '$academicEnrollments.semesterId$': semNum },
-      ];
+  if (!isHistorical) {
+    // CURRENT COHORT VIEW: active institutional academic year or default view
+    if (semVal && semVal !== 'ALL') {
+      const semNum = Number(semVal);
+      if (!isNaN(semNum)) {
+        studentWhere.semester = semNum;
+        saeWhere.semesterId = semNum;
+      }
+    } else if (isSemesterHandling) {
+      studentWhere.semester = { [Op.in]: [1, 2] };
+      saeWhere.semesterId = { [Op.in]: [1, 2] };
     }
-  } else if (isSemesterHandling) {
-    studentWhere.semester = { [Op.in]: [1, 2] };
+    // Authoritative active enrollment excludes historical PROMOTED enrollments from previous semesters
+    saeWhere.status = 'ACTIVE';
+  } else {
+    // HISTORICAL ACADEMIC YEAR VIEW: strictly filter historical enrollments by academic year
+    const rawAy = String(ayVal).trim();
+    const startYear = rawAy.split(/[-–]/)[0].trim();
+    saeWhere.academicYearId = {
+      [Op.or]: [
+        { [Op.iLike]: `${startYear}-%` },
+        { [Op.iLike]: `${startYear}–%` },
+        { [Op.eq]: rawAy },
+        { [Op.eq]: startYear },
+      ],
+    };
+    if (semVal && semVal !== 'ALL') {
+      const semNum = Number(semVal);
+      if (!isNaN(semNum)) {
+        saeWhere.semesterId = semNum;
+      }
+    } else if (isSemesterHandling) {
+      saeWhere.semesterId = { [Op.in]: [1, 2] };
+    }
+    saeWhere.status = { [Op.notIn]: ['INACTIVE', 'DROPPED'] };
   }
 
   if (isSectionFilterActive) {
@@ -712,21 +720,41 @@ export const getHodDepartmentStudents = async (options: {
 
   if (status && status !== 'ALL') {
     if (status === 'ENROLLED' || status === 'ACTIVE') {
-      studentWhere[Op.or] = [
+      const activeStatusConditions = [
         { admissionStatus: { [Op.in]: ['APPROVED', 'VALIDATED'] } },
         { '$admission.applicationStatus$': 'ENROLLED' },
       ];
+      if (studentWhere[Op.or]) {
+        studentWhere[Op.and] = [...(studentWhere[Op.and] || []), { [Op.or]: studentWhere[Op.or] }, { [Op.or]: activeStatusConditions }];
+        delete studentWhere[Op.or];
+      } else {
+        studentWhere[Op.or] = activeStatusConditions;
+      }
     } else if (status === 'APPROVED') {
-      studentWhere[Op.or] = [
+      const approvedConditions = [
         { admissionStatus: 'APPROVED' },
         { '$admission.applicationStatus$': { [Op.in]: ['APPROVED', 'PRINCIPAL_APPROVED'] } },
       ];
+      if (studentWhere[Op.or]) {
+        studentWhere[Op.and] = [...(studentWhere[Op.and] || []), { [Op.or]: studentWhere[Op.or] }, { [Op.or]: approvedConditions }];
+        delete studentWhere[Op.or];
+      } else {
+        studentWhere[Op.or] = approvedConditions;
+      }
     } else {
-      studentWhere[Op.or] = [
+      const specificConditions = [
         { admissionStatus: status },
         { '$admission.applicationStatus$': status },
       ];
+      if (studentWhere[Op.or]) {
+        studentWhere[Op.and] = [...(studentWhere[Op.and] || []), { [Op.or]: studentWhere[Op.or] }, { [Op.or]: specificConditions }];
+        delete studentWhere[Op.or];
+      } else {
+        studentWhere[Op.or] = specificConditions;
+      }
     }
+  } else if (!isHistorical) {
+    studentWhere.admissionStatus = { [Op.in]: ['APPROVED', 'VALIDATED'] };
   }
 
   if (admissionType && admissionType !== 'ALL') {
@@ -875,7 +903,7 @@ export const getHodDepartmentStudents = async (options: {
 
   const isEnrollmentRequired =
     isSectionFilterActive ||
-    isAyFilterActive ||
+    isHistorical ||
     Boolean(semVal && semVal !== 'ALL') ||
     options.hasSection !== undefined;
 
@@ -2345,7 +2373,7 @@ export const getHodFacultyList = async (req: AuthenticatedRequest, res: Response
         {
           model: User,
           as: 'user',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage', 'status'],
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage', 'status', 'role'],
           where: whereUser,
         },
         {
@@ -2375,14 +2403,20 @@ export const getHodFacultyList = async (req: AuthenticatedRequest, res: Response
         const deanAuth = authSummary.deanApproval;
         const principalAuth = authSummary.principalApproval;
 
+        const userRole = t.user?.role || 'TEACHER';
+        const isAdministrator = ['HOD', 'DEAN', 'PRINCIPAL'].includes(userRole);
+
         // Determine multi-level authorization status & clean summary
-        const isAuthorized = authSummary.overallStatus === 'AUTHORIZED' || t.user?.status === 'ACTIVE';
-        const isRejected = authSummary.overallStatus === 'REJECTED';
+        const isAuthorized = isAdministrator || authSummary.overallStatus === 'AUTHORIZED' || t.user?.status === 'ACTIVE';
+        const isRejected = !isAdministrator && authSummary.overallStatus === 'REJECTED';
 
         let authorizationStatus = 'PENDING_APPROVAL';
         let approvalSummary = 'Pending Authorization';
 
-        if (isAuthorized) {
+        if (isAdministrator) {
+          authorizationStatus = 'FULLY_APPROVED';
+          approvalSummary = userRole === 'HOD' ? 'Head of Department' : userRole === 'DEAN' ? 'Dean Academics' : 'Principal';
+        } else if (isAuthorized) {
           authorizationStatus = 'FULLY_APPROVED';
           if (deanAuth?.status === 'APPROVED' && principalAuth?.status === 'APPROVED') {
             approvalSummary = `Authorized (Both Dean & Principal Approved • First: ${authSummary.firstApprovedRole || 'Authorized'})`;
@@ -2407,6 +2441,7 @@ export const getHodFacultyList = async (req: AuthenticatedRequest, res: Response
           id: t.id,
           userId: t.userId,
           name: `${t.user?.firstName || ''} ${t.user?.lastName || ''}`.trim() || 'Faculty Member',
+          role: userRole,
           email: t.user?.email,
           phone: t.user?.phone,
           designation: t.designation,
@@ -5395,43 +5430,12 @@ export const getHodTeachingResponsibilities = async (req: AuthenticatedRequest, 
       createdAt: a.createdAt,
     }));
 
-    // 2. All Subject Handling Requests by this HOD
-    const requests = await HodSubjectHandlingRequest.findAll({
-      where: { hodUserId: userId },
-      include: [
-        { model: Subject, as: 'subject', attributes: ['id', 'name', 'code', 'credits', 'type', 'semester'] },
-        { model: Department, as: 'department', attributes: ['id', 'name', 'code'] },
-        { model: User, as: 'reviewer', attributes: ['id', 'firstName', 'lastName', 'email'] },
-      ],
-      order: [['createdAt', 'DESC']],
-    });
-
-    const formattedRequests = requests.map((r: any) => ({
-      id: r.id,
-      semester: r.semester,
-      subjectId: r.subjectId,
-      subjectName: r.subject?.name || 'Unknown Subject',
-      subjectCode: r.subject?.code || 'N/A',
-      subjectType: r.subject?.type || 'Theory',
-      credits: r.subject?.credits || 4,
-      academicYear: r.academicYear,
-      reason: r.reason,
-      status: r.status,
-      rejectionReason: r.rejectionReason,
-      reviewedBy: r.reviewedBy,
-      reviewerName: r.reviewer ? `${r.reviewer.firstName || ''} ${r.reviewer.lastName || ''}`.trim() : null,
-      reviewedAt: r.reviewedAt,
-      teachingAssignmentId: r.teachingAssignmentId,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    }));
-
     return res.json({
       success: true,
       data: {
         activeAssignments: formattedAssignments,
         totalSubjectsCount: formattedAssignments.length,
-        myRequests: formattedRequests,
+        myRequests: [],
         academicYear: activeAcademicYear,
       },
     });
@@ -5441,249 +5445,7 @@ export const getHodTeachingResponsibilities = async (req: AuthenticatedRequest, 
   }
 };
 
-/**
- * GET /api/hod/subject-handling/available-subjects
- * Returns available subjects for a selected semester matching the HOD's department or common subjects
- */
-export const getAvailableSubjectsForHandling = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
-  try {
-    const departmentId = req.departmentId;
-    const userId = req.user?.id;
-    const semNum = Number(req.query.semester);
 
-    if (!semNum || isNaN(semNum) || semNum < 1 || semNum > 8) {
-      return res.status(400).json({ error: 'Valid semester number (1-8) is required.' });
-    }
-
-    const isSemHandling = Boolean(req.isSemesterHandling);
-    const queryCycle = req.query.cycle as string | undefined;
-    const facultyUserId = (req.query.facultyUserId || req.query.teacherId) as string | undefined;
-
-    let targetCycle = queryCycle;
-    if (!targetCycle && facultyUserId) {
-      const teacherRecord = await Teacher.findOne({
-        where: {
-          [Op.or]: [{ userId: facultyUserId }, { id: facultyUserId }],
-        },
-      });
-      if (teacherRecord?.cycle) {
-        targetCycle = teacherRecord.cycle;
-      }
-    }
-
-    // Subject filtering logic:
-    // For Sem 1 & 2: subjects belonging to null (common), Applied Science (AS), or the HOD's department
-    // For Sem 3-8: subjects belonging to HOD's department or null (common)
-    let subjectWhere: any;
-    if (semNum === 1 || semNum === 2) {
-      const asDept = await Department.findOne({ where: { code: 'AS' } });
-      const deptIds = [departmentId, asDept?.id].filter(Boolean);
-      subjectWhere = {
-        semester: semNum,
-        status: 'ACTIVE',
-        [Op.or]: [
-          { departmentId: { [Op.in]: deptIds } },
-          { departmentId: null },
-        ],
-      };
-    } else {
-      subjectWhere = {
-        semester: semNum,
-        status: 'ACTIVE',
-        [Op.or]: [
-          { departmentId },
-          { departmentId: null },
-        ],
-      };
-    }
-
-    if (targetCycle && targetCycle !== 'ALL') {
-      subjectWhere.cycle = targetCycle;
-    }
-
-    let subjects = await Subject.findAll({
-      where: subjectWhere,
-      include: [{ model: Department, as: 'department', attributes: ['id', 'name', 'code'] }],
-      order: [['code', 'ASC']],
-    });
-
-    // If no subjects found for sem 1 or 2 with cycle, retrieve active subjects matching cycle
-    if (subjects.length === 0 && (semNum === 1 || semNum === 2)) {
-      const fallbackWhere: any = { semester: semNum, status: 'ACTIVE' };
-      if (targetCycle && targetCycle !== 'ALL') {
-        fallbackWhere.cycle = targetCycle;
-      }
-      subjects = await Subject.findAll({
-        where: fallbackWhere,
-        include: [{ model: Department, as: 'department', attributes: ['id', 'name', 'code'] }],
-        order: [['code', 'ASC']],
-      });
-    }
-
-    // Check HOD's existing assignments and pending requests
-    const activeAssignments = await FacultyAssignment.findAll({
-      where: { userId, semester: semNum, status: 'ACTIVE' },
-      attributes: ['subjectId'],
-    });
-    const assignedSubjectIds = new Set(activeAssignments.map((a) => a.subjectId));
-
-    const pendingRequests = await HodSubjectHandlingRequest.findAll({
-      where: { hodUserId: userId, semester: semNum, status: 'PENDING' },
-      attributes: ['subjectId'],
-    });
-    const pendingSubjectIds = new Set(pendingRequests.map((r) => r.subjectId));
-
-    const result = subjects.map((sub: any) => ({
-      id: sub.id,
-      name: sub.name,
-      code: sub.code,
-      semester: sub.semester,
-      credits: sub.credits,
-      type: sub.type,
-      cycle: sub.cycle || null,
-      schemeId: sub.schemeId || '2025',
-      departmentId: sub.departmentId,
-      departmentName: sub.department?.name || 'Common / First Year',
-      departmentCode: sub.department?.code || 'COMMON',
-      isAlreadyAssigned: assignedSubjectIds.has(sub.id),
-      hasPendingRequest: pendingSubjectIds.has(sub.id),
-    }));
-
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    logger.error('HOD_GET_AVAILABLE_SUBJECTS_FOR_HANDLING_ERROR:', error);
-    return next(error);
-  }
-};
-
-/**
- * POST /api/hod/subject-handling/requests
- * Creates a new subject handling request for Dean approval
- */
-export const createSubjectHandlingRequest = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
-  try {
-    const userId = req.user?.id;
-    let departmentId = req.departmentId;
-    if (!departmentId && userId) {
-      const hodRecord = await getActiveHodRecord(userId);
-      departmentId = hodRecord?.departmentId;
-    }
-    if (!userId || !departmentId) {
-      return res.status(403).json({ error: 'User or department scope could not be resolved.' });
-    }
-
-    const { semester, subjectId, academicYear, reason } = req.body;
-
-    const semNum = Number(semester);
-    if (!semNum || isNaN(semNum) || semNum < 1 || semNum > 8) {
-      return res.status(400).json({ error: 'Valid semester number (1-8) is required.' });
-    }
-
-    if (!subjectId) {
-      return res.status(400).json({ error: 'Subject selection is required.' });
-    }
-
-    const subject = await Subject.findByPk(subjectId);
-    if (!subject) {
-      return res.status(404).json({ error: 'Selected subject not found.' });
-    }
-
-    const currentYearRecord = await AcademicYear.findOne({ where: { isCurrent: true } });
-    const ay = String(academicYear || currentYearRecord?.year || '2026-27').trim();
-
-    // 1. DUPLICATE PREVENTION: Check if HOD already has an active assignment
-    const existingAssignment = await FacultyAssignment.findOne({
-      where: {
-        userId,
-        subjectId,
-        semester: semNum,
-        academicYear: ay,
-        status: 'ACTIVE',
-      },
-    });
-
-    if (existingAssignment) {
-      return res.status(400).json({
-        error: 'You are already assigned to this subject for the selected semester and academic year.',
-      });
-    }
-
-    // 2. DUPLICATE PREVENTION: Check if HOD already has a pending request
-    const existingPendingRequest = await HodSubjectHandlingRequest.findOne({
-      where: {
-        hodUserId: userId,
-        subjectId,
-        semester: semNum,
-        academicYear: ay,
-        status: 'PENDING',
-      },
-    });
-
-    if (existingPendingRequest) {
-      return res.status(400).json({
-        error: 'A pending request already exists for this subject, semester, and academic year. Please wait for Dean approval.',
-      });
-    }
-
-    // 3. Create the Request
-    const request = await HodSubjectHandlingRequest.create({
-      hodUserId: userId,
-      departmentId,
-      semester: semNum,
-      subjectId,
-      academicYear: ay,
-      reason: reason ? String(reason).trim() : null,
-      status: 'PENDING',
-    });
-
-    await logAudit(req, 'CREATE_HOD_SUBJECT_HANDLING_REQUEST', {
-      requestId: request.id,
-      hodUserId: userId,
-      subjectId,
-      semester: semNum,
-      academicYear: ay,
-      subjectName: subject.name,
-      subjectCode: subject.code,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Subject handling request submitted successfully. Waiting for Dean Academic approval.',
-      data: request,
-    });
-  } catch (error) {
-    logger.error('HOD_CREATE_SUBJECT_HANDLING_REQUEST_ERROR:', error);
-    return next(error);
-  }
-};
-
-/**
- * GET /api/hod/subject-handling/requests
- * Lists all subject handling requests made by this HOD
- */
-export const getHodSubjectHandlingRequests = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required.' });
-    }
-
-    const requests = await HodSubjectHandlingRequest.findAll({
-      where: { hodUserId: userId },
-      include: [
-        { model: Subject, as: 'subject', attributes: ['id', 'name', 'code', 'credits', 'type', 'semester'] },
-        { model: Department, as: 'department', attributes: ['id', 'name', 'code'] },
-        { model: User, as: 'reviewer', attributes: ['id', 'firstName', 'lastName', 'email'] },
-      ],
-      order: [['createdAt', 'DESC']],
-    });
-
-    return res.json({ success: true, data: requests });
-  } catch (error) {
-    logger.error('HOD_GET_SUBJECT_HANDLING_REQUESTS_ERROR:', error);
-    return next(error);
-  }
-};
 
 /**
  * GET /api/hod/attendance/consolidated-report

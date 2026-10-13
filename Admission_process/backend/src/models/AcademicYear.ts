@@ -8,6 +8,7 @@ class AcademicYear extends Model {
   public endDate!: Date;
   public status!: 'ACTIVE' | 'UPCOMING' | 'ARCHIVED';
   public isCurrent!: boolean;
+  public isOperational!: boolean;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -41,6 +42,11 @@ AcademicYear.init(
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
+    },
+    isOperational: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
     },
   },
   {

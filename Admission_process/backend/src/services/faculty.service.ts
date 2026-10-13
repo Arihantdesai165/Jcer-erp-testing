@@ -11,10 +11,12 @@ import AttendanceRecord from '../models/AttendanceRecord';
 import AttendanceSession from '../models/AttendanceSession';
 import AuditLog from '../models/AuditLog';
 import AcademicYear from '../models/AcademicYear';
+import HOD from '../models/HOD';
 import logger from '../utils/logger.util';
 import ExcelJS from 'exceljs';
 import attendanceExcelService from './attendanceExcel.service';
 import attendanceBackupQueueService from './attendanceBackupQueue.service';
+import semesterAttendanceConsolidationService from './semesterAttendanceConsolidation.service';
 import { findDepartmentCanonical, getBranchEquivalents } from '../utils/departmentCanonical.util';
 
 // Helper to normalize section names ('Section A', 'Section  D', 'Division A', 'A' -> 'A')
@@ -1997,6 +1999,269 @@ export const facultyService = {
         matchingSubjects.length === 0
           ? 'No attendance available for your assigned subjects.'
           : undefined,
+    };
+  },
+
+  /**
+   * Retrieves all authorized cohorts (AY, Semester, Department, Sections) that the faculty
+   * member is authorized to view in the Consolidated All Subject Attendance register.
+   */
+  async getFacultyAllSubjectAttendanceCohorts(userId: string, userRole?: string) {
+    const isGlobalAdmin = ['ADMIN', 'SUPER_ADMIN', 'DEAN', 'PRINCIPAL'].includes(userRole || '');
+
+    // Check if user is an active HOD
+    const hod = await HOD.findOne({
+      where: { userId, isActive: true },
+    });
+
+    let assignments: any[] = [];
+    if (isGlobalAdmin) {
+      assignments = await FacultyAssignment.findAll({
+        where: { status: 'ACTIVE' },
+        include: [
+          { model: Department, as: 'department' },
+          { model: Subject, as: 'subject' },
+        ],
+      });
+    } else {
+      const teacher = await Teacher.findOne({ where: { userId } });
+      const teacherId = teacher?.id;
+      const orConditions: any[] = [{ userId }];
+      if (teacherId) orConditions.push({ teacherId });
+
+      if (hod?.departmentId) {
+        orConditions.push({ departmentId: hod.departmentId });
+      }
+
+      assignments = await FacultyAssignment.findAll({
+        where: {
+          [Op.or]: orConditions,
+          status: 'ACTIVE',
+        },
+        include: [
+          { model: Department, as: 'department' },
+          { model: Subject, as: 'subject' },
+        ],
+      });
+    }
+
+    const cohortMap = new Map<string, {
+      academicYear: string;
+      semester: number;
+      departmentId: string;
+      departmentName: string;
+      departmentCode: string;
+      sections: Set<string>;
+      hasCohortAccess: boolean;
+    }>();
+
+    for (const a of assignments) {
+      const ay = a.academicYear || '2026-27';
+      const sem = Number(a.semester);
+      const deptId = a.departmentId;
+      const dept = a.department;
+      const deptName = dept?.name || 'Department';
+      const deptCode = dept?.code || 'CSE';
+      const cleanSec = normalizeSection(a.section);
+
+      const key = `${ay}___${sem}___${deptId}`;
+      if (!cohortMap.has(key)) {
+        cohortMap.set(key, {
+          academicYear: ay,
+          semester: sem,
+          departmentId: deptId,
+          departmentName: deptName,
+          departmentCode: deptCode,
+          sections: new Set<string>(),
+          hasCohortAccess: isGlobalAdmin || (hod && hod.departmentId === deptId) || false,
+        });
+      }
+
+      const entry = cohortMap.get(key)!;
+      if (!a.section || a.section === 'ALL') {
+        entry.hasCohortAccess = true;
+      } else {
+        entry.sections.add(cleanSec);
+      }
+    }
+
+    // If active HOD has no assignments yet, include their department active semesters
+    if (hod?.departmentId && !isGlobalAdmin) {
+      const dept = await Department.findByPk(hod.departmentId);
+      if (dept) {
+        const defaultKey = `2026-27___1___${dept.id}`;
+        if (!cohortMap.has(defaultKey)) {
+          cohortMap.set(defaultKey, {
+            academicYear: '2026-27',
+            semester: 1,
+            departmentId: dept.id,
+            departmentName: dept.name,
+            departmentCode: dept.code,
+            sections: new Set<string>(['A', 'B']),
+            hasCohortAccess: true,
+          });
+        }
+      }
+    }
+
+    // Ensure all 8 semesters (1 through 8) are represented for every authorized department and academic year
+    const ALL_8_SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
+    const initialDeptAyEntries = Array.from(cohortMap.values());
+    for (const item of initialDeptAyEntries) {
+      for (const sem of ALL_8_SEMESTERS) {
+        const key = `${item.academicYear}___${sem}___${item.departmentId}`;
+        if (!cohortMap.has(key)) {
+          cohortMap.set(key, {
+            academicYear: item.academicYear,
+            semester: sem,
+            departmentId: item.departmentId,
+            departmentName: item.departmentName,
+            departmentCode: item.departmentCode,
+            sections: new Set<string>(),
+            hasCohortAccess: item.hasCohortAccess,
+          });
+        }
+      }
+    }
+
+    // Resolve all existing sections in each cohort and determine cohort-wide access
+    for (const [, entry] of cohortMap.entries()) {
+      const dbSecs = await Section.findAll({
+        where: {
+          departmentId: entry.departmentId,
+          semester: entry.semester,
+          academicYear: entry.academicYear,
+          status: 'ACTIVE',
+        },
+      });
+
+      const studentSecs = await Student.findAll({
+        attributes: ['section'],
+        where: {
+          departmentId: entry.departmentId,
+          semester: entry.semester,
+        },
+        raw: true,
+      });
+
+      const allFoundSecs = new Set<string>();
+      dbSecs.forEach((s) => allFoundSecs.add(normalizeSection(s.name)));
+      studentSecs.forEach((st: any) => {
+        if (st.section) allFoundSecs.add(normalizeSection(st.section));
+      });
+
+      // Every faculty authorized by teaching allocations for this cohort has cohort-level visibility
+      entry.hasCohortAccess = true;
+
+      // Add all available cohort sections to entry.sections
+      allFoundSecs.forEach((s) => entry.sections.add(s));
+    }
+
+    const cohorts = Array.from(cohortMap.values())
+      .map((c) => ({
+        academicYear: c.academicYear,
+        semester: c.semester,
+        departmentId: c.departmentId,
+        departmentName: c.departmentName,
+        departmentCode: c.departmentCode,
+        sections: Array.from(c.sections).sort(),
+        hasCohortAccess: c.hasCohortAccess,
+      }))
+      .sort((a, b) => a.semester - b.semester || a.departmentName.localeCompare(b.departmentName));
+
+    const academicYears = Array.from(new Set(cohorts.map((c) => c.academicYear))).sort();
+
+    return {
+      academicYears,
+      cohorts,
+    };
+  },
+
+  /**
+   * Authoritatively fetches the live Consolidated All Subject Attendance register
+   * after rigorously checking faculty authorization for the cohort.
+   */
+  async getFacultyAllSubjectAttendanceRegister(
+    userId: string,
+    userRole: string | undefined,
+    params: {
+      academicYear: string;
+      semester: number;
+      departmentId: string;
+      section?: string;
+    }
+  ) {
+    const { academicYear, semester, departmentId, section } = params;
+    const isGlobalAdmin = ['ADMIN', 'SUPER_ADMIN', 'DEAN', 'PRINCIPAL'].includes(userRole || '');
+
+    if (!isGlobalAdmin) {
+      const hod = await HOD.findOne({ where: { userId, isActive: true } });
+      const isHodForDept = hod && hod.departmentId === departmentId;
+
+      if (!isHodForDept) {
+        const teacher = await Teacher.findOne({ where: { userId } });
+        const teacherId = teacher?.id;
+        const ayVariants = getAcademicYearVariants(academicYear);
+
+        const assignments = await FacultyAssignment.findAll({
+          where: {
+            [Op.or]: [
+              { userId },
+              ...(teacherId ? [{ teacherId }] : []),
+            ],
+            departmentId,
+            semester,
+            academicYear: ayVariants.length > 0 ? { [Op.in]: ayVariants } : academicYear,
+            status: 'ACTIVE',
+          },
+        });
+
+        if (assignments.length === 0) {
+          throw new Error('Unauthorized: You do not have an active teaching allocation for this cohort.');
+        }
+
+        if (section && section !== 'ALL') {
+          const reqSec = normalizeSection(section);
+          const hasSectionAccess = assignments.some((a) => {
+            if (!a.section || a.section === 'ALL') return true;
+            return normalizeSection(a.section) === reqSec;
+          });
+
+          if (!hasSectionAccess) {
+            throw new Error(`Unauthorized: You do not have a teaching allocation for Section ${reqSec}.`);
+          }
+        }
+      }
+    }
+
+    const data = await semesterAttendanceConsolidationService.fetchConsolidatedSemesterData({
+      academicYear,
+      departmentId,
+      semester,
+      section,
+    });
+
+    return data;
+  },
+
+  /**
+   * Generates and returns Excel buffer for Consolidated All Subject Attendance
+   */
+  async exportFacultyAllSubjectAttendanceExcel(
+    userId: string,
+    userRole: string | undefined,
+    params: {
+      academicYear: string;
+      semester: number;
+      departmentId: string;
+      section?: string;
+    }
+  ) {
+    const data = await this.getFacultyAllSubjectAttendanceRegister(userId, userRole, params);
+    const buffer = await semesterAttendanceConsolidationService.generateConsolidatedExcelBuffer(data);
+    return {
+      buffer,
+      fileName: data.fileName,
     };
   },
 };

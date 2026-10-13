@@ -52,8 +52,17 @@ export const ProtectedLayout: React.FC = () => {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  // Faculty routes: FACULTY, TEACHER, SUPER_ADMIN, or ADMIN
-  if (location.pathname.startsWith('/faculty') && role !== 'FACULTY' && role !== 'TEACHER' && role !== 'SUPER_ADMIN' && role !== 'ADMIN') {
+  // Faculty routes: FACULTY, TEACHER, HOD, DEAN, PRINCIPAL, SUPER_ADMIN, or ADMIN
+  if (
+    location.pathname.startsWith('/faculty') &&
+    role !== 'FACULTY' &&
+    role !== 'TEACHER' &&
+    role !== 'HOD' &&
+    role !== 'DEAN' &&
+    role !== 'PRINCIPAL' &&
+    role !== 'SUPER_ADMIN' &&
+    role !== 'ADMIN'
+  ) {
     return <Navigate to="/unauthorized" replace />;
   }
 

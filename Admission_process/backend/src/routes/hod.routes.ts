@@ -139,19 +139,8 @@ router.put('/settings/profile', hodController.updateHodProfile as any);
 router.put('/settings/password', hodController.updateHodPassword as any);
 router.post('/profile/change-password', hodController.updateHodPassword as any);
 
-// ─── 9. Subject Handling Requests (Teaching Responsibilities) ────────────────
+// ─── 9. Teaching Responsibilities ───────────────────────────────────────────
 router.get('/subject-handling/teaching-responsibilities', hodController.getHodTeachingResponsibilities as any);
-router.get('/subject-handling/available-subjects', hodController.getAvailableSubjectsForHandling as any);
-router.post('/subject-handling/requests', hodController.createSubjectHandlingRequest as any);
-router.get('/subject-handling/requests', hodController.getHodSubjectHandlingRequests as any);
-
-// ─── 10. Examination & Assessment Management Module ──────────────────────────
-import * as assessmentWorkflowController from '../controllers/assessmentWorkflow.controller';
-router.get('/assessments/overview', assessmentWorkflowController.getHodOverviewStats as any);
-router.get('/assessments', assessmentWorkflowController.getHodSubmissions as any);
-router.get('/assessments/:id', assessmentWorkflowController.getHodReviewDetail as any);
-router.post('/assessments/:id/approve-publish', assessmentWorkflowController.approveAndPublishAssessment as any);
-router.post('/assessments/:id/return', assessmentWorkflowController.returnAssessmentForCorrection as any);
 
 export default router;
 

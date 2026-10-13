@@ -35,6 +35,70 @@ export interface FacultyAssignmentItem {
   status: 'ACTIVE' | 'INACTIVE';
 }
 
+export interface FacultyAllSubjectCohort {
+  academicYear: string;
+  semester: number;
+  departmentId: string;
+  departmentName: string;
+  departmentCode: string;
+  sections: string[];
+  hasCohortAccess: boolean;
+}
+
+export interface ConsolidatedSubjectStat {
+  conducted: number;
+  attended: number;
+  percentage: number | null;
+}
+
+export interface ConsolidatedStudentRow {
+  id: string;
+  usn: string;
+  name: string;
+  section: string;
+  sectionId: string | null;
+  subjectStats: Record<string, ConsolidatedSubjectStat>;
+  totalConducted: number;
+  totalAttended: number;
+  overallPercentage: number | null;
+  eligibility: 'Eligible' | 'Not Eligible' | 'No Records';
+}
+
+export interface ConsolidatedSubjectSummary {
+  subjectId: string;
+  subjectCode: string;
+  subjectName: string;
+  conductedClasses: number;
+  averagePercentage: number | null;
+  eligibleCount: number;
+  notEligibleCount: number;
+  noRecordsCount: number;
+}
+
+export interface ConsolidatedSectionSummary {
+  section: string;
+  totalStudents: number;
+  averagePercentage: number | null;
+  eligibleCount: number;
+  notEligibleCount: number;
+}
+
+export interface FacultyConsolidatedAttendanceData {
+  department: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  academicYear: string;
+  semester: number;
+  fileName: string;
+  sections: Array<{ id: string; name: string }>;
+  subjects: Array<{ id: string; name: string; code: string; credits?: number; type?: string }>;
+  students: ConsolidatedStudentRow[];
+  subjectSummaries: ConsolidatedSubjectSummary[];
+  sectionSummaries: ConsolidatedSectionSummary[];
+}
+
 export interface FacultyDashboardData {
   profile: {
     user: any;
@@ -338,6 +402,14 @@ export const facultyService = {
   },
 
   /**
+   * Fetches teaching profile, eligibility, and capabilities for current faculty
+   */
+  async getTeachingProfile(): Promise<any> {
+    const res = await axios.get(`${API_BASE_URL}/faculty/teaching-profile`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
    * Fetches attendance-authorized courses
    */
   async getAttendanceCourses(semester?: string, academicYear?: string): Promise<FacultyAssignmentItem[]> {
@@ -530,6 +602,61 @@ export const facultyService = {
 
     const res = await axios.get(`${API_BASE_URL}/faculty/attendance/students/${studentId}${qs}`, getAuthHeaders());
     return res.data.data;
+  },
+
+  /**
+   * Retrieves all authorized cohorts for All Subject Attendance
+   */
+  async getAllSubjectAttendanceCohorts(): Promise<{
+    academicYears: string[];
+    cohorts: FacultyAllSubjectCohort[];
+  }> {
+    const res = await axios.get(`${API_BASE_URL}/faculty/all-subject-attendance/cohorts`, getAuthHeaders());
+    return res.data.data;
+  },
+
+  /**
+   * Retrieves the live consolidated attendance register for an authorized cohort
+   */
+  async getAllSubjectAttendanceRegister(params: {
+    academicYear: string;
+    semester: number;
+    departmentId: string;
+    section?: string;
+  }): Promise<FacultyConsolidatedAttendanceData> {
+    const q = new URLSearchParams();
+    q.append('academicYear', params.academicYear);
+    q.append('semester', String(params.semester));
+    q.append('departmentId', params.departmentId);
+    if (params.section && params.section !== 'ALL') {
+      q.append('section', params.section);
+    }
+    const res = await axios.get(
+      `${API_BASE_URL}/faculty/all-subject-attendance/register?${q.toString()}`,
+      getAuthHeaders()
+    );
+    return res.data.data;
+  },
+
+  /**
+   * Returns download URL for Consolidated All Subject Attendance Excel
+   */
+  downloadAllSubjectAttendanceExcelUrl(params: {
+    academicYear: string;
+    semester: number;
+    departmentId: string;
+    section?: string;
+  }): string {
+    const q = new URLSearchParams();
+    q.append('academicYear', params.academicYear);
+    q.append('semester', String(params.semester));
+    q.append('departmentId', params.departmentId);
+    if (params.section && params.section !== 'ALL') {
+      q.append('section', params.section);
+    }
+    const token = localStorage.getItem('token');
+    if (token) q.append('token', token);
+    return `${API_BASE_URL}/faculty/all-subject-attendance/export?${q.toString()}`;
   },
 
   // ══════════════════════════════════════════════════════════════════════════════

@@ -23,6 +23,7 @@ import db from '../config/database';
 import AnalyticsService from '../services/analytics.service';
 import securityEvents from '../services/securityEvents.service';
 import facultyAuthorizationService from '../services/facultyAuthorization.service';
+import teachingProfileService from '../services/teachingProfile.service';
 import logger from '../utils/logger.util';
 
 interface AuthRequest extends Request {
@@ -1107,13 +1108,21 @@ export const getDepartments = async (
  * Fetch academic years list for filters
  */
 export const getAcademicYears = async (
-  _req: AuthRequest,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<any> => {
   try {
+    const includeHistorical = req.query?.includeHistorical === 'true';
+    const where: any = {};
+    if (!includeHistorical) {
+      where.isOperational = { [Op.ne]: false };
+      where.year = { [Op.ne]: '2025-26' };
+    }
+
     const years = await AcademicYear.findAll({
-      order: [['startDate', 'DESC']],
+      where,
+      order: [['year', 'DESC']],
     });
     return res.json({ success: true, data: years });
   } catch (error) {
@@ -1200,4 +1209,69 @@ export const getPrincipalFacultyList = async (
     return next(error);
   }
 };
+
+/**
+ * GET /api/principal/teaching-profile
+ * Retrieves Principal's teaching profile, eligibility, and active assignments
+ */
+export const getPrincipalTeachingProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const profile = await teachingProfileService.getTeachingProfile(userId);
+    return res.json({ success: true, data: profile });
+  } catch (error: any) {
+    logger.error('PRINCIPAL_GET_TEACHING_PROFILE_ERROR:', error);
+    return next(error);
+  }
+};
+
+/**
+ * PUT /api/principal/teaching-profile
+ * Updates Principal's teaching profile (core department) to enable teaching capability
+ */
+export const updatePrincipalTeachingProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const { coreDepartmentId } = req.body;
+    if (!coreDepartmentId) {
+      return res.status(400).json({ error: 'Core department selection is required.' });
+    }
+
+    const updated = await teachingProfileService.updateTeachingProfile(userId, 'PRINCIPAL', coreDepartmentId);
+
+    try {
+      await AuditLog.create({
+        userId,
+        action: 'UPDATE_PRINCIPAL_TEACHING_PROFILE',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        details: {
+          userId,
+          coreDepartmentId,
+          coreDepartmentCode: updated.coreDepartmentCode,
+        },
+      });
+    } catch (auditErr) {
+      logger.warn('Failed to log audit for updatePrincipalTeachingProfile:', auditErr);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Teaching profile updated successfully. You are now eligible for teaching assignments.',
+      data: updated,
+    });
+  } catch (error: any) {
+    logger.error('PRINCIPAL_UPDATE_TEACHING_PROFILE_ERROR:', error);
+    return res.status(400).json({ error: error.message || 'Failed to update teaching profile.' });
+  }
+};
+
 

@@ -23,8 +23,11 @@ import SystemConfiguration from '../models/SystemConfiguration';
 import AttendanceSession from '../models/AttendanceSession';
 import AttendanceRecord from '../models/AttendanceRecord';
 import facultyAuthorizationService from '../services/facultyAuthorization.service';
+import teachingProfileService from '../services/teachingProfile.service';
 import logger from '../utils/logger.util';
 import { resolveDepartmentCanonical, findDepartmentCanonical } from '../utils/departmentCanonical.util';
+import { ensureSemestersForAcademicYear } from './system.controller';
+import { normalizeAcademicYear } from '../utils/academicYear.util';
 
 // Helper to record audit log
 const logAudit = async (req: AuthenticatedRequest, action: string, details: any) => {
@@ -45,20 +48,24 @@ const logAudit = async (req: AuthenticatedRequest, action: string, details: any)
 
 export const getDashboardData = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   try {
-    let currentYearRecord = await AcademicYear.findOne({ where: { isCurrent: true } });
-    if (!currentYearRecord) {
-      currentYearRecord = await AcademicYear.findOne({ where: { status: 'ACTIVE' } });
-    }
-    if (!currentYearRecord) {
-      const sysConfig = await SystemConfiguration.findOne();
-      if (sysConfig?.admissionCycle) {
-        currentYearRecord = await AcademicYear.findOne({ where: { year: sysConfig.admissionCycle } });
+    const queryAY = req.query.academicYear as string;
+    let currentYear = queryAY;
+    if (!currentYear) {
+      let currentYearRecord = await AcademicYear.findOne({ where: { isCurrent: true } });
+      if (!currentYearRecord) {
+        currentYearRecord = await AcademicYear.findOne({ where: { status: 'ACTIVE' } });
       }
+      if (!currentYearRecord) {
+        const sysConfig = await SystemConfiguration.findOne();
+        if (sysConfig?.admissionCycle) {
+          currentYearRecord = await AcademicYear.findOne({ where: { year: sysConfig.admissionCycle } });
+        }
+      }
+      if (!currentYearRecord) {
+        currentYearRecord = await AcademicYear.findOne({ order: [['startDate', 'DESC']] });
+      }
+      currentYear = currentYearRecord?.year || '2026-27';
     }
-    if (!currentYearRecord) {
-      currentYearRecord = await AcademicYear.findOne({ order: [['startDate', 'DESC']] });
-    }
-    const currentYear = currentYearRecord?.year || '2026-27';
 
     // Counts
     const departmentsCount = await Department.count();
@@ -162,8 +169,13 @@ export const getDashboardData = async (req: AuthenticatedRequest, res: Response,
 
 export const getAcademicYears = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   try {
-    const { search, status } = req.query;
+    const { search, status, includeHistorical } = req.query;
     const where: any = {};
+
+    if (includeHistorical !== 'true') {
+      where.isOperational = { [Op.ne]: false };
+      where.year = { [Op.ne]: '2025-26' };
+    }
 
     if (search) {
       where.year = { [Op.iLike]: `%${search}%` };
@@ -174,7 +186,7 @@ export const getAcademicYears = async (req: AuthenticatedRequest, res: Response,
 
     const years = await AcademicYear.findAll({
       where,
-      order: [['startDate', 'DESC']],
+      order: [['year', 'DESC']],
     });
 
     return res.json({ success: true, data: years });
@@ -193,10 +205,22 @@ export const createAcademicYear = async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ error: 'Academic Year, Start Date, and End Date are required.' });
     }
 
-    const existing = await AcademicYear.findOne({ where: { year } });
+    const canonicalYear = normalizeAcademicYear(year) || String(year).trim();
+    if (!/^\d{4}-\d{2}$/.test(canonicalYear)) {
+      await t.rollback();
+      return res.status(400).json({ error: `Invalid academic year format "${year}". Must be in format YYYY-YY (e.g. 2028-29).` });
+    }
+
+    const startYearNum = parseInt(canonicalYear.split('-')[0], 10);
+    if (canonicalYear === '2025-26' || (!isNaN(startYearNum) && startYearNum < 2026)) {
+      await t.rollback();
+      return res.status(400).json({ error: `Cannot create academic year "${canonicalYear}". The ERP operational starting year is 2026-27.` });
+    }
+
+    const existing = await AcademicYear.findOne({ where: { year: canonicalYear } });
     if (existing) {
       await t.rollback();
-      return res.status(400).json({ error: `Academic Year ${year} already exists.` });
+      return res.status(400).json({ error: `Academic Year ${canonicalYear} already exists.` });
     }
 
     const shouldBeCurrent = isCurrent === true || status === 'ACTIVE';
@@ -208,24 +232,27 @@ export const createAcademicYear = async (req: AuthenticatedRequest, res: Respons
 
     const created = await AcademicYear.create(
       {
-        year,
+        year: canonicalYear,
         startDate,
         endDate,
         status: shouldBeCurrent ? 'ACTIVE' : (status || 'UPCOMING'),
         isCurrent: shouldBeCurrent,
+        isOperational: true,
       },
       { transaction: t }
     );
 
+    await ensureSemestersForAcademicYear(canonicalYear, t);
+
     if (shouldBeCurrent) {
       const sysConfig = await SystemConfiguration.findOne({ transaction: t });
       if (sysConfig) {
-        await sysConfig.update({ admissionCycle: year }, { transaction: t });
+        await sysConfig.update({ admissionCycle: canonicalYear }, { transaction: t });
       }
     }
 
     await t.commit();
-    await logAudit(req, 'CREATE_ACADEMIC_YEAR', { academicYearId: created.id, year });
+    await logAudit(req, 'CREATE_ACADEMIC_YEAR', { academicYearId: created.id, year: canonicalYear });
     return res.status(201).json({ success: true, data: created });
   } catch (error) {
     await t.rollback();
@@ -523,16 +550,17 @@ export const getDepartmentAcademicInfo = async (req: AuthenticatedRequest, res: 
 export const getSemesters = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   try {
     const { academicYear } = req.query;
-    const where: any = {};
-    if (academicYear) {
-      where.academicYear = academicYear;
+    let targetYear: string;
+
+    if (academicYear && String(academicYear).trim() !== '' && String(academicYear).trim() !== 'All') {
+      targetYear = normalizeAcademicYear(String(academicYear)) || String(academicYear).trim();
+    } else {
+      const config = await SystemConfiguration.findOne();
+      const currentAy = await AcademicYear.findOne({ where: { isCurrent: true } });
+      targetYear = currentAy?.year || normalizeAcademicYear(config?.admissionCycle) || '2026-27';
     }
 
-    const semesters = await Semester.findAll({
-      where,
-      order: [['semesterNumber', 'ASC']],
-    });
-
+    const semesters = await ensureSemestersForAcademicYear(targetYear);
     return res.json({ success: true, data: semesters });
   } catch (error) {
     return next(error);
@@ -920,6 +948,19 @@ export const createHod = async (req: AuthenticatedRequest, res: Response, next: 
       },
       { transaction: t }
     );
+
+    // Idempotently create linked Teacher record so HOD is immediately eligible to teach in their Core Department
+    await Teacher.findOrCreate({
+      where: { userId: newUser.id },
+      defaults: {
+        userId: newUser.id,
+        departmentId,
+        designation: designation?.trim() || 'Professor & Head of Department',
+        joiningDate: joiningDate || new Date(),
+        status: 'ACTIVE',
+      },
+      transaction: t,
+    });
 
     await t.commit();
     await logAudit(req, 'CREATE_HOD', { hodId: hod.id, userId: newUser.id, email: newUser.email, departmentId });
@@ -1515,453 +1556,63 @@ export const getFacultyAssignments = async (req: AuthenticatedRequest, res: Resp
 // ─── 8. HOD Subject Handling Requests Module ───────────────────────────────────
 
 /**
- * GET /api/dean/hod-subject-requests
- * Returns all HOD subject handling requests with filters
+ * GET /api/dean/teaching-profile
+ * Retrieves Dean's teaching profile, eligibility, and active assignments
  */
-export const getHodSubjectRequests = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
+export const getDeanTeachingProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   try {
-    const { status, semester, departmentId, search, academicYear } = req.query as any;
-
-    const whereClause: any = {};
-    if (status && status !== 'ALL') {
-      whereClause.status = status;
-    }
-    if (semester && semester !== 'ALL') {
-      whereClause.semester = Number(semester);
-    }
-    if (departmentId && departmentId !== 'ALL') {
-      whereClause.departmentId = departmentId;
-    }
-    if (academicYear && academicYear !== 'ALL') {
-      whereClause.academicYear = { [Op.iLike]: `%${academicYear.split(/[-–]/)[0].trim()}%` };
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
     }
 
-    const requests = await HodSubjectHandlingRequest.findAll({
-      where: whereClause,
-      include: [
-        {
-          model: User,
-          as: 'hodUser',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage'],
-          where: search
-            ? {
-                [Op.or]: [
-                  { firstName: { [Op.iLike]: `%${search.trim()}%` } },
-                  { lastName: { [Op.iLike]: `%${search.trim()}%` } },
-                  { email: { [Op.iLike]: `%${search.trim()}%` } },
-                ],
-              }
-            : {},
-        },
-        {
-          model: Department,
-          as: 'department',
-          attributes: ['id', 'name', 'code', 'type'],
-        },
-        {
-          model: Subject,
-          as: 'subject',
-          attributes: ['id', 'name', 'code', 'credits', 'type', 'semester'],
-        },
-        {
-          model: User,
-          as: 'reviewer',
-          attributes: ['id', 'firstName', 'lastName', 'email'],
-        },
-        {
-          model: FacultyAssignment,
-          as: 'teachingAssignment',
-          attributes: ['id', 'status', 'section', 'academicYear', 'assignmentType'],
-        },
-      ],
-      order: [['createdAt', 'DESC']],
-    });
-
-    const formatted = requests.map((r: any) => ({
-      id: r.id,
-      hodUserId: r.hodUserId,
-      hodName: `${r.hodUser?.firstName || ''} ${r.hodUser?.lastName || ''}`.trim() || 'HOD',
-      email: r.hodUser?.email,
-      phone: r.hodUser?.phone,
-      profileImage: r.hodUser?.profileImage,
-      hodUser: r.hodUser ? {
-        id: r.hodUser.id,
-        firstName: r.hodUser.firstName,
-        lastName: r.hodUser.lastName,
-        email: r.hodUser.email,
-        phone: r.hodUser.phone,
-        profileImage: r.hodUser.profileImage,
-      } : null,
-      departmentId: r.departmentId,
-      departmentName: r.department?.name,
-      departmentCode: r.department?.code,
-      department: r.department ? {
-        id: r.department.id,
-        name: r.department.name,
-        code: r.department.code,
-        type: r.department.type,
-      } : null,
-      semester: r.semester,
-      subjectId: r.subjectId,
-      subjectName: r.subject?.name,
-      subjectCode: r.subject?.code,
-      subjectType: r.subject?.type,
-      credits: r.subject?.credits,
-      subject: r.subject ? {
-        id: r.subject.id,
-        name: r.subject.name,
-        code: r.subject.code,
-        credits: r.subject.credits,
-        type: r.subject.type,
-        semester: r.subject.semester,
-      } : null,
-      academicYear: r.academicYear,
-      reason: r.reason,
-      status: r.status,
-      rejectionReason: r.rejectionReason,
-      reviewedBy: r.reviewedBy,
-      reviewerName: r.reviewer ? `${r.reviewer.firstName || ''} ${r.reviewer.lastName || ''}`.trim() : null,
-      reviewer: r.reviewer ? {
-        id: r.reviewer.id,
-        firstName: r.reviewer.firstName,
-        lastName: r.reviewer.lastName,
-        email: r.reviewer.email,
-      } : null,
-      reviewedAt: r.reviewedAt,
-      teachingAssignmentId: r.teachingAssignmentId,
-      teachingAssignment: r.teachingAssignment,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    }));
-
-    return res.json({ success: true, data: formatted });
-  } catch (error) {
-    logger.error('DEAN_GET_HOD_SUBJECT_REQUESTS_ERROR:', error);
+    const profile = await teachingProfileService.getTeachingProfile(userId);
+    return res.json({ success: true, data: profile });
+  } catch (error: any) {
+    logger.error('DEAN_GET_TEACHING_PROFILE_ERROR:', error);
     return next(error);
   }
 };
 
 /**
- * GET /api/dean/hod-subject-requests/count
- * Returns the count of pending HOD subject handling requests
+ * PUT /api/dean/teaching-profile
+ * Updates Dean's teaching profile (core department) to enable teaching capability
  */
-export const getHodSubjectRequestCount = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
+export const updateDeanTeachingProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
   try {
-    const pendingCount = await HodSubjectHandlingRequest.count({
-      where: { status: 'PENDING' },
-    });
-    return res.json({ success: true, data: { pendingCount } });
-  } catch (error) {
-    logger.error('DEAN_GET_HOD_SUBJECT_REQUEST_COUNT_ERROR:', error);
-    return next(error);
-  }
-};
-
-/**
- * GET /api/dean/hod-subject-requests/:id
- * Retrieve a single request by ID
- */
-export const getHodSubjectRequestById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
-  try {
-    const { id } = req.params;
-    const r: any = await HodSubjectHandlingRequest.findByPk(id, {
-      include: [
-        {
-          model: User,
-          as: 'hodUser',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage'],
-        },
-        {
-          model: Department,
-          as: 'department',
-          attributes: ['id', 'name', 'code', 'type'],
-        },
-        {
-          model: Subject,
-          as: 'subject',
-          attributes: ['id', 'name', 'code', 'credits', 'type', 'semester'],
-        },
-        {
-          model: User,
-          as: 'reviewer',
-          attributes: ['id', 'firstName', 'lastName', 'email'],
-        },
-        {
-          model: FacultyAssignment,
-          as: 'teachingAssignment',
-        },
-      ],
-    });
-
-    if (!r) {
-      return res.status(404).json({ error: 'Subject handling request not found.' });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
     }
 
-    const data = {
-      id: r.id,
-      hodUserId: r.hodUserId,
-      hodName: `${r.hodUser?.firstName || ''} ${r.hodUser?.lastName || ''}`.trim() || 'HOD',
-      email: r.hodUser?.email,
-      phone: r.hodUser?.phone,
-      profileImage: r.hodUser?.profileImage,
-      hodUser: r.hodUser ? {
-        id: r.hodUser.id,
-        firstName: r.hodUser.firstName,
-        lastName: r.hodUser.lastName,
-        email: r.hodUser.email,
-        phone: r.hodUser.phone,
-        profileImage: r.hodUser.profileImage,
-      } : null,
-      departmentId: r.departmentId,
-      departmentName: r.department?.name,
-      departmentCode: r.department?.code,
-      department: r.department ? {
-        id: r.department.id,
-        name: r.department.name,
-        code: r.department.code,
-        type: r.department.type,
-      } : null,
-      semester: r.semester,
-      subjectId: r.subjectId,
-      subjectName: r.subject?.name,
-      subjectCode: r.subject?.code,
-      subjectType: r.subject?.type,
-      credits: r.subject?.credits,
-      subject: r.subject ? {
-        id: r.subject.id,
-        name: r.subject.name,
-        code: r.subject.code,
-        credits: r.subject.credits,
-        type: r.subject.type,
-        semester: r.subject.semester,
-      } : null,
-      academicYear: r.academicYear,
-      reason: r.reason,
-      status: r.status,
-      rejectionReason: r.rejectionReason,
-      reviewedBy: r.reviewedBy,
-      reviewerName: r.reviewer ? `${r.reviewer.firstName || ''} ${r.reviewer.lastName || ''}`.trim() : null,
-      reviewer: r.reviewer ? {
-        id: r.reviewer.id,
-        firstName: r.reviewer.firstName,
-        lastName: r.reviewer.lastName,
-        email: r.reviewer.email,
-      } : null,
-      reviewedAt: r.reviewedAt,
-      teachingAssignmentId: r.teachingAssignmentId,
-      teachingAssignment: r.teachingAssignment,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    };
+    const { coreDepartmentId } = req.body;
+    if (!coreDepartmentId) {
+      return res.status(400).json({ error: 'Core department selection is required.' });
+    }
 
-    return res.json({ success: true, data });
-  } catch (error) {
-    logger.error('DEAN_GET_HOD_SUBJECT_REQUEST_BY_ID_ERROR:', error);
-    return next(error);
-  }
-};
-
-/**
- * POST /api/dean/hod-subject-requests/:id/approve
- * Approves an HOD subject handling request and activates teaching assignment
- */
-export const approveHodSubjectRequest = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { id } = req.params;
-    // Query directly in transaction without lock on outer joins (avoiding PostgreSQL 0A000 feature error)
-    const request: any = await HodSubjectHandlingRequest.findByPk(id, {
-      transaction,
+    const updated = await teachingProfileService.updateTeachingProfile(userId, 'DEAN', coreDepartmentId);
+    await logAudit(req, 'UPDATE_DEAN_TEACHING_PROFILE', {
+      userId,
+      coreDepartmentId,
+      coreDepartmentCode: updated.coreDepartmentCode,
     });
-
-    if (!request) {
-      await transaction.rollback();
-      return res.status(404).json({ error: 'Subject handling request not found.' });
-    }
-
-    if (request.status !== 'PENDING') {
-      await transaction.rollback();
-      return res.status(400).json({ error: `Request has already been ${request.status.toLowerCase()}.` });
-    }
-
-    // Load related entities within the transaction
-    const [subject, department, teacherProfile] = await Promise.all([
-      Subject.findByPk(request.subjectId, { transaction }),
-      Department.findByPk(request.departmentId, { transaction }),
-      Teacher.findOne({ where: { userId: request.hodUserId }, transaction }),
-    ]);
-
-    // 1. Check if teaching assignment already exists
-    let assignment = await FacultyAssignment.findOne({
-      where: {
-        userId: request.hodUserId,
-        subjectId: request.subjectId,
-        semester: request.semester,
-        academicYear: request.academicYear,
-        status: 'ACTIVE',
-      },
-      transaction,
-    });
-
-    const targetDeptId = request.departmentId || teacherProfile?.departmentId || department?.id;
-    const targetBranch = department?.code || teacherProfile?.department?.code || null;
-
-    if (!assignment) {
-      assignment = await FacultyAssignment.create(
-        {
-          teacherId: teacherProfile ? teacherProfile.id : null,
-          userId: request.hodUserId,
-          departmentId: targetDeptId,
-          subjectId: request.subjectId,
-          semester: request.semester,
-          section: 'A',
-          branch: targetBranch,
-          academicYear: request.academicYear,
-          attendanceAccess: true,
-          marksAccess: true,
-          createdByHODId: null,
-          assignmentType: 'HOD_SUBJECT_HANDLING',
-          status: 'ACTIVE',
-        },
-        { transaction }
-      );
-    } else {
-      assignment.assignmentType = 'HOD_SUBJECT_HANDLING';
-      assignment.status = 'ACTIVE';
-      assignment.attendanceAccess = true;
-      assignment.marksAccess = true;
-      if (!assignment.teacherId && teacherProfile) {
-        assignment.teacherId = teacherProfile.id;
-      }
-      await assignment.save({ transaction });
-    }
-
-    // 2. Update Request record
-    request.status = 'APPROVED';
-    request.reviewedBy = req.user?.id || null;
-    request.reviewedAt = new Date();
-    request.teachingAssignmentId = assignment.id;
-    request.rejectionReason = null;
-    await request.save({ transaction });
-
-    await logAudit(req, 'APPROVE_HOD_SUBJECT_REQUEST', {
-      requestId: request.id,
-      hodUserId: request.hodUserId,
-      subjectId: request.subjectId,
-      semester: request.semester,
-      assignmentId: assignment.id,
-    });
-
-    await transaction.commit();
-
-    // 3. Send Notification to HOD (safely dispatched post-commit so notification failures never roll back approval)
-    const subjectName = subject?.name || 'Subject';
-    const subjectCode = subject?.code ? ` (${subject.code})` : '';
-    try {
-      await Notification.create({
-        title: 'Subject Handling Request Approved',
-        content: `Your request to handle ${subjectName}${subjectCode} for Semester ${request.semester} has been approved.`,
-        type: 'SUCCESS',
-        audience: 'SPECIFIC_USER',
-        targetUserId: request.hodUserId,
-        status: 'PUBLISHED',
-        approvedByAdminId: req.user?.id || null,
-        publishedAt: new Date(),
-      });
-    } catch (notifErr) {
-      logger.warn('Failed to dispatch HOD subject approval notification:', notifErr);
-    }
 
     return res.json({
       success: true,
-      message: `Request to handle ${subjectName} approved successfully. Teaching assignment is now active.`,
-      data: {
-        request,
-        assignment,
-      },
+      message: 'Teaching profile updated successfully. You are now eligible for teaching assignments.',
+      data: updated,
     });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('DEAN_APPROVE_HOD_SUBJECT_REQUEST_ERROR:', error);
-    return next(error);
+  } catch (error: any) {
+    logger.error('DEAN_UPDATE_TEACHING_PROFILE_ERROR:', error);
+    return res.status(400).json({ error: error.message || 'Failed to update teaching profile.' });
   }
 };
 
-/**
- * POST /api/dean/hod-subject-requests/:id/reject
- * Rejects an HOD subject handling request with mandatory reason
- */
-export const rejectHodSubjectRequest = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<any> => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { id } = req.params;
-    const { rejectionReason } = req.body;
 
-    if (!rejectionReason || !rejectionReason.toString().trim()) {
-      await transaction.rollback();
-      return res.status(400).json({ error: 'Rejection reason is mandatory when rejecting a request.' });
-    }
 
-    const request: any = await HodSubjectHandlingRequest.findByPk(id, {
-      transaction,
-    });
 
-    if (!request) {
-      await transaction.rollback();
-      return res.status(404).json({ error: 'Subject handling request not found.' });
-    }
 
-    if (request.status !== 'PENDING') {
-      await transaction.rollback();
-      return res.status(400).json({ error: `Request has already been ${request.status.toLowerCase()}.` });
-    }
 
-    const subject = await Subject.findByPk(request.subjectId, { transaction });
-
-    request.status = 'REJECTED';
-    request.rejectionReason = rejectionReason.toString().trim();
-    request.reviewedBy = req.user?.id || null;
-    request.reviewedAt = new Date();
-    await request.save({ transaction });
-
-    await logAudit(req, 'REJECT_HOD_SUBJECT_REQUEST', {
-      requestId: request.id,
-      hodUserId: request.hodUserId,
-      subjectId: request.subjectId,
-      reason: rejectionReason,
-    });
-
-    await transaction.commit();
-
-    // Send Notification to HOD (safely dispatched post-commit)
-    const subjectName = subject?.name || 'Subject';
-    const subjectCode = subject?.code ? ` (${subject.code})` : '';
-    try {
-      await Notification.create({
-        title: 'Subject Handling Request Rejected',
-        content: `Your request to handle ${subjectName}${subjectCode} has been rejected. Reason: ${rejectionReason.toString().trim()}`,
-        type: 'WARNING',
-        audience: 'SPECIFIC_USER',
-        targetUserId: request.hodUserId,
-        status: 'PUBLISHED',
-        approvedByAdminId: req.user?.id || null,
-        publishedAt: new Date(),
-      });
-    } catch (notifErr) {
-      logger.warn('Failed to dispatch HOD subject rejection notification:', notifErr);
-    }
-
-    return res.json({
-      success: true,
-      message: `Request for ${subjectName} rejected.`,
-      data: request,
-    });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('DEAN_REJECT_HOD_SUBJECT_REQUEST_ERROR:', error);
-    return next(error);
-  }
-};
 
 // ─── 9. Dean Direct Faculty Creation & Bulk Import Module ──────────────────────
 

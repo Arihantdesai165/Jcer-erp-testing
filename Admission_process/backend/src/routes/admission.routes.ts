@@ -64,7 +64,20 @@ applicationRouter.get('/handbook', admissionController.downloadHandbook);
 // ─── Admin Routes ─────────────────────────────────────────────────────────────
 const adminAdmissionRouter = express.Router();
 adminAdmissionRouter.use(authMiddleware);
-adminAdmissionRouter.use(authorizeRoles('ADMIN', 'SUPER_ADMIN', 'ADMINISTRATOR', 'PRINCIPAL'));
+adminAdmissionRouter.use((req, res, next) => {
+  // Allow HOD read-only access to view student admission details and documents
+  const isHodAllowedPath = (
+    req.method === 'GET' &&
+    (
+      /^\/admissions\/[^/]+$/.test(req.path) ||
+      /^\/admissions\/[^/]+\/documents\/[^/]+$/.test(req.path)
+    )
+  );
+  if (isHodAllowedPath) {
+    return authorizeRoles('ADMIN', 'SUPER_ADMIN', 'ADMINISTRATOR', 'PRINCIPAL', 'HOD')(req, res, next);
+  }
+  return authorizeRoles('ADMIN', 'SUPER_ADMIN', 'ADMINISTRATOR', 'PRINCIPAL')(req, res, next);
+});
 
 // Existing Student Onboarding Routes
 adminAdmissionRouter.get('/onboarding/existing-students/context', existingOnboardingController.getOnboardingContext);

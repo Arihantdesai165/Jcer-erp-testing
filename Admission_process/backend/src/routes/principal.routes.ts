@@ -71,4 +71,8 @@ router.get('/compliance/status', principalController.getComplianceStatus);
 // Report Generation
 router.get('/reports/generate', principalController.generateReport);
 
+// Teaching Profile
+router.get('/teaching-profile', principalController.getPrincipalTeachingProfile as any);
+router.put('/teaching-profile', principalController.updatePrincipalTeachingProfile as any);
+
 export default router;

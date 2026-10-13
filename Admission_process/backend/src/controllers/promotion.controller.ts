@@ -8,9 +8,11 @@ import Department from '../models/Department';
 import PromotionBatch from '../models/PromotionBatch';
 import StudentPromotionHistory from '../models/StudentPromotionHistory';
 import StudentAcademicEnrollment from '../models/StudentAcademicEnrollment';
+import AcademicYear from '../models/AcademicYear';
 import admissionService from '../services/admission.service';
 import { calculateStudentCohort } from '../utils/batchCohort.util';
 import { resolveDepartmentCanonical } from '../utils/departmentCanonical.util';
+import { normalizeAcademicYear, areAcademicYearsEqual, getAcademicYearVariants } from '../utils/academicYear.util';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -32,16 +34,18 @@ export const getPromotionFilters = async (req: Request, res: Response, next: Nex
       order: [['name', 'ASC']]
     });
 
-    const academicYears: string[] = [
-      '2024-2025',
-      '2025-2026',
-      '2026-2027',
-      '2027-2028',
-      '2028-2029',
-      '2029-2030',
-      '2030-2031',
-      '2031-2032'
-    ];
+    const dbYears = await AcademicYear.findAll({
+      where: {
+        isOperational: { [Op.ne]: false },
+        year: { [Op.ne]: '2025-26' },
+      },
+      order: [['year', 'ASC']]
+    });
+
+    let academicYears: string[] = dbYears.map(y => y.year);
+    if (academicYears.length === 0) {
+      academicYears = ['2026-27', '2027-28', '2028-29'];
+    }
 
     return res.status(200).json({
       success: true,
@@ -84,7 +88,8 @@ export const getPromotionStudents = async (req: Request, res: Response, next: Ne
       studentWhere.admissionType = admissionType;
     }
     if (academicYear && academicYear !== 'All') {
-      studentWhere.currentAcademicYear = academicYear;
+      const variants = getAcademicYearVariants(String(academicYear));
+      studentWhere.currentAcademicYear = { [Op.in]: variants };
     }
 
     const userWhere: any = {};
@@ -168,7 +173,7 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
     const fromSem = Number(currentSemester ?? fromSemester);
     const toSem = Number(targetSemester ?? toSemester);
     const curYear = currentAcademicYear || null;
-    const promYear = promotionAcademicYear || curYear || '2026-2027';
+    const promYear = normalizeAcademicYear(promotionAcademicYear || curYear) || '2026-27';
 
     if (isNaN(fromSem) || isNaN(toSem)) {
       return res.status(400).json({ error: 'Invalid semester selection.' });
@@ -196,6 +201,17 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
       ]
     });
 
+    // Check for existing active destination enrollments to prevent duplicate promotions
+    const existingDestEnrollments = await StudentAcademicEnrollment.findAll({
+      where: {
+        studentId: studentIds,
+        academicYearId: promYear,
+        semesterId: toSem,
+        status: 'ACTIVE'
+      }
+    });
+    const destEnrollmentSet = new Set(existingDestEnrollments.map(e => e.studentId));
+
     const eligibleList: any[] = [];
     const skippedList: any[] = [];
 
@@ -208,7 +224,18 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
 
       const name = `${student.user?.firstName || ''} ${student.user?.lastName || ''}`.trim() || student.usn || 'Student';
 
-      if (curYear && curYear !== 'All' && student.currentAcademicYear && student.currentAcademicYear !== curYear) {
+      // Verify not already enrolled in destination semester & year
+      if (destEnrollmentSet.has(student.id)) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: `Student already has an active enrollment in Semester ${toSem} for academic year ${promYear}.`
+        });
+        return;
+      }
+
+      if (curYear && curYear !== 'All' && student.currentAcademicYear && !areAcademicYearsEqual(student.currentAcademicYear, curYear)) {
         skippedList.push({
           id,
           name,
@@ -355,6 +382,17 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
       ]
     });
 
+    // Check for existing active destination enrollments
+    const existingDestEnrollments = await StudentAcademicEnrollment.findAll({
+      where: {
+        studentId: studentIds,
+        academicYearId: promYear,
+        semesterId: toSem,
+        status: 'ACTIVE'
+      }
+    });
+    const destEnrollmentSet = new Set(existingDestEnrollments.map(e => e.studentId));
+
     const validIds: string[] = [];
     const skippedList: any[] = [];
 
@@ -367,7 +405,17 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
 
       const name = `${student.user?.firstName || ''} ${student.user?.lastName || ''}`.trim() || student.usn || 'Student';
 
-      if (curYear && curYear !== 'All' && student.currentAcademicYear && student.currentAcademicYear !== curYear) {
+      if (destEnrollmentSet.has(student.id)) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: `Student already has an active enrollment in Semester ${toSem} for academic year ${promYear}.`
+        });
+        return;
+      }
+
+      if (curYear && curYear !== 'All' && student.currentAcademicYear && !areAcademicYearsEqual(student.currentAcademicYear, curYear)) {
         skippedList.push({
           id,
           name,
@@ -443,25 +491,52 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
       });
     }
 
+    const studentDeptMap = new Map(students.map(s => [s.id, s.department]));
+
     // Step 2: Open SQL transaction for valid records
     transaction = await sequelize.transaction();
 
     // Re-fetch and lock for update to protect against concurrency
+    // (Omit outer joins because PostgreSQL disallows FOR UPDATE on nullable sides of outer joins)
     const lockedStudents = await Student.findAll({
       where: { id: validIds },
       include: [
-        { model: Admission, as: 'admission', required: true },
-        { model: Department, as: 'department', required: false }
+        { model: Admission, as: 'admission', required: true }
       ],
       lock: true,
       transaction
     });
 
+    for (const student of lockedStudents) {
+      if (!student.department) {
+        student.department = studentDeptMap.get(student.id) as any;
+      }
+    }
+
     const finalPromoteIds: string[] = [];
     for (const student of lockedStudents) {
       const name = student.usn || student.id;
-      // Re-verify after locking
-      if (curYear && curYear !== 'All' && student.currentAcademicYear && student.currentAcademicYear !== curYear) {
+      // Re-verify after locking inside transaction
+      const existingInTx = await StudentAcademicEnrollment.findOne({
+        where: {
+          studentId: student.id,
+          academicYearId: promYear,
+          semesterId: toSem,
+          status: 'ACTIVE',
+        },
+        transaction,
+      });
+      if (existingInTx) {
+        skippedList.push({
+          id: student.id,
+          name,
+          usn: student.usn,
+          reason: `Student already has an active enrollment in Semester ${toSem} for academic year ${promYear}.`
+        });
+        continue;
+      }
+
+      if (curYear && curYear !== 'All' && student.currentAcademicYear && !areAcademicYearsEqual(student.currentAcademicYear, curYear)) {
         skippedList.push({
           id: student.id,
           name,
@@ -584,18 +659,35 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
         }
       );
 
-      // Create new academic enrollment for the target semester with rollNumber = null
-      await StudentAcademicEnrollment.create({
-        studentId: student.id,
-        departmentId: targetDeptId,
-        academicYearId: promYear,
-        schemeId: student.scheme || '2025',
-        semesterId: toSem,
-        sectionId: null,
-        rollNumber: null, // Requirement 3 & 4: roll_number = NULL
-        entrySemester: student.initialSemester || 1,
-        status: 'ACTIVE'
-      }, { transaction });
+      // Idempotently create or update academic enrollment for the target semester to prevent duplicate destination enrollments
+      const [newEnrollment, wasCreated] = await StudentAcademicEnrollment.findOrCreate({
+        where: {
+          studentId: student.id,
+          academicYearId: promYear,
+          semesterId: toSem,
+        },
+        defaults: {
+          studentId: student.id,
+          departmentId: targetDeptId,
+          academicYearId: promYear,
+          schemeId: student.scheme || '2025',
+          semesterId: toSem,
+          sectionId: null,
+          rollNumber: null, // Requirement 3 & 4: roll_number = NULL for promoted semester
+          entrySemester: student.initialSemester || 1,
+          status: 'ACTIVE',
+        },
+        transaction,
+      });
+
+      if (!wasCreated) {
+        await newEnrollment.update({
+          status: 'ACTIVE',
+          departmentId: targetDeptId,
+          sectionId: null,
+          rollNumber: null,
+        }, { transaction });
+      }
 
       await StudentPromotionHistory.create({
         studentId: student.id,

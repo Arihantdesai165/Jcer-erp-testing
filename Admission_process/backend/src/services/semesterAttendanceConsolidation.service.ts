@@ -15,31 +15,11 @@ import googleDriveService from './googleDrive.service';
 import { ATTENDANCE_THRESHOLD } from './faculty.service';
 import logger from '../utils/logger.util';
 import { Op } from 'sequelize';
-
-/**
- * Resolves the official institutional logo buffer
- */
-function getInstitutionalLogoBuffer(): Buffer | null {
-  const candidatePaths = [
-    path.resolve(__dirname, '../assets/logo.png'),
-    path.resolve(__dirname, '../../src/assets/logo.png'),
-    path.resolve(process.cwd(), 'src/assets/logo.png'),
-    path.resolve(process.cwd(), '../frontend/public/logo.png'),
-    path.resolve(process.cwd(), 'public/logo.png'),
-    'e:/JCER-ERP-SYSTEM/Admission_process/frontend/public/logo.png',
-  ];
-
-  for (const p of candidatePaths) {
-    try {
-      if (fs.existsSync(p)) {
-        return fs.readFileSync(p);
-      }
-    } catch {
-      // Continue search
-    }
-  }
-  return null;
-}
+import {
+  applyInstitutionalHeader,
+  embedOfficialCollegeBanner,
+  getOfficialCollegeBannerBuffer,
+} from '../utils/excelBranding.util';
 
 /**
  * Normalizes section string to remove "Section " prefix
@@ -100,8 +80,9 @@ export const semesterAttendanceConsolidationService = {
     academicYear: string;
     departmentId: string;
     semester: number;
+    section?: string;
   }): Promise<ConsolidatedAttendanceData> {
-    const { academicYear, departmentId, semester } = params;
+    const { academicYear, departmentId, semester, section } = params;
 
     // 1. Resolve Department
     const department = await Department.findByPk(departmentId);
@@ -419,7 +400,17 @@ export const semesterAttendanceConsolidationService = {
     // Deterministic filename: Final_Attendance_<DEPARTMENT>_Sem<SEMESTER>_<ACADEMIC_YEAR>.xlsx
     // Normalize AY (e.g. "2026-2027" or "2026-27")
     const cleanAY = academicYear.replace(/\u2013|\u2014/g, '-').trim();
-    const fileName = `Final_Attendance_${deptCode}_Sem${semester}_${cleanAY}.xlsx`;
+    const cleanSectionFilter = section && section !== 'ALL' ? normalizeSectionName(section) : null;
+    const effectiveStudents = cleanSectionFilter
+      ? studentRows.filter((st) => st.section === cleanSectionFilter)
+      : studentRows;
+    const fileName = cleanSectionFilter
+      ? `Final_Attendance_${deptCode}_Sem${semester}_Sec${cleanSectionFilter}_${cleanAY}.xlsx`
+      : `Final_Attendance_${deptCode}_Sem${semester}_${cleanAY}.xlsx`;
+
+    const resolvedSections = dbSections.length > 0
+      ? dbSections.map((s) => ({ id: s.id, name: normalizeSectionName(s.name) }))
+      : Array.from(sectionGroups.keys()).sort().map((sec) => ({ id: sec, name: sec }));
 
     return {
       department: {
@@ -430,9 +421,9 @@ export const semesterAttendanceConsolidationService = {
       academicYear,
       semester,
       fileName,
-      sections: dbSections.map((s) => ({ id: s.id, name: s.name })),
+      sections: resolvedSections,
       subjects,
-      students: studentRows,
+      students: effectiveStudents,
       subjectSummaries,
       sectionSummaries,
     };
@@ -446,18 +437,7 @@ export const semesterAttendanceConsolidationService = {
     workbook.creator = 'JCER College ERP - Consolidated Attendance Engine';
     workbook.created = new Date();
 
-    const logoBuffer = getInstitutionalLogoBuffer();
-    let logoImageId: number | undefined;
-    if (logoBuffer) {
-      try {
-        logoImageId = workbook.addImage({
-          buffer: logoBuffer as any,
-          extension: 'png',
-        });
-      } catch (err: any) {
-        logger.warn('Failed to attach logo to Excel workbook:', err.message);
-      }
-    }
+
 
     const fontInstTitle = { name: 'Times New Roman', size: 16, bold: true, color: { argb: 'FF1E3A8A' } };
     const fontInstSub = { name: 'Times New Roman', size: 11, bold: false, color: { argb: 'FF334155' } };
@@ -492,47 +472,15 @@ export const semesterAttendanceConsolidationService = {
     const numSubjects = data.subjects.length;
     const totalCols = 7 + 2 * numSubjects;
 
-    // ── Institutional Top Title Block (Rows 1 - 4) ──
-    ws1.mergeCells(1, 1, 1, totalCols);
-    const titleRow1 = ws1.getCell(1, 1);
-    titleRow1.value = 'JAIN COLLEGE OF ENGINEERING & RESEARCH';
-    titleRow1.font = fontInstTitle;
-    titleRow1.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws1.getRow(1).height = 26;
-
-    ws1.mergeCells(2, 1, 2, totalCols);
-    const titleRow2 = ws1.getCell(2, 1);
-    titleRow2.value = '(Approved by AICTE, Affiliated to VTU and Recognized by Govt. of Karnataka)';
-    titleRow2.font = fontInstSub;
-    titleRow2.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws1.getRow(2).height = 18;
-
-    ws1.mergeCells(3, 1, 3, totalCols);
-    const titleRow3 = ws1.getCell(3, 1);
-    titleRow3.value = 'UDYAMBAG, BELAGAVI.';
-    titleRow3.font = fontInstLoc;
-    titleRow3.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws1.getRow(3).height = 22;
-
-    ws1.mergeCells(4, 1, 4, totalCols);
-    const titleRow4 = ws1.getCell(4, 1);
-    titleRow4.value = `DEPARTMENT OF ${data.department.name.toUpperCase()} — SEMESTER ${data.semester} CONSOLIDATED ATTENDANCE REGISTER (${data.academicYear})`;
-    titleRow4.font = fontCohortTitle;
-    titleRow4.alignment = { vertical: 'middle', horizontal: 'center' };
-    titleRow4.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFF8FAFC' },
-    };
-    ws1.getRow(4).height = 20;
-
-    // Embed JGI Logo at Left Corner (Rows 1 - 3)
-    if (logoImageId !== undefined) {
-      ws1.addImage(logoImageId, {
-        tl: { col: 0.15, row: 0.15 },
-        ext: { width: 66, height: 66 },
-      });
-    }
+    // ── Institutional Top Banner & Report Title (Rows 1 - 4) ──
+    applyInstitutionalHeader(workbook, ws1, {
+      totalCols,
+      startCol: 1,
+      departmentName: data.department.name,
+      semester: data.semester,
+      academicYear: data.academicYear,
+      reportTitle: `DEPARTMENT OF ${data.department.name.toUpperCase()} — SEMESTER ${data.semester} CONSOLIDATED ATTENDANCE REGISTER (${data.academicYear})`,
+    });
 
     // ── ROW 5: Multi-level Top Header ──
     // 1. Block "TOTAL NO. OF CLASS" over USN, Student Name, Section
@@ -741,40 +689,12 @@ export const semesterAttendanceConsolidationService = {
       pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
 
-    ws2.mergeCells('A1:G1');
-    const ws2Title1 = ws2.getCell('A1');
-    ws2Title1.value = 'JAIN COLLEGE OF ENGINEERING & RESEARCH';
-    ws2Title1.font = fontInstTitle;
-    ws2Title1.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws2.getRow(1).height = 24;
-
-    ws2.mergeCells('A2:G2');
-    const ws2Title2 = ws2.getCell('A2');
-    ws2Title2.value = '(Approved by AICTE, Affiliated to VTU and Recognized by Govt. of Karnataka)';
-    ws2Title2.font = fontInstSub;
-    ws2Title2.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws2.getRow(2).height = 18;
-
-    ws2.mergeCells('A3:G3');
-    const ws2Title3 = ws2.getCell('A3');
-    ws2Title3.value = 'UDYAMBAG, BELAGAVI.';
-    ws2Title3.font = fontInstLoc;
-    ws2Title3.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws2.getRow(3).height = 20;
-
-    ws2.mergeCells('A4:G4');
-    const ws2Title4 = ws2.getCell('A4');
-    ws2Title4.value = `${data.department.name} - Semester ${data.semester} (${data.academicYear}) Subject Attendance Summary`;
-    ws2Title4.font = fontCohortTitle;
-    ws2Title4.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws2.getRow(4).height = 22;
-
-    if (logoImageId !== undefined) {
-      ws2.addImage(logoImageId, {
-        tl: { col: 0.1, row: 0.1 },
-        ext: { width: 58, height: 58 },
-      });
-    }
+    // ── Institutional Top Banner & Report Title (Rows 1 - 4) ──
+    applyInstitutionalHeader(workbook, ws2, {
+      totalCols: 7,
+      startCol: 1,
+      reportTitle: `${data.department.name} — Semester ${data.semester} (${data.academicYear}) Subject Attendance Summary`,
+    });
 
     const ws2Headers = [
       'Subject Code',
@@ -834,40 +754,12 @@ export const semesterAttendanceConsolidationService = {
       pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
 
-    ws3.mergeCells('A1:E1');
-    const ws3Title1 = ws3.getCell('A1');
-    ws3Title1.value = 'JAIN COLLEGE OF ENGINEERING & RESEARCH';
-    ws3Title1.font = fontInstTitle;
-    ws3Title1.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws3.getRow(1).height = 24;
-
-    ws3.mergeCells('A2:E2');
-    const ws3Title2 = ws3.getCell('A2');
-    ws3Title2.value = '(Approved by AICTE, Affiliated to VTU and Recognized by Govt. of Karnataka)';
-    ws3Title2.font = fontInstSub;
-    ws3Title2.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws3.getRow(2).height = 18;
-
-    ws3.mergeCells('A3:E3');
-    const ws3Title3 = ws3.getCell('A3');
-    ws3Title3.value = 'UDYAMBAG, BELAGAVI.';
-    ws3Title3.font = fontInstLoc;
-    ws3Title3.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws3.getRow(3).height = 20;
-
-    ws3.mergeCells('A4:E4');
-    const ws3Title4 = ws3.getCell('A4');
-    ws3Title4.value = `${data.department.name} - Semester ${data.semester} (${data.academicYear}) Section Attendance Breakdown`;
-    ws3Title4.font = fontCohortTitle;
-    ws3Title4.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws3.getRow(4).height = 22;
-
-    if (logoImageId !== undefined) {
-      ws3.addImage(logoImageId, {
-        tl: { col: 0.1, row: 0.1 },
-        ext: { width: 58, height: 58 },
-      });
-    }
+    // ── Institutional Top Banner & Report Title (Rows 1 - 4) ──
+    applyInstitutionalHeader(workbook, ws3, {
+      totalCols: 5,
+      startCol: 1,
+      reportTitle: `${data.department.name} — Semester ${data.semester} (${data.academicYear}) Section Attendance Breakdown`,
+    });
 
     const ws3Headers = [
       'Section',

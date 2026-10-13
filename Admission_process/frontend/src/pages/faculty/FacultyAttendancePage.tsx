@@ -1312,18 +1312,18 @@ export const FacultyAttendancePage: React.FC = () => {
                   </button>
                   <div>
                     <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                      {selectedSubject?.name || completeHistoryData?.assignment.subjectName || 'Course Attendance'}
+                      {selectedAssignmentItem?.subjectName || completeHistoryData?.assignment.subjectName || 'Course Attendance'}
                     </h2>
                     <div className="text-xs sm:text-sm font-semibold text-slate-500 mt-1 flex flex-wrap items-center gap-2">
                       <span className="font-bold text-slate-700">
-                        {selectedSubject?.code || completeHistoryData?.assignment.subjectCode}
+                        {selectedAssignmentItem?.subjectCode || completeHistoryData?.assignment.subjectCode}
                       </span>
                       <span>•</span>
-                      <span>{selectedSubject?.department || completeHistoryData?.assignment.department || 'CSE'}</span>
+                      <span>{selectedAssignmentItem?.departmentCode || completeHistoryData?.assignment.departmentCode || 'CSE'}</span>
                       <span>•</span>
                       <span>Semester {selectedSemNum || completeHistoryData?.assignment.semester}</span>
                       <span>•</span>
-                      <span>{formatSectionLabel(selectedSubject?.section || completeHistoryData?.assignment.section)}</span>
+                      <span>{formatSectionLabel(selectedAssignmentItem?.section || completeHistoryData?.assignment.section)}</span>
                       {(completeHistoryData?.assignment.academicYear || activeAY) && (
                         <>
                           <span>•</span>
@@ -1372,7 +1372,7 @@ export const FacultyAttendancePage: React.FC = () => {
                     }`}
                   >
                     {completeHistoryFilter === 'ALL' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    <span>All ({completeHistoryData?.summary.totalSessions ?? 0})</span>
+                    <span>All ({completeHistoryData?.summary.totalScheduled ?? 0})</span>
                   </button>
 
                   <button
@@ -1398,7 +1398,7 @@ export const FacultyAttendancePage: React.FC = () => {
                     }`}
                   >
                     {completeHistoryFilter === 'COMPLETED' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    <span>Completed ({completeHistoryData?.summary.completedCount ?? 0})</span>
+                    <span>Completed ({completeHistoryData?.summary.classesHeld ?? 0})</span>
                   </button>
 
                   <button
@@ -1528,21 +1528,21 @@ export const FacultyAttendancePage: React.FC = () => {
 
                             <div className="text-xs text-slate-500 font-medium mt-1 flex flex-wrap items-center gap-2">
                               <span className="text-slate-600 font-semibold">
-                                {session.timeSlot || '10:35 AM – 11:30 AM'}
+                                {session.startTime && session.endTime ? `${session.startTime} – ${session.endTime}` : 'Regular Class'}
                               </span>
-                              {isCompleted && session.summary && (
+                              {isCompleted && session.percentage !== undefined && (
                                 <>
                                   <span>•</span>
                                   <span className="text-emerald-700 font-bold">
-                                    {session.summary.presentCount} Present
+                                    {session.presentCount ?? 0} Present
                                   </span>
                                   <span>•</span>
                                   <span className="text-rose-600 font-bold">
-                                    {session.summary.absentCount} Absent
+                                    {session.absentCount ?? 0} Absent
                                   </span>
                                   <span>•</span>
                                   <span className="text-blue-700 font-extrabold">
-                                    {session.summary.attendanceRate}% Rate
+                                    {session.percentage ?? 0}% Rate
                                   </span>
                                 </>
                               )}
@@ -2623,7 +2623,7 @@ export const FacultyAttendancePage: React.FC = () => {
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
                   {viewSessionModalData
-                    ? `${formatDateLong(viewSessionModalData.session.date)} • ${viewSessionModalData.session.classroom || 'Classroom'} • ${viewSessionModalData.session.startTime || ''} - ${viewSessionModalData.session.endTime || ''}`
+                    ? `${formatDateLong(viewSessionModalData.session.date)} • Period ${viewSessionModalData.session.sessionPeriod}`
                     : 'Loading attendance record...'}
                 </p>
               </div>
@@ -2649,19 +2649,19 @@ export const FacultyAttendancePage: React.FC = () => {
                   <div className="grid grid-cols-4 gap-2">
                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total</div>
-                      <div className="text-base font-black text-slate-900">{viewSessionModalData.summary.total}</div>
+                      <div className="text-base font-black text-slate-900">{viewSessionModalData.session.totalStudents}</div>
                     </div>
                     <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 text-center">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Present</div>
-                      <div className="text-base font-black text-emerald-800">{viewSessionModalData.summary.present}</div>
+                      <div className="text-base font-black text-emerald-800">{viewSessionModalData.session.presentCount}</div>
                     </div>
                     <div className="bg-rose-50 p-2.5 rounded-xl border border-rose-200 text-center">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Absent</div>
-                      <div className="text-base font-black text-rose-800">{viewSessionModalData.summary.absent}</div>
+                      <div className="text-base font-black text-rose-800">{viewSessionModalData.session.absentCount}</div>
                     </div>
                     <div className="bg-blue-50 p-2.5 rounded-xl border border-blue-200 text-center">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Rate</div>
-                      <div className="text-base font-black text-blue-800">{viewSessionModalData.summary.rate}%</div>
+                      <div className="text-base font-black text-blue-800">{viewSessionModalData.session.percentage}%</div>
                     </div>
                   </div>
 
@@ -2695,18 +2695,18 @@ export const FacultyAttendancePage: React.FC = () => {
                             const q = viewSessionSearchQuery.toLowerCase();
                             return (
                               st.usn.toLowerCase().includes(q) ||
-                              st.name.toLowerCase().includes(q)
+                              st.studentName.toLowerCase().includes(q)
                             );
                           })
                           .map((st, idx) => (
-                            <tr key={st.id} className="hover:bg-slate-50/70 transition">
+                            <tr key={st.studentId || idx} className="hover:bg-slate-50/70 transition">
                               <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">
                                 {String(idx + 1).padStart(2, '0')}
                               </td>
                               <td className="py-2 px-3 font-mono font-bold text-slate-800">{st.usn}</td>
-                              <td className="py-2 px-3 font-semibold text-slate-900">{st.name}</td>
+                              <td className="py-2 px-3 font-semibold text-slate-900">{st.studentName}</td>
                               <td className="py-2 px-3 text-right">
-                                {st.status === 'PRESENT' ? (
+                                {st.currentStatus === 'PRESENT' ? (
                                   <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[11px] font-black rounded-md inline-flex items-center space-x-1">
                                     <Check className="w-3 h-3 stroke-[2.5]" />
                                     <span>Present</span>
@@ -2765,7 +2765,7 @@ export const FacultyAttendancePage: React.FC = () => {
                   Schedule Class Session
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  {selectedSubject?.name || 'Class Session'} • {formatSectionLabel(selectedSubject?.section)}
+                  {selectedAssignmentItem?.subjectName || 'Class Session'} • {formatSectionLabel(selectedAssignmentItem?.section)}
                 </p>
               </div>
               <button
@@ -3001,7 +3001,7 @@ export const FacultyAttendancePage: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="font-semibold text-slate-500">Time:</span>
-                  <span className="font-bold text-slate-900">{cancellationDetailSession.timeSlot || '10:35 AM - 11:30 AM'}</span>
+                  <span className="font-bold text-slate-900">{cancellationDetailSession.startTime && cancellationDetailSession.endTime ? `${cancellationDetailSession.startTime} - ${cancellationDetailSession.endTime}` : 'Regular Class'}</span>
                 </div>
                 {cancellationDetailSession.classroom && (
                   <div className="flex justify-between">

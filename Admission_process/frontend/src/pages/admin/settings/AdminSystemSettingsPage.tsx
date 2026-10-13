@@ -1,24 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import API from '../../../services/api';
 import toast from 'react-hot-toast';
-import { Settings, ShieldCheck, ShieldAlert, CalendarDays, Loader2 } from 'lucide-react';
-import { getAcademicYear } from '../../../utils/date.util';
-
-const generateAcademicYearOptions = () => {
-  const currentYear = new Date().getFullYear();
-  const options = [];
-  for (let i = 0; i <= 4; i++) {
-    const y = currentYear + i;
-    options.push(`${y}-${y + 1}`);
-  }
-  return options;
-};
-
-const ACADEMIC_YEAR_OPTIONS = generateAcademicYearOptions();
+import { Settings, ShieldCheck, ShieldAlert, CalendarDays, Loader2, Plus, Sparkles, CheckCircle2, History, ArrowRight } from 'lucide-react';
+import { useAcademicYear } from '../../../context/AcademicYearContext';
 
 const AdminSystemSettingsPage: React.FC = () => {
+  const { academicYears, activeAcademicYear, refreshAcademicYears, setAcademicYear: setContextViewingYear } = useAcademicYear();
   const [admissionOpen, setAdmissionOpen] = useState<boolean>(true);
-  const [academicYear, setAcademicYear] = useState<string>(getAcademicYear());
+  const [academicYear, setAcademicYear] = useState<string>(activeAcademicYear || '2026-27');
   const [closingDate, setClosingDate] = useState<string>('2026-08-31T23:59');
   const [handbookUrl, setHandbookUrl] = useState<string | null>(null);
   const [freshAdmissionOpen, setFreshAdmissionOpen] = useState<boolean>(true);
@@ -34,6 +23,13 @@ const AdminSystemSettingsPage: React.FC = () => {
   const [updatingCopyrightYear, setUpdatingCopyrightYear] = useState<boolean>(false);
   const [updatingClosingDate, setUpdatingClosingDate] = useState<boolean>(false);
   const [uploadingHandbook, setUploadingHandbook] = useState<boolean>(false);
+
+  // Dynamic Academic Year Management States
+  const [newSingleYear, setNewSingleYear] = useState<string>('');
+  const [creatingSingleYear, setCreatingSingleYear] = useState<boolean>(false);
+  const [generateStartYear, setGenerateStartYear] = useState<string>('2028-29');
+  const [generateCount, setGenerateCount] = useState<number>(5);
+  const [generatingYears, setGeneratingYears] = useState<boolean>(false);
 
   useEffect(() => {
     fetchSettings();
@@ -120,7 +116,11 @@ const AdminSystemSettingsPage: React.FC = () => {
     try {
       const res = await API.put('/admin/settings', { academicYear: newYear, admissionCycle: newYear });
       if (res.data?.success) {
-        toast.success(`Academic Year updated to ${newYear}`);
+        const confirmedYear = res.data.currentYear || res.data.activeAcademicYear || newYear;
+        setAcademicYear(confirmedYear);
+        setContextViewingYear(confirmedYear);
+        await refreshAcademicYears();
+        toast.success(`Global Active Academic Year updated to ${confirmedYear}. All dashboards synchronized.`);
       } else {
         throw new Error(res.data?.error || 'Failed to update Academic Year');
       }
@@ -129,6 +129,71 @@ const AdminSystemSettingsPage: React.FC = () => {
       toast.error(err.response?.data?.error || err.message || 'Failed to update Academic Year');
     } finally {
       setUpdatingYear(false);
+    }
+  };
+
+  const handleCreateSingleAcademicYear = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newSingleYear.trim();
+    if (!trimmed) {
+      toast.error('Please enter an academic year (e.g. 2028-29)');
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(trimmed)) {
+      toast.error('Invalid format. Please enter format like "2028-29"');
+      return;
+    }
+    const startY = parseInt(trimmed.split('-')[0], 10);
+    if (trimmed === '2025-26' || (!isNaN(startY) && startY < 2026)) {
+      toast.error('Cannot create academic years prior to the operational starting year 2026-27.');
+      return;
+    }
+
+    setCreatingSingleYear(true);
+    try {
+      const res = await API.post('/system/academic-years', { year: trimmed });
+      if (res.data?.success) {
+        toast.success(`Academic Year ${trimmed} created successfully with configured semesters 1 through 8!`);
+        setNewSingleYear('');
+        await refreshAcademicYears();
+      } else {
+        throw new Error(res.data?.error || 'Failed to create academic year');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to create academic year');
+    } finally {
+      setCreatingSingleYear(false);
+    }
+  };
+
+  const handleGenerateConsecutiveYears = async () => {
+    const trimmed = generateStartYear.trim();
+    if (!trimmed || !/^\d{4}-\d{2}$/.test(trimmed)) {
+      toast.error('Please provide a valid starting year in "YYYY-YY" format (e.g. 2028-29)');
+      return;
+    }
+    const startY = parseInt(trimmed.split('-')[0], 10);
+    if (trimmed === '2025-26' || (!isNaN(startY) && startY < 2026)) {
+      toast.error('Starting year cannot be prior to the operational starting year 2026-27.');
+      return;
+    }
+
+    setGeneratingYears(true);
+    try {
+      const res = await API.post('/system/academic-years/generate', {
+        startYear: trimmed,
+        count: generateCount,
+      });
+      if (res.data?.success) {
+        toast.success(res.data.message || `Successfully generated consecutive academic years!`);
+        await refreshAcademicYears();
+      } else {
+        throw new Error(res.data?.error || 'Failed to generate academic years');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to generate academic years');
+    } finally {
+      setGeneratingYears(false);
     }
   };
 
@@ -245,7 +310,8 @@ const AdminSystemSettingsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-6 bg-slate-50/50 dark:bg-slate-900/20">
+        <div className="p-6 bg-slate-50/50 dark:bg-slate-900/20 space-y-6">
+          {/* Active Academic Year Selector */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80">
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
@@ -269,13 +335,184 @@ const AdminSystemSettingsPage: React.FC = () => {
                 onChange={(e) => handleAcademicYearChange(e.target.value)}
                 className="px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer disabled:opacity-60"
               >
-                {ACADEMIC_YEAR_OPTIONS.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
+                {academicYears.map((ay) => (
+                  <option key={ay.id || ay.year} value={ay.year}>
+                    {ay.year} {ay.year === activeAcademicYear ? '(Current Active)' : ''}
                   </option>
                 ))}
               </select>
               {updatingYear && <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />}
+            </div>
+          </div>
+
+          {/* Academic Years Directory & Quick Activation */}
+          <div className="p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Configured Academic Years</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Centrally managed academic sessions. Semesters 1 through 8 are automatically initialized for each year.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshAcademicYears()}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
+              >
+                Refresh List
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                    <th className="py-2.5 px-3">Academic Year</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Session Type</th>
+                    <th className="py-2.5 px-3 text-right">Quick Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                  {academicYears.map((ay) => {
+                    const isGloballyActive = ay.year === activeAcademicYear;
+                    const isUpcoming = ay.status === 'UPCOMING';
+                    const isArchived = ay.status === 'ARCHIVED';
+
+                    return (
+                      <tr key={ay.id || ay.year} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/30">
+                        <td className="py-2.5 px-3 font-mono font-bold text-slate-900 dark:text-white">
+                          {ay.year}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {isGloballyActive ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Active Institutional
+                            </span>
+                          ) : isUpcoming ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                              Upcoming
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                              <History className="w-3 h-3" />
+                              Historical
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-500 dark:text-slate-400">
+                          Operational
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {isGloballyActive ? (
+                            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                              Current Active
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={updatingYear}
+                              onClick={() => handleAcademicYearChange(ay.year)}
+                              className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              Set Active
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Create & Generate Academic Years Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Create Single Future Year */}
+            <form onSubmit={handleCreateSingleAcademicYear} className="p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+              <div className="flex items-center gap-2">
+                <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                  Add Single Future Academic Year
+                </h4>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Register a new upcoming academic year (e.g. 2028-29). It will not be activated automatically.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. 2028-29"
+                  value={newSingleYear}
+                  onChange={(e) => setNewSingleYear(e.target.value)}
+                  disabled={creatingSingleYear}
+                  className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="submit"
+                  disabled={creatingSingleYear || !newSingleYear.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  {creatingSingleYear ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  <span>Create Year</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Generate Multiple Consecutive Future Years */}
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                  Generate Multiple Consecutive Years
+                </h4>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Automatically generate a sequence of future years (e.g. 5 years starting from 2028-29).
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Start (e.g. 2028-29)"
+                  value={generateStartYear}
+                  onChange={(e) => setGenerateStartYear(e.target.value)}
+                  disabled={generatingYears}
+                  className="w-32 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <select
+                  value={generateCount}
+                  onChange={(e) => setGenerateCount(parseInt(e.target.value, 10))}
+                  disabled={generatingYears}
+                  className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value={3}>3 Years</option>
+                  <option value={5}>5 Years</option>
+                  <option value={7}>7 Years</option>
+                  <option value={10}>10 Years</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={handleGenerateConsecutiveYears}
+                  disabled={generatingYears || !generateStartYear.trim()}
+                  className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  {generatingYears ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  <span>Generate</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Historical Retention Notice */}
+          <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 text-amber-900 dark:text-amber-300 text-xs">
+            <History className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold">Historical Retention Policy:</span>
+              <p className="text-amber-800 dark:text-amber-300/90 text-[11px]">
+                The ERP operational baseline starts from Academic Year 2026–27. Legacy 2025–26 records remain securely archived in the database for compliance and audit reporting, and are excluded from normal operational selections.
+              </p>
             </div>
           </div>
         </div>

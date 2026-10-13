@@ -16,6 +16,7 @@ import {
   X,
   ChevronDown,
   Award,
+  FileSpreadsheet,
 } from 'lucide-react';
 import usePwa from '../../hooks/usePwa';
 import PwaConfirmationModal from '../common/PwaConfirmationModal';
@@ -85,19 +86,19 @@ export const FacultyLayout: React.FC = () => {
   const menuItems: MenuItem[] = [
     { name: 'Overview', path: '/faculty/dashboard', icon: LayoutDashboard },
     { name: 'Attendance', path: '/faculty/attendance', icon: CalendarCheck },
+    { name: 'All Subject Attendance', path: '/faculty/all-subject-attendance', icon: FileSpreadsheet },
     { name: 'Student Attendance', path: '/faculty/student-attendance', icon: UserCheck },
     { name: 'Bitwise Marks Entry', path: '/faculty/marks', icon: Award },
     { name: 'Analytics', path: '/faculty/analytics', icon: BarChart3 },
-    { name: 'My Profile & Settings', path: '/faculty/profile', icon: User },
   ];
 
   const subNavTabs = [
     { name: 'Overview', path: '/faculty/dashboard' },
     { name: 'Attendance', path: '/faculty/attendance' },
+    { name: 'All Subject Attendance', path: '/faculty/all-subject-attendance' },
     { name: 'Student Attendance', path: '/faculty/student-attendance' },
     { name: 'Bitwise Marks', path: '/faculty/marks' },
     { name: 'Analytics', path: '/faculty/analytics' },
-    { name: 'Settings', path: '/faculty/profile' },
   ];
 
 
@@ -106,6 +107,7 @@ export const FacultyLayout: React.FC = () => {
       return '/faculty/dashboard';
     }
     if (currentPath.startsWith('/faculty/profile') || currentPath.startsWith('/faculty/settings')) return '/faculty/profile';
+    if (currentPath.startsWith('/faculty/all-subject-attendance')) return '/faculty/all-subject-attendance';
     if (currentPath.startsWith('/faculty/student-attendance')) return '/faculty/student-attendance';
     if (currentPath.startsWith('/faculty/attendance')) return '/faculty/attendance';
     if (currentPath.startsWith('/faculty/marks') || currentPath.startsWith('/faculty/bitwise-marks')) return '/faculty/marks';
@@ -114,16 +116,17 @@ export const FacultyLayout: React.FC = () => {
   };
 
   const activeNavPath = getActiveNavPath(location.pathname);
-  const isFullScreenGrid =
+  const isFullScreenWorkspace =
+    location.pathname.startsWith('/faculty/all-subject-attendance') ||
     location.pathname === '/faculty/marks/grid' ||
     location.pathname === '/faculty/marks/assignments';
 
-  // Dedicated Full-Screen workspace mode for Bitwise Marks & Assignment Entry Grids
-  if (isFullScreenGrid) {
+  // Dedicated Full-Screen workspace mode for All Subject Attendance and Bitwise Marks Grids
+  if (isFullScreenWorkspace) {
     return (
       <div
         data-portal="faculty"
-        className="portal-table-center h-screen w-screen max-w-full overflow-hidden bg-slate-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans"
+        className="portal-table-center min-h-screen w-screen max-w-full overflow-x-hidden bg-slate-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans"
       >
         <Outlet />
       </div>
@@ -133,7 +136,9 @@ export const FacultyLayout: React.FC = () => {
   const getPageTitle = () => {
     switch (activeNavPath) {
       case '/faculty/profile':
-        return 'Faculty Profile & Settings';
+        return 'Faculty Profile & Security Settings';
+      case '/faculty/all-subject-attendance':
+        return 'All Subject Attendance';
       case '/faculty/student-attendance':
         return 'Student Attendance';
       case '/faculty/attendance':
@@ -149,6 +154,12 @@ export const FacultyLayout: React.FC = () => {
   };
 
   const getPageSubtitle = () => {
+    if (activeNavPath === '/faculty/profile') {
+      return 'Manage your official profile photo, personal information, and portal security credentials';
+    }
+    if (activeNavPath === '/faculty/all-subject-attendance') {
+      return 'Live Consolidated Semester Attendance Register (Read Only)';
+    }
     return 'Teaching, attendance, marks & academic performance';
   };
 
@@ -257,7 +268,15 @@ export const FacultyLayout: React.FC = () => {
           <div className="rounded-xl p-2.5 border text-[10px] space-y-1 bg-neutral-50/50 dark:bg-neutral-800/25 border-neutral-200/50 dark:border-neutral-800/55">
             <div className="flex justify-between items-center">
               <span className="text-neutral-400 font-medium">Role</span>
-              <span className="font-extrabold text-neutral-800 dark:text-neutral-200">FACULTY</span>
+              <span className="font-extrabold text-neutral-800 dark:text-neutral-200">
+                {user?.role === 'HOD'
+                  ? 'HOD (Faculty View)'
+                  : user?.role === 'DEAN'
+                  ? 'Dean (Faculty View)'
+                  : user?.role === 'PRINCIPAL'
+                  ? 'Principal (Faculty View)'
+                  : 'FACULTY'}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-neutral-400 font-medium">Department</span>
@@ -342,8 +361,8 @@ export const FacultyLayout: React.FC = () => {
               {profileMenuOpen && (
                 <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white dark:bg-neutral-900 shadow-xl border border-neutral-200/80 dark:border-neutral-800 p-2 z-50 animate-in fade-in duration-150">
                   <div className="px-3 py-2.5 border-b border-neutral-100 dark:border-neutral-800">
-                    <p className="text-xs font-bold text-neutral-900 dark:text-white truncate">{facultyName}</p>
-                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate font-mono">{employeeId}</p>
+                    <p className="text-xs font-bold text-neutral-900 dark:text-white truncate">{user?.name || facultyName}</p>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">{user?.email || 'faculty@college.com'}</p>
                     <div className="mt-1 flex items-center gap-1.5">
                       <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300">
                         {deptCode} Dept
@@ -361,7 +380,7 @@ export const FacultyLayout: React.FC = () => {
                       className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                     >
                       <User className="w-3.5 h-3.5 text-neutral-500" />
-                      <span>My Profile & Settings</span>
+                      <span>My Profile</span>
                     </Link>
                   </div>
 

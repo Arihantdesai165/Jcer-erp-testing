@@ -72,12 +72,9 @@ router.get('/faculty-authorizations/notification-count', deanController.getFacul
 router.get('/faculty/authorizations/:id', deanController.getFacultyAuthorizationById as any);
 router.post('/faculty/authorizations/:id/approve', deanController.approveFacultyAuthorization as any);
 
-// ─── HOD Subject Handling Requests ───────────────────────────────────────────
-router.get('/hod-subject-requests', deanController.getHodSubjectRequests as any);
-router.get('/hod-subject-requests/count', deanController.getHodSubjectRequestCount as any);
-router.get('/hod-subject-requests/:id', deanController.getHodSubjectRequestById as any);
-router.post('/hod-subject-requests/:id/approve', deanController.approveHodSubjectRequest as any);
-router.post('/hod-subject-requests/:id/reject', deanController.rejectHodSubjectRequest as any);
+// ─── Dean Teaching Profile ───────────────────────────────────────────────────
+router.get('/teaching-profile', deanController.getDeanTeachingProfile as any);
+router.put('/teaching-profile', deanController.updateDeanTeachingProfile as any);
 
 export default router;
 

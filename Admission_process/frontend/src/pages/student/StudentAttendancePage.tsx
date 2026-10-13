@@ -3,6 +3,7 @@ import studentService, {
   StudentSubjectAttendance,
   StudentAttendanceSessionRecord,
 } from '../../services/student.service';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import {
   CalendarCheck,
   Filter,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 
 export const StudentAttendancePage: React.FC = () => {
+  const { academicYear } = useAcademicYear();
   const [summary, setSummary] = useState<{
     totalClasses: number;
     attendedClasses: number;
@@ -40,9 +42,10 @@ export const StudentAttendancePage: React.FC = () => {
       setError(null);
 
       const [summaryRes, historyRes] = await Promise.all([
-        studentService.getAttendanceSummary(),
+        studentService.getAttendanceSummary({ academicYear }),
         studentService.getAttendanceHistory({
           subjectId: selectedSubject !== 'ALL' ? selectedSubject : undefined,
+          academicYear,
         }),
       ]);
 
@@ -58,7 +61,7 @@ export const StudentAttendancePage: React.FC = () => {
 
   useEffect(() => {
     fetchAttendance();
-  }, [selectedSubject]);
+  }, [selectedSubject, academicYear]);
 
   const filteredHistory = history.filter((item) => {
     if (statusFilter !== 'ALL' && item.status !== statusFilter) return false;

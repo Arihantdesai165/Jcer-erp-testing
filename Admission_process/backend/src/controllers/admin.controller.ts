@@ -11,6 +11,9 @@ import Admission from '../models/Admission';
 import AdmissionPersonalDetail from '../models/AdmissionPersonalDetail';
 import AuditLog from '../models/AuditLog';
 import SystemConfiguration from '../models/SystemConfiguration';
+import AcademicYear from '../models/AcademicYear';
+import { normalizeAcademicYear, areAcademicYearsEqual, getAcademicYearVariants } from '../utils/academicYear.util';
+import { ensureSemestersForAcademicYear } from './system.controller';
 import securityEvents from '../services/securityEvents.service';
 import db from '../config/database';
 import AnalyticsService from '../services/analytics.service';
@@ -23,10 +26,11 @@ interface AuthRequest extends Request {
 
 /** GET /api/admin/stats — dashboard stats */
 export const getStats = async (
-  _req: AuthRequest, res: Response, next: NextFunction
+  req: AuthRequest, res: Response, next: NextFunction
 ): Promise<any> => {
   try {
-    const stats = await admissionService.getDashboardStats();
+    const academicYear = req.query.academicYear as string;
+    const stats = await admissionService.getDashboardStats(academicYear);
     return res.json({ success: true, data: stats });
   } catch (err) {
     return next(err);
@@ -61,13 +65,20 @@ export const getUserStats = async (
 
 /** GET /api/admin/dashboard — Real-time dashboard full data */
 export const getDashboardData = async (
-  _req: AuthRequest, res: Response, next: NextFunction
+  req: AuthRequest, res: Response, next: NextFunction
 ): Promise<any> => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const activeThreshold = new Date(Date.now() - ACTIVE_USER_WINDOW_MINUTES * 60 * 1000);
+    const academicYear = req.query.academicYear as string;
+    const ayWhere: any = {};
+    if (academicYear && academicYear !== 'ALL') {
+      const canonical = normalizeAcademicYear(academicYear);
+      const variants = [canonical, ...getAcademicYearVariants(canonical), academicYear];
+      ayWhere.academicYear = { [Op.in]: variants };
+    }
 
     const transaction = await db.transaction({ readOnly: true });
     try {
@@ -86,10 +97,10 @@ export const getDashboardData = async (
       ] = await Promise.all([
         User.count({ transaction }).catch(e => { console.error('Error counting total users:', e); return 0; }),
         User.count({ where: { lastActivityAt: { [Op.gte]: activeThreshold } }, transaction }).catch(e => { console.error('Error counting active users:', e); return 0; }),
-        Admission.count({ where: { applicationStatus: { [Op.in]: ['SUBMITTED', 'UNDER_REVIEW'] } }, transaction }).catch(e => { console.error('Error counting pending admissions:', e); return 0; }),
+        Admission.count({ where: { applicationStatus: { [Op.in]: ['SUBMITTED', 'UNDER_REVIEW'] }, ...ayWhere }, transaction }).catch(e => { console.error('Error counting pending admissions:', e); return 0; }),
         AuditLog.count({ where: { action: 'LOGIN_FAILED', createdAt: { [Op.gte]: today } }, transaction }).catch(e => { console.error('Error counting alerts today:', e); return 0; }),
         User.count({ where: { role: 'STUDENT' }, transaction }).catch(e => { console.error('Error counting students:', e); return 0; }),
-        Admission.count({ where: { applicationStatus: 'ENROLLED' }, transaction }).catch(e => { console.error('Error counting enrolled students:', e); return 0; }),
+        Admission.count({ where: { applicationStatus: 'ENROLLED', ...ayWhere }, transaction }).catch(e => { console.error('Error counting enrolled students:', e); return 0; }),
         User.count({ where: { role: 'TEACHER' }, transaction }).catch(e => { console.error('Error counting teachers:', e); return 0; }),
         User.count({ where: { role: 'HOD' }, transaction }).catch(e => { console.error('Error counting HODs:', e); return 0; }),
         User.count({ where: { role: { [Op.in]: ['SUPER_ADMIN', 'ADMIN'] } }, transaction }).catch(e => { console.error('Error counting principals:', e); return 0; }),
@@ -490,8 +501,74 @@ export const updateSettings = async (
       config.provisionalAdmission7Open = req.body.provisionalAdmission7Open;
     }
 
+    let canonicalYear: string | undefined;
     if (req.body.admissionCycle || req.body.academicYear) {
-      config.admissionCycle = req.body.admissionCycle || req.body.academicYear;
+      const rawYear = req.body.admissionCycle || req.body.academicYear;
+      canonicalYear = normalizeAcademicYear(rawYear) || String(rawYear).trim();
+
+      const startYearNum = parseInt(canonicalYear.split('-')[0], 10);
+      if (canonicalYear === '2025-26' || (!isNaN(startYearNum) && startYearNum < 2026)) {
+        return res.status(400).json({
+          success: false,
+          error: `Academic year "${canonicalYear}" cannot be activated. The ERP operational starting year is 2026-27.`,
+        });
+      }
+
+      config.admissionCycle = canonicalYear;
+
+      // Transactionally update AcademicYear model table as single authoritative source of truth
+      await db.transaction(async (t) => {
+        const allYears = await AcademicYear.findAll({ transaction: t });
+        const currentYearStart = parseInt(canonicalYear!.split('-')[0], 10);
+
+        for (const y of allYears) {
+          if (!areAcademicYearsEqual(y.year, canonicalYear!)) {
+            const yStart = parseInt(y.year.split('-')[0], 10);
+            const nextStatus = isNaN(yStart) || yStart < currentYearStart ? 'ARCHIVED' : 'UPCOMING';
+            await y.update({ isCurrent: false, status: nextStatus }, { transaction: t });
+          }
+        }
+
+        // Find or create the canonical academic year record
+        const existingAy = await AcademicYear.findOne({
+          where: { year: canonicalYear },
+          transaction: t,
+        });
+
+        if (existingAy) {
+          if (existingAy.isOperational === false) {
+            throw new Error(`Academic year ${canonicalYear} is not an operational academic year.`);
+          }
+          await existingAy.update(
+            { isCurrent: true, status: 'ACTIVE' },
+            { transaction: t }
+          );
+        } else {
+          const startYearMatch = canonicalYear!.match(/^(\d{4})/);
+          const startY = startYearMatch ? parseInt(startYearMatch[1], 10) : new Date().getFullYear();
+          await AcademicYear.create(
+            {
+              year: canonicalYear!,
+              startDate: new Date(`${startY}-07-01`),
+              endDate: new Date(`${startY + 1}-06-30`),
+              status: 'ACTIVE',
+              isCurrent: true,
+              isOperational: true,
+            },
+            { transaction: t }
+          );
+        }
+
+        // Ensure Semesters 1 through 8 exist for target year
+        await ensureSemestersForAcademicYear(canonicalYear!, t);
+      });
+
+      // Audit log the academic year change
+      await AuditLog.create({
+        userId: req.user?.id || null,
+        action: 'UPDATE_SYSTEM_SETTINGS',
+        details: `Active academic year updated to ${canonicalYear}`,
+      }).catch(err => console.warn('Could not write audit log for AY change:', err));
     }
 
     if (req.body.copyrightYear) {
@@ -507,7 +584,9 @@ export const updateSettings = async (
     return res.json({
       success: true,
       message: `System settings updated successfully.`,
-      data: config
+      data: config,
+      currentYear: canonicalYear || config.admissionCycle,
+      activeAcademicYear: canonicalYear || config.admissionCycle,
     });
   } catch (err) {
     return next(err);

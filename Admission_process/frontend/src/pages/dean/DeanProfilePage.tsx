@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import API from '../../services/api';
 import UpdateEmailModal from '../../components/profile/UpdateEmailModal';
+import TeachingProfileCard from '../../components/profile/TeachingProfileCard';
 
 export const DeanProfilePage: React.FC = () => {
   const dispatch = useDispatch();
@@ -488,6 +489,9 @@ export const DeanProfilePage: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Teaching Profile & Capabilities */}
+      <TeachingProfileCard role="DEAN" />
 
       <UpdateEmailModal
         isOpen={isEmailModalOpen}

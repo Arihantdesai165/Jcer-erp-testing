@@ -1572,6 +1572,10 @@ async function startServer() {
       console.log('[API CHECK] HOD Metadata ........... OK');
       console.log('[API CHECK] Subjects ............... OK');
       console.log('[API CHECK] Section Allocation ..... OK');
+
+      // Idempotent migration: Ensure isOperational column exists and 2025-26 is marked non-operational
+      await sequelize.query('ALTER TABLE academic_years ADD COLUMN IF NOT EXISTS "isOperational" BOOLEAN NOT NULL DEFAULT true;');
+      await sequelize.query("UPDATE academic_years SET \"isOperational\" = false WHERE year = '2025-26';");
     } catch (dbErr: any) {
       console.error('❌ DATABASE CONNECTION FAILED:', dbErr.message);
       process.exit(1);

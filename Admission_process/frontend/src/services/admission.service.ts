@@ -424,13 +424,18 @@ const admissionService = {
   },
 
   /** GET /api/admin/usn/summary */
-  async getUsnSummary(): Promise<{
+  async getUsnSummary(params?: {
+    academicYear?: string;
+    branchId?: string;
+    semester?: string;
+    entryType?: string;
+  }): Promise<{
     totalEligible: number;
     assigned: number;
     pending: number;
     completionRate: number;
   }> {
-    const res = await API.get('/admin/usn/summary');
+    const res = await API.get('/admin/usn/summary', { params });
     return res.data.data;
   },
 

@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import ExcelJS from 'exceljs';
+import { embedOfficialCollegeBanner } from '../utils/excelBranding.util';
 import FacultyAssignment from '../models/FacultyAssignment';
 import Subject from '../models/Subject';
 import Department from '../models/Department';
@@ -252,20 +253,23 @@ export const attendanceExcelService = {
     // Set Print Title Row (Header repeats when printed)
     ws.pageSetup.printTitlesRow = '8:8';
 
-    // Title Block
-    ws.mergeCells('A1:G1');
-    const titleCell = ws.getCell('A1');
-    titleCell.value = 'JAIN COLLEGE OF ENGINEERING AND RESEARCH, BELAGAVI';
-    titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FF0F172A' } };
-    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(1).height = 24;
+    // Institutional Official Banner (Rows 1 - 2)
+    const totalCols = Math.max(7 + sessionList.length, 7);
+    ws.getRow(1).height = 38;
+    ws.getRow(2).height = 38;
+    embedOfficialCollegeBanner(workbook, ws, {
+      totalCols,
+      startCol: 1,
+      startRow: 0.10,
+    });
 
-    ws.mergeCells('A2:G2');
-    const subTitleCell = ws.getCell('A2');
+    // Report Title (Row 3, below banner)
+    ws.mergeCells(3, 1, 3, Math.min(totalCols, 7));
+    const subTitleCell = ws.getCell(3, 1);
     subTitleCell.value = 'CLASS-WISE ATTENDANCE REGISTER';
     subTitleCell.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FF1E40AF' } };
     subTitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(2).height = 20;
+    ws.getRow(3).height = 22;
 
     // Academic Metadata Block (Rows 4 - 6)
     ws.getCell('A4').value = 'Subject:';
@@ -470,15 +474,21 @@ export const attendanceExcelService = {
       },
     });
 
-    wsSummary.mergeCells('A1:G1');
-    wsSummary.getCell('A1').value = 'JAIN COLLEGE OF ENGINEERING AND RESEARCH, BELAGAVI';
-    wsSummary.getCell('A1').font = { name: 'Calibri', size: 14, bold: true };
-    wsSummary.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+    // Institutional Official Banner (Rows 1 - 2)
+    wsSummary.getRow(1).height = 36;
+    wsSummary.getRow(2).height = 36;
+    embedOfficialCollegeBanner(workbook, wsSummary, {
+      totalCols: 7,
+      startCol: 1,
+      startRow: 0.10,
+    });
 
-    wsSummary.mergeCells('A2:G2');
-    wsSummary.getCell('A2').value = 'ATTENDANCE SUMMARY & DEFAULTER ANALYSIS';
-    wsSummary.getCell('A2').font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FF1E40AF' } };
-    wsSummary.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
+    // Report Title (Row 3, below banner)
+    wsSummary.mergeCells('A3:G3');
+    wsSummary.getCell('A3').value = 'ATTENDANCE SUMMARY & DEFAULTER ANALYSIS';
+    wsSummary.getCell('A3').font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FF1E40AF' } };
+    wsSummary.getCell('A3').alignment = { vertical: 'middle', horizontal: 'center' };
+    wsSummary.getRow(3).height = 22;
 
     // Metric Summary Table
     wsSummary.getCell('A4').value = 'Metric';

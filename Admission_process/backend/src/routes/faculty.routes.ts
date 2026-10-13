@@ -8,14 +8,18 @@ const router = express.Router();
 // Base middleware for all faculty routes
 const facultyAuthGuard = [
   authMiddleware as any,
-  authorizeRoles('TEACHER', 'FACULTY', 'HOD', 'ADMIN', 'SUPER_ADMIN') as any,
+  authorizeRoles('TEACHER', 'FACULTY', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN', 'SUPER_ADMIN') as any,
 ];
 
 // ── Faculty Dashboard & Overview ─────────────────────────────────────────────
 router.get('/dashboard', ...facultyAuthGuard, facultyController.getFacultyDashboard as any);
 router.get('/assignments', ...facultyAuthGuard, facultyController.getFacultyAssignments as any);
+router.get('/teaching-profile', ...facultyAuthGuard, facultyController.getFacultyTeachingProfile as any);
 
 // ── Faculty Attendance Workspace & Corrections ───────────────────────────────
+router.get('/all-subject-attendance/cohorts', ...facultyAuthGuard, facultyController.getFacultyAllSubjectAttendanceCohorts as any);
+router.get('/all-subject-attendance/register', ...facultyAuthGuard, facultyController.getFacultyAllSubjectAttendanceRegister as any);
+router.get('/all-subject-attendance/export', ...facultyAuthGuard, facultyController.exportFacultyAllSubjectAttendanceExcel as any);
 router.get('/attendance', ...facultyAuthGuard, facultyController.getFacultyAttendanceList as any);
 router.get('/attendance/students/search', ...facultyAuthGuard, facultyController.searchFacultyStudents as any);
 router.get('/attendance/students/:studentId', ...facultyAuthGuard, facultyController.getFacultyStudentAttendance as any);

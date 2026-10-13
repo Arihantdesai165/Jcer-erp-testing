@@ -198,15 +198,15 @@ export const studentService = {
   /**
    * Fetches the authenticated student's academic overview
    */
-  async getOverview(): Promise<StudentOverviewData> {
-    const res = await axios.get(`${API_BASE_URL}/student/overview`, getAuthHeaders());
+  async getOverview(params?: { academicYear?: string }): Promise<StudentOverviewData> {
+    const res = await axios.get(`${API_BASE_URL}/student/overview`, { ...getAuthHeaders(), params });
     return res.data.data;
   },
 
   /**
    * Fetches subject-wise and overall attendance summary
    */
-  async getAttendanceSummary(): Promise<{
+  async getAttendanceSummary(params?: { academicYear?: string }): Promise<{
     totalClasses: number;
     attendedClasses: number;
     absentClasses: number;
@@ -214,7 +214,10 @@ export const studentService = {
     overallPercentage: number;
     subjects: StudentSubjectAttendance[];
   }> {
-    const res = await axios.get(`${API_BASE_URL}/student/attendance/summary`, getAuthHeaders());
+    const res = await axios.get(`${API_BASE_URL}/student/attendance/summary`, {
+      ...getAuthHeaders(),
+      params,
+    });
     return res.data.data;
   },
 
@@ -225,6 +228,7 @@ export const studentService = {
     subjectId?: string;
     startDate?: string;
     endDate?: string;
+    academicYear?: string;
   }): Promise<StudentAttendanceHistoryData> {
     const res = await axios.get(`${API_BASE_URL}/student/attendance/history`, {
       ...getAuthHeaders(),

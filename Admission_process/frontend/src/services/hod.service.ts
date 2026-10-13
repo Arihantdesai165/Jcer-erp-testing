@@ -467,45 +467,10 @@ export interface HodTeachingAssignment {
   assignedAt: string;
 }
 
-export interface HodSubjectHandlingRequestItem {
-  id: string;
-  hodUserId: string;
-  departmentId: string;
-  departmentName?: string;
-  departmentCode?: string;
-  semester: number;
-  subjectId: string;
-  subjectName: string;
-  subjectCode: string;
-  academicYear: string;
-  reason?: string | null;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  rejectionReason?: string | null;
-  reviewedBy?: string | null;
-  reviewerName?: string | null;
-  reviewedAt?: string | null;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-export interface HodAvailableSubject {
-  id: string;
-  name: string;
-  code: string;
-  semester: number;
-  credits: number;
-  type: string;
-  departmentId: string | null;
-  departmentName: string;
-  departmentCode: string;
-  isAlreadyAssigned: boolean;
-  hasPendingRequest: boolean;
-}
-
 export interface HodTeachingResponsibilitiesData {
   activeAssignments: HodTeachingAssignment[];
   totalSubjectsCount: number;
-  myRequests: HodSubjectHandlingRequestItem[];
+  myRequests?: any[];
   academicYear: string;
 }
 
@@ -1138,29 +1103,9 @@ export const hodService = {
     return res.data;
   },
 
-  // 9. Subject Handling Requests (Teaching Responsibilities)
+  // 9. Teaching Responsibilities
   getTeachingResponsibilities: async (): Promise<HodTeachingResponsibilitiesData> => {
     const res = await API.get('/hod/subject-handling/teaching-responsibilities');
-    return res.data.data;
-  },
-
-  getAvailableSubjectsForHandling: async (semester: number | string): Promise<HodAvailableSubject[]> => {
-    const res = await API.get('/hod/subject-handling/available-subjects', { params: { semester } });
-    return res.data.data;
-  },
-
-  submitSubjectHandlingRequest: async (data: {
-    semester: number;
-    subjectId: string;
-    academicYear?: string;
-    reason?: string;
-  }): Promise<{ success: boolean; message: string; data: HodSubjectHandlingRequestItem }> => {
-    const res = await API.post('/hod/subject-handling/requests', data);
-    return res.data;
-  },
-
-  getMySubjectHandlingRequests: async (): Promise<HodSubjectHandlingRequestItem[]> => {
-    const res = await API.get('/hod/subject-handling/requests');
     return res.data.data;
   },
 };

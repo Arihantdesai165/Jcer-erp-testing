@@ -120,7 +120,7 @@ export const CreateHodPage: React.FC = () => {
               <p className="font-bold text-neutral-900 dark:text-white">{createdResult.name}</p>
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase text-neutral-400">Department</span>
+              <span className="text-[10px] font-bold uppercase text-neutral-400">Core Department</span>
               <p className="font-bold text-neutral-900 dark:text-white">{createdResult.department}</p>
             </div>
             <div>
@@ -254,7 +254,7 @@ export const CreateHodPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                    Appointed Department *
+                    Core Department *
                   </label>
                   <select
                     value={departmentId}
@@ -268,6 +268,9 @@ export const CreateHodPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  <p className="text-[10px] text-neutral-400 mt-1">
+                    Official appointment department and core teaching department.
+                  </p>
                 </div>
 
                 <div>

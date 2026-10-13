@@ -11,6 +11,7 @@ import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 import { getAcademicYear } from '../../../utils/date.util';
+import { useAcademicYear } from '../../../context/AcademicYearContext';
 import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
 
 interface USNApplicant {
@@ -24,6 +25,11 @@ interface USNApplicant {
   entrySemester?: number;
   semester?: number;
   usn: string | null;
+  user?: {
+    student?: {
+      semester?: number;
+    };
+  } | null;
   branch: {
     id: string;
     name: string;
@@ -43,7 +49,7 @@ const getFullName = (details: any) => {
 };
 
 const getSemesterDisplay = (app: USNApplicant): string => {
-  const sem = app.entrySemester || (app.qualification === 'DIPLOMA' || app.admissionType === 'DCET' || app.applicationType === 'LATERAL_ENTRY' ? 3 : 1);
+  const sem = app.user?.student?.semester || app.entrySemester || (app.qualification === 'DIPLOMA' || app.admissionType === 'DCET' || app.applicationType === 'LATERAL_ENTRY' ? 3 : 1);
   return `${sem}${sem === 1 ? 'st' : sem === 2 ? 'nd' : sem === 3 ? 'rd' : 'th'} Sem`;
 };
 
@@ -66,7 +72,17 @@ export const AdminUsnAllocationPage: React.FC = () => {
   const [totalRecords, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
-  const [academicYear, setAcademicYear] = useState(getAcademicYear());
+  const { academicYear: contextAcademicYear, academicYears: availableAcademicYears } = useAcademicYear();
+
+  const [academicYear, setAcademicYear] = useState<string>(contextAcademicYear || '2027-28');
+
+  // Synchronize when centralized academic year context loads
+  useEffect(() => {
+    if (contextAcademicYear && (!academicYear || academicYear === '2026-2027' || academicYear === '2027-2028')) {
+      setAcademicYear(contextAcademicYear);
+    }
+  }, [contextAcademicYear]);
+
   const [branchId, setBranchId] = useState('ALL');
   const [semester, setSemester] = useState('ALL');
   const [entryType, setEntryType] = useState('ALL');
@@ -132,18 +148,23 @@ export const AdminUsnAllocationPage: React.FC = () => {
     fetchBranches();
   }, []);
 
-  // 3. Fetch Summary Metrics
-  const fetchSummary = async () => {
+  // 3. Fetch Summary Metrics (synchronized with academic year and filters)
+  const fetchSummary = useCallback(async () => {
     try {
       setLoadingSummary(true);
-      const data = await admissionService.getUsnSummary();
+      const data = await admissionService.getUsnSummary({
+        academicYear: academicYear !== 'ALL' ? academicYear : undefined,
+        branchId: branchId !== 'ALL' ? branchId : undefined,
+        semester: semester !== 'ALL' ? semester : undefined,
+        entryType: entryType !== 'ALL' ? entryType : undefined,
+      });
       setSummary(data);
     } catch (err) {
       console.error('Failed to fetch USN summary:', err);
     } finally {
       setLoadingSummary(false);
     }
-  };
+  }, [academicYear, branchId, semester, entryType]);
 
   // 4. Fetch Eligible Applicants
   const fetchApplicants = useCallback(async () => {
@@ -177,7 +198,7 @@ export const AdminUsnAllocationPage: React.FC = () => {
   useEffect(() => {
     fetchSummary();
     fetchApplicants();
-  }, [fetchApplicants]);
+  }, [fetchSummary, fetchApplicants]);
 
   // 5. Unsaved Changes Alert Protection
   useEffect(() => {
@@ -952,9 +973,12 @@ export const AdminUsnAllocationPage: React.FC = () => {
               onChange={(e) => handleFilterChange(setAcademicYear, e.target.value)}
               className="w-full text-xs font-semibold bg-neutral-50 dark:bg-neutral-955 border border-neutral-200/80 dark:border-neutral-800 rounded-xl px-3 py-2.5 outline-none focus:border-violet-500 transition-colors cursor-pointer"
             >
-              <option value="2026-2027">2026-2027</option>
-              <option value="2027-2028">2027-2028</option>
-              <option value="2028-2029">2028-2029</option>
+              <option value="ALL">All Operational Years</option>
+              {availableAcademicYears.map(opt => (
+                <option key={opt.id || opt.year} value={opt.year}>
+                  {opt.year} {opt.year === contextAcademicYear ? '(Current Active)' : ''}
+                </option>
+              ))}
             </select>
           </div>
 

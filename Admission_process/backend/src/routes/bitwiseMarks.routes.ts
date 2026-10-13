@@ -7,7 +7,7 @@ const router = express.Router();
 
 const facultyAuthGuard = [
   authMiddleware as any,
-  authorizeRoles('TEACHER', 'FACULTY', 'HOD', 'ADMIN', 'SUPER_ADMIN') as any,
+  authorizeRoles('TEACHER', 'FACULTY', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN', 'SUPER_ADMIN') as any,
 ];
 
 // ── 1. Semester & Subject Navigation ──────────────────────────────────────────

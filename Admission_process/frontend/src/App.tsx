@@ -30,6 +30,7 @@ import StudentProfilePage from './pages/student/StudentProfilePage';
 // ─── Faculty Pages ────────────────────────────────────────────────────────────
 import FacultyOverviewPage from './pages/faculty/FacultyOverviewPage';
 import FacultyAttendancePage from './pages/faculty/FacultyAttendancePage';
+import FacultyAllSubjectAttendancePage from './pages/faculty/FacultyAllSubjectAttendancePage';
 import FacultyStudentAttendancePage from './pages/faculty/FacultyStudentAttendancePage';
 import FacultyAnalyticsPage from './pages/faculty/FacultyAnalyticsPage';
 import FacultyProfilePage from './pages/faculty/FacultyProfilePage';
@@ -95,8 +96,6 @@ import HodBitwiseAnalysisPage from './pages/hod/HodBitwiseAnalysisPage';
 import HodStudentPerformancePage from './pages/hod/HodStudentPerformancePage';
 import HodReportsPage from './pages/hod/HodReportsPage';
 import HodSettingsPage from './pages/hod/HodSettingsPage';
-import HodAssessmentManagementPage from './pages/hod/HodAssessmentManagementPage';
-import HodAssessmentReviewPage from './pages/hod/HodAssessmentReviewPage';
 
 // ─── Admission Portal ─────────────────────────────────────────────────────────
 import { AuthProvider as AdmissionAuthProvider } from './pages/admission/src/context/AuthContext';
@@ -420,7 +419,6 @@ export const App: React.FC = () => (
               <Route path="faculty" element={<HodFacultyListPage />} />
               <Route path="faculty/create" element={<Navigate to="/hod/faculty" replace />} />
               <Route path="faculty/assignments" element={<HodFacultyAssignmentsPage />} />
-              <Route path="faculty/access" element={<HodFacultyAssignmentsPage />} />
               <Route path="faculty/authorizations" element={<HodFacultyListPage />} />
               <Route path="faculty/:id" element={<HodFacultyManagePage />} />
 
@@ -441,8 +439,6 @@ export const App: React.FC = () => (
               <Route path="academics/subjects" element={<HodAcademicsOverviewPage />} />
               <Route path="academics/bitwise" element={<HodBitwiseAnalysisPage />} />
               <Route path="academics/performance" element={<HodStudentPerformancePage />} />
-              <Route path="assessments" element={<HodAssessmentManagementPage />} />
-              <Route path="assessments/:id" element={<HodAssessmentReviewPage />} />
 
               {/* Reports & Settings */}
               <Route path="reports" element={<HodReportsPage />} />
@@ -456,6 +452,7 @@ export const App: React.FC = () => (
               <Route path="dashboard" element={<FacultyOverviewPage />} />
               <Route path="overview" element={<FacultyOverviewPage />} />
               <Route path="attendance" element={<FacultyAttendancePage />} />
+              <Route path="all-subject-attendance" element={<FacultyAllSubjectAttendancePage />} />
               <Route path="student-attendance" element={<FacultyStudentAttendancePage />} />
               <Route path="analytics" element={<FacultyAnalyticsPage />} />
               <Route path="profile" element={<FacultyProfilePage />} />

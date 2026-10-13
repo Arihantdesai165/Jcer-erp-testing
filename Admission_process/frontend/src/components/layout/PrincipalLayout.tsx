@@ -33,6 +33,7 @@ import usePwa from '../../hooks/usePwa';
 import PwaConfirmationModal from '../common/PwaConfirmationModal';
 import { filterMenuItems } from '../../utils/feature.util';
 import AcademicYearSelector from '../common/AcademicYearSelector';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 interface MenuItem {
   name: string;
@@ -282,6 +283,8 @@ export const PrincipalLayout: React.FC = () => {
               <span className="font-extrabold text-neutral-805 dark:text-neutral-200">{academicYear || getAcademicYear()}</span>
             </div>
           </div>
+
+          <WorkspaceSwitcher currentWorkspace="principal" />
 
           <div className="flex flex-col gap-1.5">
             {pendingCount > 0 && (

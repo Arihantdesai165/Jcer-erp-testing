@@ -171,6 +171,47 @@ const principalService = {
     const res = await API.get('/principal/faculty', { params });
     return res.data.data;
   },
+
+  // Teaching Profile
+  getTeachingProfile: async (): Promise<TeachingProfileData> => {
+    const res = await API.get('/principal/teaching-profile');
+    return res.data.data;
+  },
+
+  updateTeachingProfile: async (data: { coreDepartmentId: string }): Promise<any> => {
+    const res = await API.put('/principal/teaching-profile', data);
+    return res.data;
+  },
 };
+
+export interface TeachingProfileAssignment {
+  id: string;
+  subjectName?: string;
+  subjectCode?: string;
+  semester?: number;
+  academicYear?: string;
+  section?: string;
+  assignedAt?: string;
+  teachingDepartment?: {
+    name: string;
+    code: string;
+  } | null;
+}
+
+export interface TeachingProfileData {
+  userId: string;
+  role: string;
+  fullName: string;
+  email: string;
+  coreDepartmentId: string | null;
+  coreDepartment: {
+    id: string;
+    name: string;
+    code: string;
+  } | null;
+  isTeachingEligible: boolean;
+  teacherStatus: string | null;
+  activeAssignments: TeachingProfileAssignment[];
+}
 
 export default principalService;

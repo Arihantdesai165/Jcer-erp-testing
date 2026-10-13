@@ -4,8 +4,8 @@ import Department from '../models/Department';
 import Subject from '../models/Subject';
 import { Student } from '../models/Student';
 import { AssessmentConfiguration } from '../models/AssessmentConfiguration';
-import { StudentAssessmentSummary } from '../models/StudentAssessmentSummary';
-import { AssessmentReviewHistory } from '../models/AssessmentReviewHistory';
+import StudentAssessmentSummary from '../models/StudentAssessmentSummary';
+import AssessmentReviewHistory from '../models/AssessmentReviewHistory';
 import assessmentWorkflowService from '../services/assessmentWorkflow.service';
 import studentDashboardService from '../services/studentDashboard.service';
 

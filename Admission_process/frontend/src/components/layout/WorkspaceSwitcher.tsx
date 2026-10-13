@@ -12,7 +12,7 @@ import {
   Check,
 } from 'lucide-react';
 
-export type WorkspaceType = 'hod' | 'faculty';
+export type WorkspaceType = 'hod' | 'faculty' | 'dean' | 'principal';
 
 interface WorkspaceOption {
   id: WorkspaceType;
@@ -56,7 +56,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ currentWor
         setLoading(true);
         const res = await authService.getUserWorkspaces();
         if (isMounted && res?.workspaces) {
-          setWorkspaces(res.workspaces.filter((w: WorkspaceItem) => ['HOD', 'FACULTY'].includes(w.type.toUpperCase())));
+          setWorkspaces(res.workspaces.filter((w: WorkspaceItem) => ['HOD', 'FACULTY', 'DEAN', 'PRINCIPAL'].includes(w.type.toUpperCase())));
         }
       } catch (err) {
         console.warn('Failed to load user workspaces capability:', err);
@@ -66,7 +66,13 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ currentWor
           if (user?.role === 'HOD' || user?.isHod) {
             list.push({ type: 'HOD', label: 'Head of Department', route: '/hod/dashboard' });
           }
-          if (user?.role === 'TEACHER' || user?.role === 'FACULTY' || user?.isFaculty || user?.role === 'HOD') {
+          if (user?.role === 'DEAN') {
+            list.push({ type: 'DEAN', label: 'Dean Academics', route: '/dean/dashboard' });
+          }
+          if (user?.role === 'PRINCIPAL') {
+            list.push({ type: 'PRINCIPAL', label: 'Principal Portal', route: '/principal/dashboard' });
+          }
+          if (user?.role === 'TEACHER' || user?.role === 'FACULTY' || user?.isFaculty || user?.role === 'HOD' || user?.role === 'DEAN' || user?.role === 'PRINCIPAL') {
             list.push({ type: 'FACULTY', label: 'Faculty Dashboard', route: '/faculty/dashboard' });
           }
           setWorkspaces(list);
@@ -108,6 +114,24 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ currentWor
         colorClass: 'text-cyan-500 dark:text-cyan-400',
       };
     }
+    if (t === 'DEAN') {
+      return {
+        id: 'dean',
+        name: 'Dean Academics',
+        path: ws.route || '/dean/dashboard',
+        icon: Building2,
+        colorClass: 'text-blue-500 dark:text-blue-400',
+      };
+    }
+    if (t === 'PRINCIPAL') {
+      return {
+        id: 'principal',
+        name: 'Principal Portal',
+        path: ws.route || '/principal/dashboard',
+        icon: Building2,
+        colorClass: 'text-purple-500 dark:text-purple-400',
+      };
+    }
     return {
       id: 'faculty',
       name: 'Faculty Dashboard',
@@ -118,10 +142,10 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ currentWor
   };
 
   const availableWorkspaces = workspaces
-    .filter((w) => w.type.toUpperCase() === 'HOD' || w.type.toUpperCase() === 'FACULTY')
+    .filter((w) => ['HOD', 'FACULTY', 'DEAN', 'PRINCIPAL'].includes(w.type.toUpperCase()))
     .map(getWorkspaceDetails);
 
-  if (availableWorkspaces.length <= 1) {
+  if (availableWorkspaces.length === 0) {
     return null;
   }
 

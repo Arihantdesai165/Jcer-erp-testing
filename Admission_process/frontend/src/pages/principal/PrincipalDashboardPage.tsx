@@ -17,11 +17,12 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import admissionService, { AdmissionApplication } from '../../services/admission.service';
-import { getAcademicYear } from '../../utils/date.util';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { toast } from 'react-toastify';
 
 export const PrincipalDashboardPage: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
+  const { academicYear } = useAcademicYear();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -51,6 +52,7 @@ export const PrincipalDashboardPage: React.FC = () => {
       // Fetch pending applications awaiting Principal approval (status: APPROVED)
       const pendingRes = await admissionService.listApplications({
         status: 'APPROVED',
+        academicYear,
         limit: 5,
         sortBy: 'updatedAt',
         sortOrder: 'DESC'
@@ -59,6 +61,7 @@ export const PrincipalDashboardPage: React.FC = () => {
       // Fetch enrolled/approved applications
       const enrolledRes = await admissionService.listApplications({
         status: 'ENROLLED',
+        academicYear,
         limit: 10,
         sortBy: 'updatedAt',
         sortOrder: 'DESC'
@@ -67,6 +70,7 @@ export const PrincipalDashboardPage: React.FC = () => {
       // Fetch rejected applications
       const rejectedRes = await admissionService.listApplications({
         status: 'REJECTED',
+        academicYear,
         limit: 5,
         sortBy: 'updatedAt',
         sortOrder: 'DESC'
@@ -75,12 +79,14 @@ export const PrincipalDashboardPage: React.FC = () => {
       // Fetch cancellation requested
       const cancelReqRes = await admissionService.listApplications({
         status: 'CANCELLATION_REQUESTED',
+        academicYear,
         limit: 5
       });
 
       // Fetch cancelled
       const cancelledRes = await admissionService.listApplications({
         status: 'CANCELLED',
+        academicYear,
         limit: 5
       });
 
@@ -164,7 +170,7 @@ export const PrincipalDashboardPage: React.FC = () => {
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [academicYear]);
 
   if (loading) {
     return (
@@ -264,7 +270,7 @@ export const PrincipalDashboardPage: React.FC = () => {
               Welcome back, {user?.name || 'Principal'}
             </h1>
             <p className="text-slate-300 text-sm max-w-xl leading-relaxed font-medium">
-              Review verified admission files, sign off confirmed applications, and audit enrollment operations for Session {getAcademicYear()}.
+              Review verified admission files, sign off confirmed applications, and audit enrollment operations for Session {academicYear}.
             </p>
           </div>
 

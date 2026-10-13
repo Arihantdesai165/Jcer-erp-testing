@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { ShowStudentsRangeSelector } from '../../components/common/ShowStudentsRangeSelector';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 interface PrincipalAdmissionQueuePageProps {
   defaultStatus?: string;
@@ -33,6 +34,7 @@ interface BulkConfirmSummary {
 
 export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePageProps> = ({ defaultStatus = 'APPROVED' }) => {
   const navigate = useNavigate();
+  const { academicYears: availableAcademicYears } = useAcademicYear();
 
   const getRouteForStatus = (tabStatus: string) => {
     switch (tabStatus) {
@@ -459,11 +461,9 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
             className="bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
           >
             <option value="ALL">All Academic Years</option>
-            {Array.from({ length: 5 }).map((_, i) => {
-              const y = new Date().getFullYear() + i;
-              const opt = `${y}-${y + 1}`;
-              return <option key={opt} value={opt}>{opt}</option>;
-            })}
+            {availableAcademicYears.map((ay) => (
+              <option key={ay.id || ay.year} value={ay.year}>{ay.year}</option>
+            ))}
           </select>
 
           {(branchId !== 'ALL' || admissionType !== 'ALL' || qualification !== 'ALL' || academicYear !== 'ALL' || search) && (

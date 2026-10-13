@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   Users,
   UserPlus,
-  KeyRound,
   BookOpen,
   ClipboardList,
   Layers,
@@ -32,7 +31,6 @@ import {
   CheckCircle2,
   Lock,
   UserCheck,
-  FileCheck,
 } from 'lucide-react';
 import hodService, { HodDashboardData } from '../../services/hod.service';
 import usePwa from '../../hooks/usePwa';
@@ -173,7 +171,6 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Faculty List', path: '/hod/faculty', icon: Users },
         { name: 'Teaching Allocation', path: '/hod/faculty/assignments', icon: ClipboardList },
-        { name: 'Faculty Access', path: '/hod/faculty/access', icon: KeyRound, badge: pendingActions > 0 ? pendingActions : undefined },
       ],
     },
     {
@@ -188,7 +185,6 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Attendance', path: '/hod/attendance', icon: CalendarCheck },
         { name: 'Attendance Defaulters', path: '/hod/attendance/defaulters', icon: AlertTriangle, badge: defaultersCount > 0 ? defaultersCount : undefined },
-        { name: 'Examination & Assessments', path: '/hod/assessments', icon: FileCheck },
         { name: 'Marks / IA', path: '/hod/academics/performance', icon: TrendingUp },
         { name: 'Bit-Wise Marks', path: '/hod/academics/bitwise', icon: BarChart3 },
       ],
@@ -202,8 +198,7 @@ export const HodLayout: React.FC = () => {
     {
       title: 'SETTINGS',
       items: [
-        { name: 'Settings', path: '/hod/settings', icon: Settings },
-        { name: 'My Profile', path: '/hod/profile', icon: User },
+        { name: 'My Profile & Settings', path: '/hod/settings', icon: Settings },
       ],
     },
   ];
@@ -229,7 +224,6 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Faculty List', path: '/hod/faculty', icon: Users },
         { name: 'Teaching Allocation', path: '/hod/faculty/assignments', icon: ClipboardList },
-        { name: 'Faculty Access', path: '/hod/faculty/access', icon: KeyRound, badge: pendingActions > 0 ? pendingActions : undefined },
       ],
     },
     {
@@ -237,15 +231,13 @@ export const HodLayout: React.FC = () => {
       items: [
         { name: 'Subjects', path: '/hod/subjects', icon: BookOpen },
         { name: 'Attendance', path: '/hod/attendance', icon: CalendarCheck },
-        { name: 'Examination & Assessments', path: '/hod/assessments', icon: FileCheck },
         { name: 'Analytics', path: '/hod/academics', icon: BarChart3 },
       ],
     },
     {
       title: 'SETTINGS',
       items: [
-        { name: 'Settings', path: '/hod/settings', icon: Settings },
-        { name: 'My Profile', path: '/hod/profile', icon: User },
+        { name: 'My Profile & Settings', path: '/hod/settings', icon: Settings },
       ],
     },
   ];
@@ -265,17 +257,15 @@ export const HodLayout: React.FC = () => {
     '/hod/students/sections': 'Section Allocation',
     '/hod/faculty': 'Faculty Management',
     '/hod/faculty/assignments': 'Teaching Allocation',
-    '/hod/faculty/access': 'Faculty Access Control',
     '/hod/subjects': 'Department Subjects Directory',
     '/hod/attendance': 'Department Attendance Overview',
     '/hod/attendance/defaulters': 'Attendance Defaulters List',
-    '/hod/assessments': 'Examination & Assessment Management',
     '/hod/academics': 'Academic Performance Overview',
     '/hod/academics/bitwise': 'Bit-Wise Component Analysis',
     '/hod/academics/performance': 'Student Academic Performance',
     '/hod/reports': 'Department Reports Generator',
-    '/hod/settings': 'Department Settings',
-    '/hod/profile': 'HOD Profile',
+    '/hod/settings': 'My Profile & Settings',
+    '/hod/profile': 'My Profile & Settings',
   };
 
   const getPageTitle = () => {
@@ -292,7 +282,7 @@ export const HodLayout: React.FC = () => {
     if (location.pathname.startsWith('/hod/students/') && !['/hod/students/semesters', '/hod/students/sections'].includes(location.pathname)) {
       return 'Student Academic Details';
     }
-    if (location.pathname.startsWith('/hod/faculty/') && !['/hod/faculty/create', '/hod/faculty/assignments', '/hod/faculty/access'].includes(location.pathname)) {
+    if (location.pathname.startsWith('/hod/faculty/') && !['/hod/faculty/create', '/hod/faculty/assignments'].includes(location.pathname)) {
       return 'Faculty Member Profile & Permissions';
     }
     return pageTitles[location.pathname] || 'HOD Portal';

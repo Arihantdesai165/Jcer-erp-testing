@@ -29,23 +29,14 @@ async function runExcelExportVerification() {
     let targetAssignmentId: string | null = null;
     let targetFacultyUserId: string | null = null;
 
-    if (sessions.length > 0) {
-      targetAssignmentId = sessions[0].facultyAssignmentId;
-      const assignment = await FacultyAssignment.findByPk(targetAssignmentId);
-      if (assignment) {
-        targetFacultyUserId = assignment.userId;
-      }
+    const activeAssignment = await FacultyAssignment.findOne({
+      where: { status: 'ACTIVE', semester: 1 },
+    });
+    if (!activeAssignment) {
+      throw new Error('No active FacultyAssignment found in database!');
     }
-
-    if (!targetAssignmentId || !targetFacultyUserId) {
-      // Find any active assignment
-      const anyAssignment = await FacultyAssignment.findOne();
-      if (!anyAssignment) {
-        throw new Error('No FacultyAssignment found in database!');
-      }
-      targetAssignmentId = anyAssignment.id;
-      targetFacultyUserId = anyAssignment.userId;
-    }
+    targetAssignmentId = activeAssignment.id;
+    targetFacultyUserId = activeAssignment.userId;
 
     console.log(`Selected Target Assignment ID: ${targetAssignmentId}, Faculty User ID: ${targetFacultyUserId}`);
 
@@ -95,12 +86,16 @@ async function runExcelExportVerification() {
     }
 
     // 4. Verify Academic Metadata Block in Sheet 1
-    const collegeCell = regSheet.getCell('A1').value;
-    const titleCell = regSheet.getCell('A2').value;
-    console.log(`\nCollege Header (A1): "${collegeCell}"`);
-    console.log(`Title Header (A2): "${titleCell}"`);
+    const images = regSheet.getImages() || [];
+    console.log(`\nSheet 1 Embedded Images Count: ${images.length}`);
+    if (images.length === 0) {
+      throw new Error('FAILED: Expected official college banner image on Sheet 1, got 0 images');
+    }
+
+    const titleCell = regSheet.getCell('A3').value || regSheet.getCell('A2').value;
+    console.log(`Title Header (Row 3): "${titleCell}"`);
     if (typeof titleCell !== 'string' || !titleCell.includes('ATTENDANCE REGISTER')) {
-      throw new Error(`FAILED: Title in A2 is not ATTENDANCE REGISTER (got: ${titleCell})`);
+      throw new Error(`FAILED: Title in A3 is not ATTENDANCE REGISTER (got: ${titleCell})`);
     }
 
     // Print Header Info Rows (Row 3-6)

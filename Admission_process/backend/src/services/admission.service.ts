@@ -15,12 +15,14 @@ import UsnRegistry from '../models/UsnRegistry';
 import RejectionReason from '../models/RejectionReason';
 import SystemConfiguration from '../models/SystemConfiguration';
 import AdmissionSequence from '../models/AdmissionSequence';
+import AcademicYear from '../models/AcademicYear';
 import ProvisionalAdmission from '../models/ProvisionalAdmission';
 import db from '../config/database';
 import { ForbiddenException } from '../utils/error.util';
 import redisService from './redis.service';
 import emailService from './email.service';
 import { calculateStudentCohort, formatBatchCohort } from '../utils/batchCohort.util';
+import { normalizeAcademicYear, getAcademicYearVariants, areAcademicYearsEqual } from '../utils/academicYear.util';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1097,43 +1099,37 @@ class AdmissionService {
         studentWhere.departmentId = branchId;
       }
 
-      if (semester && semester !== 'ALL') {
-        const semNum = parseInt(semester, 10);
-        if (!isNaN(semNum)) {
-          studentWhere.semester = semNum;
-        }
-      }
+      const currentActiveAy = await AcademicYear.findOne({ where: { isCurrent: true } });
+      const activeYear = currentActiveAy?.year || '2026-27';
+      const isHistorical = Boolean(academicYear && academicYear !== 'ALL' && !areAcademicYearsEqual(academicYear, activeYear));
 
-      if (admissionType && admissionType !== 'ALL') {
-        studentWhere.admissionType = admissionType;
-      }
+      const saeWhere: any = {};
+      let isEnrollmentRequired = false;
 
-      if (gender && gender !== 'ALL') {
-        studentWhere.gender = gender;
-      }
-
-      if (district && district.trim() !== '') {
-        studentWhere.address = { [Op.iLike]: `%${district.trim()}%` };
-      }
-
-      if (academicYear && academicYear !== 'ALL') {
-        const ayMatch = String(academicYear).match(/(\d{4})/);
-        if (ayMatch) {
-          const startYear = parseInt(ayMatch[1], 10);
-          const nextYear = startYear + 1;
-          const ayConditions: any[] = [
-            { currentAcademicYear: academicYear },
-            { currentAcademicYear: `${startYear}-${nextYear}` },
-            { currentAcademicYear: `${startYear}–${nextYear}` },
-            { currentAcademicYear: { [Op.iLike]: `%${startYear}%` } }
-          ];
-          if (studentWhere[Op.and]) {
-            studentWhere[Op.and].push({ [Op.or]: ayConditions });
-          } else {
-            studentWhere[Op.and] = [{ [Op.or]: ayConditions }];
+      if (!isHistorical) {
+        // CURRENT COHORT VIEW: active institutional year or default view
+        if (semester && semester !== 'ALL') {
+          const semNum = parseInt(semester, 10);
+          if (!isNaN(semNum)) {
+            studentWhere.semester = semNum;
+            saeWhere.semesterId = semNum;
+            isEnrollmentRequired = true;
           }
-        } else {
-          studentWhere.currentAcademicYear = academicYear;
+        }
+        // Authoritative active enrollment excludes historical PROMOTED enrollments
+        saeWhere.status = 'ACTIVE';
+      } else {
+        // HISTORICAL ACADEMIC YEAR VIEW: strictly filter historical enrollments by academic year
+        const canonical = normalizeAcademicYear(academicYear);
+        const variants = [canonical, ...getAcademicYearVariants(canonical), academicYear!];
+        saeWhere.academicYearId = { [Op.in]: variants };
+        saeWhere.status = { [Op.notIn]: ['INACTIVE', 'DROPPED'] };
+        isEnrollmentRequired = true;
+        if (semester && semester !== 'ALL') {
+          const semNum = parseInt(semester, 10);
+          if (!isNaN(semNum)) {
+            saeWhere.semesterId = semNum;
+          }
         }
       }
 
@@ -1233,6 +1229,12 @@ class AdmissionService {
           where: studentWhere,
           include: [
             {
+              model: StudentAcademicEnrollment,
+              as: 'academicEnrollments',
+              where: Object.keys(saeWhere).length > 0 ? saeWhere : undefined,
+              required: isEnrollmentRequired,
+            },
+            {
               model: User,
               as: 'user',
               attributes: ['id', 'email', 'firstName', 'lastName', 'phone', 'profileImage'],
@@ -1262,6 +1264,7 @@ class AdmissionService {
           limit,
           offset,
           distinct: true,
+          subQuery: false,
         });
 
         return {
@@ -1300,9 +1303,92 @@ class AdmissionService {
     if (admissionType && admissionType !== 'ALL') where.admissionType = admissionType;
     if (qualification && qualification !== 'ALL') where.qualification = qualification;
 
-    // Filter by Semester
-    if (semester && semester !== 'ALL') {
-      const semNum = parseInt(semester);
+    // Reconciled Filter by Semester and Academic Year
+    const hasSemester = Boolean(semester && semester !== 'ALL');
+    const hasAcademicYear = Boolean(academicYear && academicYear !== 'ALL');
+
+    if (hasSemester && hasAcademicYear) {
+      const currentActiveAy = await AcademicYear.findOne({ where: { isCurrent: true } });
+      const activeYear = currentActiveAy?.year || '2026-27';
+      const isHistorical = Boolean(academicYear && academicYear !== 'ALL' && !areAcademicYearsEqual(academicYear, activeYear));
+
+      const semNum = parseInt(semester!);
+      const canonical = normalizeAcademicYear(academicYear!);
+      const variants = [canonical, ...getAcademicYearVariants(canonical), academicYear!];
+
+      const semYearConditions: any[] = [];
+
+      if (!isHistorical) {
+        // Current Cohort View: student in current semester with active enrollment or applicant
+        semYearConditions.push(
+          {
+            [Op.and]: [
+              { '$user.student.semester$': semNum },
+              { '$user.student.academicEnrollments.semesterId$': semNum },
+              { '$user.student.academicEnrollments.status$': 'ACTIVE' },
+            ]
+          },
+          {
+            [Op.and]: [
+              { '$user.student.semester$': semNum },
+              { '$user.student.currentAcademicYear$': { [Op.in]: variants } },
+            ]
+          },
+          {
+            [Op.and]: [
+              { entrySemester: semNum },
+              { academicYear: { [Op.in]: variants } },
+            ]
+          }
+        );
+      } else {
+        // Historical View: matching historical enrollment
+        semYearConditions.push(
+          {
+            [Op.and]: [
+              { '$user.student.academicEnrollments.semesterId$': semNum },
+              { '$user.student.academicEnrollments.academicYearId$': { [Op.in]: variants } },
+            ]
+          },
+          {
+            [Op.and]: [
+              { entrySemester: semNum },
+              { academicYear: { [Op.in]: variants } },
+            ]
+          }
+        );
+      }
+
+      if (semNum === 3) {
+        semYearConditions.push({
+          [Op.and]: [
+            { academicYear: { [Op.in]: variants } },
+            {
+              [Op.or]: [
+                { qualification: 'DIPLOMA' },
+                { admissionType: 'DCET' },
+                { applicationType: 'LATERAL_ENTRY' },
+              ]
+            }
+          ]
+        });
+      } else if (semNum === 1) {
+        semYearConditions.push({
+          [Op.and]: [
+            { academicYear: { [Op.in]: variants } },
+            { entrySemester: { [Op.or]: [1, null] } },
+            { qualification: { [Op.or]: [{ [Op.ne]: 'DIPLOMA' }, { [Op.eq]: null }] } },
+            { admissionType: { [Op.or]: [{ [Op.ne]: 'DCET' }, { [Op.eq]: null }] } },
+            { applicationType: { [Op.or]: [{ [Op.ne]: 'LATERAL_ENTRY' }, { [Op.eq]: null }] } },
+          ]
+        });
+      }
+
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({ [Op.or]: semYearConditions });
+
+    } else if (hasSemester) {
+      const semNum = parseInt(semester!);
       if (semNum === 3) {
         where[Op.and] = where[Op.and] || [];
         where[Op.and].push({
@@ -1311,7 +1397,8 @@ class AdmissionService {
             { qualification: 'DIPLOMA' },
             { admissionType: 'DCET' },
             { applicationType: 'LATERAL_ENTRY' },
-            { '$user.student.semester$': 3 }
+            { '$user.student.semester$': 3 },
+            { '$user.student.academicEnrollments.semesterId$': 3 },
           ]
         });
       } else if (semNum === 1) {
@@ -1320,6 +1407,7 @@ class AdmissionService {
           [Op.or]: [
             { entrySemester: 1 },
             { '$user.student.semester$': 1 },
+            { '$user.student.academicEnrollments.semesterId$': 1 },
             {
               [Op.and]: [
                 { entrySemester: { [Op.or]: [1, null] } },
@@ -1335,21 +1423,29 @@ class AdmissionService {
         where[Op.and].push({
           [Op.or]: [
             { entrySemester: semNum },
-            { '$user.student.semester$': semNum }
+            { '$user.student.semester$': semNum },
+            { '$user.student.academicEnrollments.semesterId$': semNum },
           ]
         });
       }
-    }
-
-    // Academic Year filter
-    if (academicYear && academicYear !== 'ALL') {
-      const startYearMatch = academicYear.match(/\d{4}/);
+    } else if (hasAcademicYear) {
+      const canonical = normalizeAcademicYear(academicYear!);
+      const variants = [canonical, ...getAcademicYearVariants(canonical), academicYear!];
+      const ayOrConditions: any[] = [
+        { academicYear: { [Op.in]: variants } },
+        { academicYear: { [Op.iLike]: `%${canonical}%` } },
+        { '$user.student.currentAcademicYear$': { [Op.in]: variants } },
+        { '$user.student.academicEnrollments.academicYearId$': { [Op.in]: variants } },
+      ];
+      const startYearMatch = academicYear!.match(/\d{4}/);
       if (startYearMatch) {
-        const startYear = parseInt(startYearMatch[0]);
-        const start = new Date(`${startYear}-06-01T00:00:00.000Z`);
-        const end = new Date(`${startYear + 1}-05-31T23:59:59.999Z`);
-        where.createdAt = { [Op.between]: [start, end] };
+        const startYear = parseInt(startYearMatch[0], 10);
+        ayOrConditions.push({ academicYear: { [Op.iLike]: `%${startYear}%` } });
+        ayOrConditions.push({ '$user.student.currentAcademicYear$': { [Op.iLike]: `%${startYear}%` } });
+        ayOrConditions.push({ '$user.student.academicEnrollments.academicYearId$': { [Op.iLike]: `%${startYear}%` } });
       }
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({ [Op.or]: ayOrConditions });
     }
 
     // Batch filter
@@ -1469,7 +1565,20 @@ class AdmissionService {
         required: false,
         attributes: ['id', 'email', 'firstName', 'lastName', 'phone', 'profileImage'],
         include: [
-          { model: Student, as: 'student', attributes: ['id', 'usn', 'enrollmentNumber', 'rollNumber', 'semester', 'batchYear', 'admissionBatch', 'currentAcademicYear'], required: false }
+          {
+            model: Student,
+            as: 'student',
+            attributes: ['id', 'usn', 'enrollmentNumber', 'rollNumber', 'semester', 'batchYear', 'admissionBatch', 'currentAcademicYear'],
+            required: false,
+            include: [
+              {
+                model: StudentAcademicEnrollment,
+                as: 'academicEnrollments',
+                required: false,
+                attributes: ['id', 'semesterId', 'academicYearId', 'status', 'departmentId', 'sectionId'],
+              }
+            ]
+          }
         ]
       },
       { model: Department, as: 'branch', required: false },
@@ -1535,6 +1644,11 @@ class AdmissionService {
           const semNum = parseInt(semester, 10);
           if (!isNaN(semNum)) studentWhere.semester = semNum;
         }
+        if (hasAcademicYear) {
+          const canonical = normalizeAcademicYear(academicYear!);
+          const variants = [canonical, ...getAcademicYearVariants(canonical), academicYear!];
+          studentWhere.currentAcademicYear = { [Op.in]: variants };
+        }
         if (gender && gender !== 'ALL') studentWhere.gender = gender;
         if (district && district.trim() !== '') studentWhere.address = { [Op.iLike]: `%${district.trim()}%` };
 
@@ -1567,29 +1681,45 @@ class AdmissionService {
 
   /** Admin: get single full application */
   async getApplicationById(id: string): Promise<any> {
+    const admissionInclude = [
+      {
+        model: User,
+        as: 'user',
+        attributes: ['id', 'email', 'firstName', 'lastName', 'phone', 'profileImage'],
+        include: [
+          { model: Student, as: 'student', attributes: ['id', 'usn', 'enrollmentNumber', 'rollNumber', 'semester', 'scheme', 'gender', 'previousCollege'] }
+        ]
+      },
+      { model: Department, as: 'branch' },
+      { model: User, as: 'verifiedByAdmin', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
+      { model: User, as: 'correctionRequestedBy', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
+      { model: User, as: 'rejectedByAdmin', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
+      { model: User, as: 'approvedByAdmin', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
+      { model: AdmissionPersonalDetail, as: 'studentpersonaldetails' },
+      { model: AdmissionParentDetail, as: 'studentparentdetails' },
+      { model: AdmissionAddress, as: 'studentaddress' },
+      { model: AdmissionAcademicDetail, as: 'studentacademicdetails' },
+      { model: AdmissionDocument, as: 'studentdocuments' },
+    ];
+
     // 1. Check Admission by PK
-    const full = await Admission.findByPk(id, {
-      include: [
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'email', 'firstName', 'lastName', 'phone', 'profileImage'],
-          include: [
-            { model: Student, as: 'student', attributes: ['id', 'usn', 'enrollmentNumber', 'rollNumber', 'semester', 'scheme', 'gender', 'previousCollege'] }
-          ]
-        },
-        { model: Department, as: 'branch' },
-        { model: User, as: 'verifiedByAdmin', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
-        { model: User, as: 'correctionRequestedBy', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
-        { model: User, as: 'rejectedByAdmin', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
-        { model: User, as: 'approvedByAdmin', attributes: ['id', 'firstName', 'lastName', 'email', 'username'] },
-        { model: AdmissionPersonalDetail, as: 'studentpersonaldetails' },
-        { model: AdmissionParentDetail, as: 'studentparentdetails' },
-        { model: AdmissionAddress, as: 'studentaddress' },
-        { model: AdmissionAcademicDetail, as: 'studentacademicdetails' },
-        { model: AdmissionDocument, as: 'studentdocuments' },
-      ],
+    let full = await Admission.findByPk(id, {
+      include: admissionInclude,
     });
+
+    // 1b. Check if id is a Student id or user id with an existing Admission
+    if (!full) {
+      const studentCandidate = await Student.findOne({
+        where: {
+          [Op.or]: [{ id }, { userId: id }]
+        }
+      });
+      const targetUserId = studentCandidate?.userId || id;
+      full = await Admission.findOne({
+        where: { userId: targetUserId },
+        include: admissionInclude,
+      });
+    }
 
     if (full) {
       return serializeAdmission(full);
@@ -2220,9 +2350,23 @@ class AdmissionService {
   }
 
   /** Admin: stats for dashboard */
-  async getDashboardStats(): Promise<any> {
+  async getDashboardStats(academicYear?: string): Promise<any> {
     // Real-time stats are critical for the admin dashboard queue to prevent stale counts.
     // Query the database directly to ensure accuracy.
+    const currentActiveAy = await AcademicYear.findOne({ where: { isCurrent: true } });
+    const activeYear = currentActiveAy?.year || '2026-27';
+    const isHistorical = Boolean(academicYear && academicYear !== 'ALL' && !areAcademicYearsEqual(academicYear, activeYear));
+
+    const ayFilter: any = {};
+    const studentAyFilter: any = {};
+    if (academicYear && academicYear !== 'ALL') {
+      const canonical = normalizeAcademicYear(academicYear);
+      const variants = [canonical, ...getAcademicYearVariants(canonical), academicYear];
+      ayFilter.academicYear = { [Op.in]: variants };
+      if (isHistorical) {
+        studentAyFilter.currentAcademicYear = { [Op.in]: variants };
+      }
+    }
 
     const [
       totalAdmissions,
@@ -2243,39 +2387,42 @@ class AdmissionService {
       totalEnrolledStudents,
       existingOnboardedCount,
     ] = await Promise.all([
-      Admission.count({ where: { applicationStatus: { [Op.ne]: 'DRAFT' } } }),
-      Admission.count({ where: { applicationStatus: 'DRAFT' } }),
+      Admission.count({ where: { applicationStatus: { [Op.ne]: 'DRAFT' }, ...ayFilter } }),
+      Admission.count({ where: { applicationStatus: 'DRAFT', ...ayFilter } }),
       Admission.count({
         where: {
-          applicationStatus: 'SUBMITTED'
+          applicationStatus: 'SUBMITTED',
+          ...ayFilter
         }
       }),
       Admission.count({
         where: {
-          applicationStatus: 'RESUBMITTED'
+          applicationStatus: 'RESUBMITTED',
+          ...ayFilter
         }
       }),
       Admission.count({
         where: {
-          applicationStatus: 'UNDER_REVIEW'
+          applicationStatus: 'UNDER_REVIEW',
+          ...ayFilter
         }
       }),
-      Admission.count({ where: { applicationStatus: { [Op.in]: ['APPROVED', 'PRINCIPAL_APPROVED'] } } }),
+      Admission.count({ where: { applicationStatus: { [Op.in]: ['APPROVED', 'PRINCIPAL_APPROVED'] }, ...ayFilter } }),
       Promise.resolve(0), // FEE_VERIFIED count
-      Admission.count({ where: { applicationStatus: 'REJECTED' } }),
-      Admission.count({ where: { applicationStatus: 'ENROLLED' } }),
-      Admission.count({ where: { applicationStatus: 'CANCELLATION_REQUESTED' } }),
+      Admission.count({ where: { applicationStatus: 'REJECTED', ...ayFilter } }),
+      Admission.count({ where: { applicationStatus: 'ENROLLED', ...ayFilter } }),
+      Admission.count({ where: { applicationStatus: 'CANCELLATION_REQUESTED', ...ayFilter } }),
       Promise.resolve(0), // FEE_RECEIPT_UPLOADED count
       Promise.resolve(0), // duplicate FEE_VERIFIED count
-      Admission.count({ where: { applicationStatus: 'CORRECTION_REQUIRED' } }),
-      Admission.count({ where: { applicationStatus: 'CANCELLED' } }),
+      Admission.count({ where: { applicationStatus: 'CORRECTION_REQUIRED', ...ayFilter } }),
+      Admission.count({ where: { applicationStatus: 'CANCELLED', ...ayFilter } }),
       ProvisionalAdmission.count({ where: { status: { [Op.in]: ['SUBMITTED', 'RESUBMITTED', 'UNDER_REVIEW'] } } }),
-      Student.count({ where: { admissionStatus: 'APPROVED' } }),
-      Student.count({ where: { admissionType: 'EXISTING' } }),
+      Student.count({ where: { admissionStatus: 'APPROVED', ...studentAyFilter } }),
+      Student.count({ where: { admissionType: 'EXISTING', ...studentAyFilter } }),
     ]);
 
     const recent = await Admission.findAll({
-      where: { applicationStatus: { [Op.in]: ['SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'] } },
+      where: { applicationStatus: { [Op.in]: ['SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'] }, ...ayFilter },
       include: [
         { model: User, as: 'user', attributes: ['id', 'email', 'firstName', 'lastName', 'profileImage'] },
         { model: Department, as: 'branch' },

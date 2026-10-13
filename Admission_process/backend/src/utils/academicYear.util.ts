@@ -77,7 +77,38 @@ export function areAcademicYearsEqual(
   return String(year1).trim().toLowerCase() === String(year2).trim().toLowerCase();
 }
 
+export function getAcademicYearVariants(ay?: string | null): string[] {
+  if (!ay || ay === 'ALL') return [];
+  const clean = ay.trim().replace(/[\u2010-\u2015\u2212]/g, '-');
+  
+  const variants = new Set<string>([ay, clean]);
+  
+  // Format: "YYYY-YY" e.g. "2026-27"
+  const match2 = clean.match(/^(\d{4})-(\d{2})$/);
+  if (match2) {
+    const startYear = match2[1];
+    const endCentury = startYear.slice(0, 2);
+    const fullEndYear = `${endCentury}${match2[2]}`;
+    variants.add(`${startYear}-${fullEndYear}`);
+    variants.add(`${startYear}\u2013${match2[2]}`);
+    variants.add(`${startYear}\u2013${fullEndYear}`);
+  }
+  
+  // Format: "YYYY-YYYY" e.g. "2026-2027"
+  const match4 = clean.match(/^(\d{4})-(\d{4})$/);
+  if (match4) {
+    const startYear = match4[1];
+    const endShort = match4[2].slice(2);
+    variants.add(`${startYear}-${endShort}`);
+    variants.add(`${startYear}\u2013${match4[2]}`);
+    variants.add(`${startYear}\u2013${endShort}`);
+  }
+
+  return Array.from(variants);
+}
+
 export default {
   normalizeAcademicYear,
   areAcademicYearsEqual,
+  getAcademicYearVariants,
 };

@@ -12,6 +12,7 @@ import admissionService, { AdmissionApplication } from '../../../services/admiss
 import { downloadAdmissionPDF } from '../../admission/src/utils/pdfGenerator';
 import { generateStudentReport, ExportFilterMetadata } from '../../../utils/studentExportGenerator';
 import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
+import { useAcademicYear } from '../../../context/AcademicYearContext';
 
 const STATUS_COLOR_MAP: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700',
@@ -78,6 +79,8 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
 
   const [branches, setBranches] = useState<{ id: string; name: string; code: string }[]>([]);
   
+  const { academicYear: contextAcademicYear, academicYears: availableAcademicYears } = useAcademicYear();
+
   // Pagination & Filtering state
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
@@ -85,7 +88,7 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
   const [totalCount, setTotalCount] = useState(0);
 
   const [search, setSearch] = useState('');
-  const [academicYear, setAcademicYear] = useState('ALL');
+  const [academicYear, setAcademicYear] = useState<string>(contextAcademicYear || 'ALL');
   const [batch, setBatch] = useState('ALL');
   const [branchId, setBranchId] = useState('ALL');
   const [semester, setSemester] = useState('ALL');
@@ -113,7 +116,7 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
 
   // Pending filter state (applied only on "Apply Filters")
   const [pendingSearch, setPendingSearch] = useState('');
-  const [pendingAcademicYear, setPendingAcademicYear] = useState('ALL');
+  const [pendingAcademicYear, setPendingAcademicYear] = useState<string>(contextAcademicYear || 'ALL');
   const [pendingBatch, setPendingBatch] = useState('ALL');
   const [pendingBranchId, setPendingBranchId] = useState('ALL');
   const [pendingSemester, setPendingSemester] = useState('ALL');
@@ -291,6 +294,14 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
       window.removeEventListener('trigger-student-export', handleExportEvent);
     };
   }, [location.pathname, navigate]);
+
+  useEffect(() => {
+    if (contextAcademicYear) {
+      setAcademicYear(contextAcademicYear);
+      setPendingAcademicYear(contextAcademicYear);
+      setPage(1);
+    }
+  }, [contextAcademicYear]);
 
   useEffect(() => {
     fetchStudentsList();
@@ -673,11 +684,17 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                     className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
                   >
                     <option value="ALL">All Years</option>
-                    {Array.from({ length: 5 }).map((_, i) => {
-                      const y = 2026 + i;
-                      const opt = `${y}-${y + 1}`;
-                      return <option key={opt} value={opt}>{opt}</option>;
-                    })}
+                    {availableAcademicYears && availableAcademicYears.length > 0
+                      ? availableAcademicYears.map((ay) => (
+                          <option key={ay.id || ay.year} value={ay.year}>
+                            {ay.year}
+                          </option>
+                        ))
+                      : ['2027-28', '2026-27'].map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
                   </select>
                 </div>
               </div>
@@ -928,12 +945,13 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
             <div className="flex items-center justify-center gap-3 pt-1">
               <button
                 onClick={() => {
-                  setPendingSearch(''); setPendingAcademicYear('ALL'); setPendingBatch('ALL'); setPendingBranchId('ALL');
+                  const defaultAy = contextAcademicYear || 'ALL';
+                  setPendingSearch(''); setPendingAcademicYear(defaultAy); setPendingBatch('ALL'); setPendingBranchId('ALL');
                   setPendingSemester('ALL'); setPendingStatus('ENROLLED'); setPendingAdmissionType('ALL'); setPendingQualification('ALL');
                   setPendingGender('ALL'); setPendingCategory('ALL'); setPendingDistrict('');
                   setPendingStartDate(''); setPendingEndDate('');
                   setPendingSortBy('date'); setPendingSortOrder('DESC');
-                  setSearch(''); setAcademicYear('ALL'); setBatch('ALL'); setBranchId('ALL'); setSemester('ALL');
+                  setSearch(''); setAcademicYear(defaultAy); setBatch('ALL'); setBranchId('ALL'); setSemester('ALL');
                   setStatus('ENROLLED'); setAdmissionType('ALL'); setQualification('ALL');
                   setGender('ALL'); setCategory('ALL'); setDistrict('');
                   setStartDate(''); setEndDate(''); setSortBy('date'); setSortOrder('DESC'); setPage(1);

@@ -86,11 +86,11 @@ async function testAllApis() {
         json: (d: any) => { data = d; return res; },
         status: (code: number) => ({ json: (d: any) => { error = { code, d }; } }),
       };
-      await deanController.getHodSubjectRequests(req, res, (e: any) => { error = e; });
+      await deanController.getDeanTeachingProfile(req, res, (e: any) => { error = e; });
       if (error) {
-        console.error('❌ GET /api/dean/hod-subject-requests FAILED:', error);
+        console.error('❌ GET /api/dean/teaching-profile FAILED:', error);
       } else {
-        console.log('✅ GET /api/dean/hod-subject-requests SUCCESS: count =', data?.data?.length);
+        console.log('✅ GET /api/dean/teaching-profile SUCCESS: coreDepartment =', data?.data?.coreDepartment?.code, 'eligible =', data?.data?.isTeachingEligible);
       }
     }
 

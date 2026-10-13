@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import studentService, { StudentSubjectMarksGroup } from '../../services/student.service';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import {
   Award,
   BookOpen,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 
 export const StudentMarksPage: React.FC = () => {
+  const { academicYear } = useAcademicYear();
   const [marksData, setMarksData] = useState<{
     semester: number;
     academicYear: string;
@@ -25,7 +27,7 @@ export const StudentMarksPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await studentService.getPublishedMarks();
+      const res = await studentService.getPublishedMarks({ academicYear });
       setMarksData(res);
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Failed to retrieve published marks.');
@@ -36,7 +38,7 @@ export const StudentMarksPage: React.FC = () => {
 
   useEffect(() => {
     fetchMarks();
-  }, []);
+  }, [academicYear]);
 
   if (loading) {
     return (
@@ -70,7 +72,7 @@ export const StudentMarksPage: React.FC = () => {
     );
   }
 
-  const { semester, academicYear, marksBySubject } = marksData;
+  const { semester, academicYear: dataAcademicYear, marksBySubject } = marksData;
 
   return (
     <div className="space-y-6">
@@ -84,7 +86,7 @@ export const StudentMarksPage: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-neutral-500">
-            Official published marks for Semester {semester} • Academic Year {academicYear}
+            Official published marks for Semester {semester} • Academic Year {dataAcademicYear || academicYear}
           </p>
         </div>
 

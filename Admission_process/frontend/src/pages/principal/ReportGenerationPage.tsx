@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Search
 } from 'lucide-react';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 interface ReportPreset {
   id: string;
@@ -34,6 +35,7 @@ interface ReportPreset {
 }
 
 export const ReportGenerationPage: React.FC = () => {
+  const { academicYears } = useAcademicYear();
   const [loading, setLoading] = useState<boolean>(false);
   const [generating, setGenerating] = useState<boolean>(false);
   const [applications, setApplications] = useState<AdmissionApplication[]>([]);
@@ -361,11 +363,9 @@ export const ReportGenerationPage: React.FC = () => {
               className="w-full bg-slate-50 dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 rounded-xl px-3 py-2 text-xs font-bold outline-none"
             >
               <option value="ALL">All Academic Years</option>
-              {Array.from({ length: 5 }).map((_, i) => {
-                const y = new Date().getFullYear() + i;
-                const opt = `${y}-${y + 1}`;
-                return <option key={opt} value={opt}>{opt}</option>;
-              })}
+              {academicYears.map((ay) => (
+                <option key={ay.id || ay.year} value={ay.year}>{ay.year}</option>
+              ))}
             </select>
           </div>
 

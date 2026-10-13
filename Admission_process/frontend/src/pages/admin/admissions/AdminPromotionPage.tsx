@@ -74,14 +74,10 @@ export const AdminPromotionPage: React.FC = () => {
   const [students, setStudents] = useState<StudentData[]>([]);
   const [departments, setDepartments] = useState<{ id: string; name: string; code: string }[]>([]);
   const [academicYears, setAcademicYears] = useState<string[]>([
-    '2024-2025',
-    '2025-2026',
-    '2026-2027',
-    '2027-2028',
-    '2028-2029',
-    '2029-2030',
-    '2030-2031',
-    '2031-2032'
+    '2026-27',
+    '2027-28',
+    '2028-29',
+    '2029-30',
   ]);
   const [loading, setLoading] = useState<boolean>(true);
   const [promoting, setPromoting] = useState<boolean>(false);

@@ -83,6 +83,21 @@ StudentAcademicEnrollment.init(
     sequelize: db,
     tableName: 'student_academic_enrollments',
     timestamps: true,
+    indexes: [
+      {
+        unique: true,
+        fields: ['studentId', 'academicYearId', 'semesterId'],
+      },
+      {
+        fields: ['studentId'],
+      },
+      {
+        fields: ['status'],
+      },
+      {
+        fields: ['academicYearId'],
+      },
+    ],
   }
 );
 

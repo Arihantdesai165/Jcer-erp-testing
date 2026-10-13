@@ -304,53 +304,40 @@ export interface FacultyAssignmentRecord {
   status: string;
 }
 
-export interface HodSubjectHandlingRequestRecord {
+export interface TeachingProfileAssignment {
   id: string;
-  hodUserId: string;
-  hodUser?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone?: string;
-    profileImage?: string;
-  };
-  departmentId: string;
-  department?: {
-    id: string;
+  subjectName?: string;
+  subjectCode?: string;
+  semester?: number;
+  academicYear?: string;
+  section?: string;
+  assignedAt?: string;
+  teachingDepartment?: {
     name: string;
     code: string;
-  };
-  semester: number;
-  subjectId: string;
-  subject?: {
-    id: string;
-    name: string;
-    code: string;
-    credits: number;
-    type: string;
-    semester: number;
-  };
-  academicYear: string;
-  reason?: string | null;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  rejectionReason?: string | null;
-  reviewedBy?: string | null;
-  reviewer?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
   } | null;
-  reviewedAt?: string | null;
-  createdAt: string;
-  updatedAt?: string;
+}
+
+export interface TeachingProfileData {
+  userId: string;
+  role: string;
+  fullName: string;
+  email: string;
+  coreDepartmentId: string | null;
+  coreDepartment: {
+    id: string;
+    name: string;
+    code: string;
+  } | null;
+  isTeachingEligible: boolean;
+  teacherStatus: string | null;
+  activeAssignments: TeachingProfileAssignment[];
 }
 
 const deanService = {
   // Dashboard
-  getDashboardData: async (): Promise<DeanDashboardData> => {
-    const res = await API.get('/dean/dashboard');
+  getDashboardData: async (params?: { academicYear?: string }): Promise<DeanDashboardData> => {
+    const res = await API.get('/dean/dashboard', { params });
     return res.data.data;
   },
 
@@ -548,31 +535,13 @@ const deanService = {
     return res.data;
   },
 
-  // HOD Subject Handling Requests
-  getHodSubjectRequests: async (params?: {
-    search?: string;
-    departmentId?: string;
-    status?: string;
-    academicYear?: string;
-    semester?: number | string;
-  }): Promise<HodSubjectHandlingRequestRecord[]> => {
-    const res = await API.get('/dean/hod-subject-requests', { params });
+  // Teaching Profile
+  getTeachingProfile: async (): Promise<TeachingProfileData> => {
+    const res = await API.get('/dean/teaching-profile');
     return res.data.data;
   },
-  getHodSubjectRequestCount: async (): Promise<{ count: number }> => {
-    const res = await API.get('/dean/hod-subject-requests/count');
-    return res.data;
-  },
-  getHodSubjectRequestById: async (id: string): Promise<HodSubjectHandlingRequestRecord> => {
-    const res = await API.get(`/dean/hod-subject-requests/${id}`);
-    return res.data.data;
-  },
-  approveHodSubjectRequest: async (id: string): Promise<any> => {
-    const res = await API.post(`/dean/hod-subject-requests/${id}/approve`);
-    return res.data;
-  },
-  rejectHodSubjectRequest: async (id: string, rejectionReason: string): Promise<any> => {
-    const res = await API.post(`/dean/hod-subject-requests/${id}/reject`, { rejectionReason });
+  updateTeachingProfile: async (data: { coreDepartmentId: string }): Promise<any> => {
+    const res = await API.put('/dean/teaching-profile', data);
     return res.data;
   },
 };

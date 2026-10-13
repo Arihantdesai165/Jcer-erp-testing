@@ -386,6 +386,13 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
     setSelectedFacultyId(''); // REQUIREMENT 6: IMMEDIATELY RESET FACULTY WHEN CORE DEPT CHANGES!
   };
 
+  const getFacultyDisplayRole = (fac: any) => {
+    if (fac.role === 'HOD') return 'HOD';
+    if (fac.role === 'DEAN') return 'Dean Academic';
+    if (fac.role === 'PRINCIPAL') return 'Principal';
+    return 'Faculty';
+  };
+
   // Filter Faculty list dynamically based on Selected Core Department (REQUIREMENT 5, 8, 21)
   const eligibleFacultyList = useMemo(() => {
     if (!selectedCoreDeptId) return [];
@@ -1335,7 +1342,7 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
                           <option value="">-- Select Faculty Member --</option>
                           {eligibleFacultyList.map((fac) => (
                             <option key={fac.id} value={fac.id}>
-                              {fac.name} ({fac.coreDepartmentCode || selectedCoreDeptObj?.code || 'Core'})
+                              {fac.name} ({getFacultyDisplayRole(fac)})
                             </option>
                           ))}
                         </>
@@ -1712,7 +1719,7 @@ export const HodFacultyAssignmentsPage: React.FC = () => {
                         <option value="">-- Select Faculty --</option>
                         {transferEligibleFacultyList.map((fac) => (
                           <option key={fac.id} value={fac.id}>
-                            {fac.name} ({fac.coreDepartmentCode || transferTargetDeptObj?.code || 'Core'})
+                            {fac.name} ({getFacultyDisplayRole(fac)})
                           </option>
                         ))}
                       </>

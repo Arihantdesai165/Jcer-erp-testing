@@ -190,10 +190,16 @@ async function runTests() {
 
     // Verify Sheet 1 Headers
     const ws1 = readWorkbook.getWorksheet('Semester Attendance');
-    const collegeHeaderVal = ws1?.getCell(1, 1).value;
-    console.log(`Sheet 1 (Row 1, Col 1) College Header: "${collegeHeaderVal}"`);
-    if (collegeHeaderVal !== 'JAIN COLLEGE OF ENGINEERING & RESEARCH') {
-      throw new Error(`Unexpected Sheet 1 college header: ${collegeHeaderVal}`);
+    const images = ws1?.getImages() || [];
+    console.log(`Sheet 1 Embedded Images Count: ${images.length}`);
+    if (images.length === 0) {
+      throw new Error('Expected official college banner image on Sheet 1, but found 0 images');
+    }
+
+    const row4Title = ws1?.getCell(4, 1).value;
+    console.log(`Sheet 1 (Row 4, Col 1) Report Title: "${row4Title}"`);
+    if (typeof row4Title !== 'string' || !row4Title.includes('CONSOLIDATED ATTENDANCE REGISTER')) {
+      throw new Error(`Unexpected Sheet 1 report title: ${row4Title}`);
     }
 
     const totalClassVal = ws1?.getCell(5, 1).value;
@@ -201,7 +207,7 @@ async function runTests() {
     if (totalClassVal !== 'TOTAL NO. OF CLASS') {
       throw new Error(`Unexpected Sheet 1 table header: ${totalClassVal}`);
     }
-    console.log('✓ Sheet 1 institutional title & multi-level header structure verified.');
+    console.log('✓ Sheet 1 official banner image & multi-level header structure verified.');
 
     // ─────────────────────────────────────────────────────────────────────────
     // TEST: Database Single Canonical Record & Unique Constraint

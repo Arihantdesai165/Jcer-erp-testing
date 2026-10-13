@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import facultyService from '../services/faculty.service';
+import { teachingProfileService } from '../services/teachingProfile.service';
 import logger from '../utils/logger.util';
 
 /**
@@ -540,6 +541,155 @@ export const cancelFacultyClassSession = async (
   } catch (error: any) {
     logger.error('CANCEL_FACULTY_CLASS_SESSION_ERROR:', error);
     return res.status(400).json({ error: error.message || 'Failed to cancel class session.' });
+  }
+};
+
+/**
+ * GET /api/faculty/teaching-profile
+ * Retrieves teaching profile, core department, eligibility, and active assignments for logged-in faculty
+ */
+export const getFacultyTeachingProfile = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const profile = await teachingProfileService.getTeachingProfile(userId);
+    return res.json({
+      success: true,
+      data: profile,
+    });
+  } catch (error: any) {
+    logger.error('GET_FACULTY_TEACHING_PROFILE_ERROR:', error);
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/faculty/all-subject-attendance/cohorts
+ * Returns authorized academic years, semesters, departments, and sections for logged-in faculty
+ */
+export const getFacultyAllSubjectAttendanceCohorts = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const data = await facultyService.getFacultyAllSubjectAttendanceCohorts(userId, req.user?.role);
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error: any) {
+    logger.error('GET_FACULTY_ALL_SUBJECT_ATTENDANCE_COHORTS_ERROR:', error);
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/faculty/all-subject-attendance/register
+ * Returns the live consolidated attendance register for the authorized cohort
+ */
+export const getFacultyAllSubjectAttendanceRegister = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const academicYear = (req.query.academicYear as string) || '2026-27';
+    const semester = Number(req.query.semester) || 1;
+    const departmentId = req.query.departmentId as string;
+    const section = req.query.section as string | undefined;
+
+    if (!departmentId) {
+      return res.status(400).json({ error: 'Department ID is required.' });
+    }
+
+    const data = await facultyService.getFacultyAllSubjectAttendanceRegister(
+      userId,
+      req.user?.role,
+      {
+        academicYear,
+        semester,
+        departmentId,
+        section,
+      }
+    );
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error: any) {
+    logger.error('GET_FACULTY_ALL_SUBJECT_ATTENDANCE_REGISTER_ERROR:', error);
+    if (error.message && error.message.startsWith('Unauthorized:')) {
+      return res.status(403).json({ error: error.message });
+    }
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/faculty/all-subject-attendance/export
+ * Downloads the consolidated Excel attendance spreadsheet for the authorized cohort
+ */
+export const exportFacultyAllSubjectAttendanceExcel = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const academicYear = (req.query.academicYear as string) || '2026-27';
+    const semester = Number(req.query.semester) || 1;
+    const departmentId = req.query.departmentId as string;
+    const section = req.query.section as string | undefined;
+
+    if (!departmentId) {
+      return res.status(400).json({ error: 'Department ID is required.' });
+    }
+
+    const { buffer, fileName } = await facultyService.exportFacultyAllSubjectAttendanceExcel(
+      userId,
+      req.user?.role,
+      {
+        academicYear,
+        semester,
+        departmentId,
+        section,
+      }
+    );
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', buffer.length);
+
+    return res.send(buffer);
+  } catch (error: any) {
+    logger.error('EXPORT_FACULTY_ALL_SUBJECT_ATTENDANCE_EXCEL_ERROR:', error);
+    if (error.message && error.message.startsWith('Unauthorized:')) {
+      return res.status(403).json({ error: error.message });
+    }
+    return next(error);
   }
 };
 

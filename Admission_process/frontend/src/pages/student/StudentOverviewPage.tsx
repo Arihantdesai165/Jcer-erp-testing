@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import studentService, { StudentOverviewData } from '../../services/student.service';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { ProfileAvatar } from '../../components/common/ProfileAvatar';
 import {
   CalendarCheck,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 
 export const StudentOverviewPage: React.FC = () => {
+  const { academicYear } = useAcademicYear();
   const [data, setData] = useState<StudentOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +28,7 @@ export const StudentOverviewPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await studentService.getOverview();
+      const res = await studentService.getOverview({ academicYear });
       setData(res);
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Failed to load academic overview.');
@@ -37,7 +39,7 @@ export const StudentOverviewPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [academicYear]);
 
   if (loading) {
     return (
