@@ -61,3 +61,39 @@ In your Railway service **Variables** tab, configure the following:
 - **Liveness/Readiness:** `/health` (verifies HTTP server & PostgreSQL connectivity, returns HTTP 200).
 - **Alternative:** `/api/health`
 - **Lightweight Ping:** `/api`
+
+---
+
+## Render Deployment Guide
+
+This backend can be deployed on [Render](https://render.com) either automatically via Blueprint or manually via the Dashboard.
+
+### Option A: One-Click Blueprint Deployment (Recommended)
+1. In your Render Dashboard, click **New +** > **Blueprint**.
+2. Connect `https://github.com/Arihantdesai165/Jcer-erp-testing`.
+3. Render automatically reads [`render.yaml`](../../render.yaml) to provision:
+   - A managed PostgreSQL database (`jcer-erp-postgres`).
+   - The Web Service configured with `Admission_process/backend`.
+   - All connection strings, JWT secrets, and `/health` monitoring.
+4. Click **Apply**.
+
+### Option B: Manual Web Service Setup
+1. **Create PostgreSQL Database:**
+   - Click **New +** > **PostgreSQL**.
+   - Name: `jcer-erp-postgres`, Database: `college_erp_db`, User: `erp_user`.
+   - Copy the **Internal Database URL** (e.g. `postgresql://erp_user:...@dpg-...:5432/college_erp_db`).
+2. **Create Web Service:**
+   - Click **New +** > **Web Service** > Connect GitHub repo.
+   - **Root Directory:** `Admission_process/backend`
+   - **Runtime:** `Node`
+   - **Build Command:** `npm ci && npm run build`
+   - **Start Command:** `npm start`
+   - **Health Check Path:** `/health`
+3. **Environment Variables:**
+   - `NODE_ENV`: `production`
+   - `DATABASE_URL`: *(Paste the Internal Database URL from step 1)*
+   - `JWT_SECRET`: *(32+ character random secret)*
+   - `JWT_REFRESH_SECRET`: *(32+ character random secret)*
+   - `REFRESH_TOKEN_SECRET`: *(32+ character random secret)*
+   - `CORS_ORIGIN`: `https://jcererp-system.pages.dev,https://your-frontend.onrender.com`
+

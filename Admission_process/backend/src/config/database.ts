@@ -33,6 +33,8 @@ const isCloudPostgres = Boolean(
     (databaseUrl.includes('sslmode=require') ||
       databaseUrl.includes('rlwy.net') ||
       databaseUrl.includes('railway.app') ||
+      databaseUrl.includes('render.com') ||
+      databaseUrl.includes('postgres.render.com') ||
       databaseUrl.includes('neon.tech') ||
       databaseUrl.includes('supabase.co'))
 );

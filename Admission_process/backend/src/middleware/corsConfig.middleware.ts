@@ -35,6 +35,7 @@ export const corsConfig = cors({
 
     const isExplicitlyAllowed = allAllowedOrigins.includes(origin);
     const isCloudflarePages = origin.endsWith('.pages.dev') || origin.includes('pages.dev');
+    const isRenderFrontend = origin.endsWith('.onrender.com');
     const isRailwayFrontend = origin.endsWith('.railway.app') || origin.endsWith('.up.railway.app');
     const isVercelFrontend = origin.endsWith('.vercel.app');
     const isTunnel =
@@ -45,7 +46,7 @@ export const corsConfig = cors({
     const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
     const isPrivateIP = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
 
-    if (isExplicitlyAllowed || isCloudflarePages || isRailwayFrontend || isVercelFrontend || isTunnel || isLocalhost || isPrivateIP) {
+    if (isExplicitlyAllowed || isCloudflarePages || isRenderFrontend || isRailwayFrontend || isVercelFrontend || isTunnel || isLocalhost || isPrivateIP) {
       return callback(null, true);
     }
 
