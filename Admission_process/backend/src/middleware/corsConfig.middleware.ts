@@ -1,6 +1,10 @@
 import cors from 'cors';
 
 // Retrieve allowed origins from environment
+const frontendUrlEnv = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map((o) => o.trim())
+  : [];
+
 const allowedOriginsEnv = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
   : [];
@@ -16,7 +20,7 @@ const defaultAllowedOrigins = [
   'http://127.0.0.1:5174',
 ];
 
-const allAllowedOrigins = [...new Set([...allowedOriginsEnv, ...defaultAllowedOrigins])];
+const allAllowedOrigins = [...new Set([...allowedOriginsEnv, ...frontendUrlEnv, ...defaultAllowedOrigins])];
 
 export const corsConfig = cors({
   origin: (origin, callback) => {
@@ -31,6 +35,8 @@ export const corsConfig = cors({
 
     const isExplicitlyAllowed = allAllowedOrigins.includes(origin);
     const isCloudflarePages = origin.endsWith('.pages.dev') || origin.includes('pages.dev');
+    const isRailwayFrontend = origin.endsWith('.railway.app') || origin.endsWith('.up.railway.app');
+    const isVercelFrontend = origin.endsWith('.vercel.app');
     const isTunnel =
       origin.endsWith('.trycloudflare.com') ||
       origin.endsWith('.loca.lt') ||
@@ -39,7 +45,7 @@ export const corsConfig = cors({
     const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
     const isPrivateIP = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
 
-    if (isExplicitlyAllowed || isCloudflarePages || isTunnel || isLocalhost || isPrivateIP) {
+    if (isExplicitlyAllowed || isCloudflarePages || isRailwayFrontend || isVercelFrontend || isTunnel || isLocalhost || isPrivateIP) {
       return callback(null, true);
     }
 

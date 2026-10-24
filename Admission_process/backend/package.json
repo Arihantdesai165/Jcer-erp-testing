@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "npx tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc",
     "start": "node dist/index.js",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -15,7 +15,7 @@
     "reset-db": "npx tsx src/scripts/resetDatabase.ts",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",
-    "type-check": "tsc --noEmit",
+    "type-check": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
     "audit:contracts": "npx tsx src/scripts/comprehensive_api_audit.ts"
   },
   "dependencies": {
@@ -85,7 +85,7 @@
     "typescript": "^5.3.3"
   },
   "engines": {
-    "node": "20.x",
+    "node": ">=20.0.0",
     "npm": ">=8.0.0"
   }
 }

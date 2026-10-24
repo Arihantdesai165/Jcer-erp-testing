@@ -28,7 +28,19 @@ let resolvedDatabase = '';
 let sequelize: Sequelize;
 
 // SSL Detection
-const useSSL = process.env.DB_SSL === 'true' || (databaseUrl ? databaseUrl.includes('sslmode=require') : false);
+const isCloudPostgres = Boolean(
+  databaseUrl &&
+    (databaseUrl.includes('sslmode=require') ||
+      databaseUrl.includes('rlwy.net') ||
+      databaseUrl.includes('railway.app') ||
+      databaseUrl.includes('neon.tech') ||
+      databaseUrl.includes('supabase.co'))
+);
+
+const useSSL =
+  process.env.DB_SSL === 'true' ||
+  (process.env.DB_SSL !== 'false' && isCloudPostgres);
+
 const dialectOptions = useSSL
   ? {
       ssl: {
