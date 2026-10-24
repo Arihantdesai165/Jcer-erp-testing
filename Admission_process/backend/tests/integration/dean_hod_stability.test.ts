@@ -77,14 +77,14 @@ describe('Dean & HOD Stability Integration Tests', () => {
     });
   });
 
-  describe('3. HOD Subject Handling Requests API', () => {
+  describe('3. Dean Faculty Authorization Requests API', () => {
     it('should return 200 with data array and never 404 or 500 when empty', async () => {
       req = {
         query: {},
         user: { id: 'test-dean-id', role: 'DEAN' },
       };
 
-      await deanController.getHodSubjectRequests(req, res, () => {});
+      await deanController.getFacultyAuthorizations(req, res, () => {});
 
       expect(res.status).not.toHaveBeenCalledWith(404);
       expect(res.status).not.toHaveBeenCalledWith(500);
@@ -110,7 +110,7 @@ describe('Dean & HOD Stability Integration Tests', () => {
           query: {},
         };
 
-        await hodController.getDepartment(req, res, () => {});
+        await hodController.getHodDepartment(req, res, () => {});
 
         expect(res.status).not.toHaveBeenCalledWith(500);
         const response = res.json.mock.calls[0][0];

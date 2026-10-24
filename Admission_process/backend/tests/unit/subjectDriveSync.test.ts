@@ -9,10 +9,36 @@ import AuditLog from '../../src/models/AuditLog';
 // Mock dependencies
 jest.mock('../../src/services/googleDrive.service');
 jest.mock('../../src/services/semesterAttendanceConsolidation.service');
-jest.mock('../../src/models/AttendanceBackupFile');
-jest.mock('../../src/models/AttendanceBackupJob');
-jest.mock('../../src/models/GoogleDriveIntegration');
-jest.mock('../../src/models/AuditLog');
+jest.mock('../../src/models/AttendanceBackupFile', () => ({
+  __esModule: true,
+  default: {
+    findAll: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    destroy: jest.fn(),
+  },
+}));
+jest.mock('../../src/models/AttendanceBackupJob', () => ({
+  __esModule: true,
+  default: {
+    findAll: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    destroy: jest.fn(),
+  },
+}));
+jest.mock('../../src/models/GoogleDriveIntegration', () => ({
+  __esModule: true,
+  default: {
+    findOne: jest.fn(),
+  },
+}));
+jest.mock('../../src/models/AuditLog', () => ({
+  __esModule: true,
+  default: {
+    create: jest.fn(),
+  },
+}));
 jest.mock('../../src/utils/logger.util', () => ({
   info: jest.fn(),
   warn: jest.fn(),
