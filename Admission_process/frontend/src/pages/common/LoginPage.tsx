@@ -23,13 +23,41 @@ export const LoginPage: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Daily OTP Modal State for Admin & Principal
+  // Daily OTP Modal State for Admin, Principal, Dean, HOD, and Faculty
   const [showDailyOtpModal, setShowDailyOtpModal] = useState(false);
   const [dailyOtp, setDailyOtp] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
   const [pendingRole, setPendingRole] = useState('');
   const [verifyingDailyOtp, setVerifyingDailyOtp] = useState(false);
   const [resendingDailyOtp, setResendingDailyOtp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  const formatRoleTitle = (role: string) => {
+    switch ((role || '').toUpperCase()) {
+      case 'ADMIN':
+      case 'SUPER_ADMIN':
+        return 'Administrator';
+      case 'PRINCIPAL':
+        return 'Principal';
+      case 'DEAN':
+        return 'Dean Academic';
+      case 'HOD':
+        return 'Head of Department';
+      case 'TEACHER':
+      case 'FACULTY':
+        return 'Faculty Member';
+      default:
+        return role || 'User';
+    }
+  };
+
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -112,9 +140,11 @@ export const LoginPage: React.FC = () => {
         setPendingEmail(res.email || email);
         setPendingRole(res.role || '');
         setShowDailyOtpModal(true);
+        setDailyOtp('');
+        setResendCooldown(60);
         setToast({
           type: 'success',
-          message: `🔐 Daily OTP required for ${res.role || 'Admin'} login. Check your inbox for the 6-digit code.`,
+          message: `🔐 Daily OTP required for ${formatRoleTitle(res.role || '')} login. Check your inbox for the 6-digit code.`,
         });
         return;
       }
@@ -145,7 +175,7 @@ export const LoginPage: React.FC = () => {
       const token = authService.getToken() || '';
       dispatch(loginSuccess({ user, token }));
       setShowDailyOtpModal(false);
-      setToast({ type: 'success', message: '✅ Today\'s Daily OTP verified successfully! Welcome back.' });
+      setToast({ type: 'success', message: '✅ Daily security verification successful! Welcome back.' });
       handleRedirect(user.role);
     } catch (err: any) {
       const errMsg = err.response?.data?.error || 'Daily OTP verification failed.';
@@ -156,12 +186,25 @@ export const LoginPage: React.FC = () => {
   };
 
   const handleResendDailyOtp = async () => {
+    if (resendCooldown > 0) {
+      setToast({ type: 'error', message: `Please wait ${resendCooldown} seconds before resending OTP.` });
+      return;
+    }
     setResendingDailyOtp(true);
     try {
-      await authService.login(email, password);
-      setToast({ type: 'success', message: 'A new Daily OTP code has been sent to your email address.' });
+      const res = await authService.resendDailyOtp(pendingEmail, password);
+      setResendCooldown(60);
+      setToast({ type: 'success', message: res.message || 'A new verification code has been sent to your email address.' });
     } catch (err: any) {
-      setToast({ type: 'error', message: 'Failed to resend Daily OTP. Please try logging in again.' });
+      // Fallback to login call if resend route is unavailable
+      try {
+        await authService.login(email, password);
+        setResendCooldown(60);
+        setToast({ type: 'success', message: 'A new verification code has been sent to your email address.' });
+      } catch (fallbackErr: any) {
+        const errMsg = err.response?.data?.error || fallbackErr.response?.data?.error || 'Failed to resend Daily OTP. Please try logging in again.';
+        setToast({ type: 'error', message: errMsg });
+      }
     } finally {
       setResendingDailyOtp(false);
     }
@@ -460,7 +503,7 @@ export const LoginPage: React.FC = () => {
                     className="text-xs font-semibold mt-0.5"
                     style={{ color: '#64748b', WebkitTextFillColor: '#64748b' }}
                   >
-                    First login of calendar date for <strong style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', fontWeight: '800' }}>{pendingRole}</strong> ({pendingEmail})
+                    Daily security verification for <strong style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', fontWeight: '800' }}>{formatRoleTitle(pendingRole)}</strong> ({pendingEmail})
                   </p>
                 </div>
               </div>
@@ -474,7 +517,7 @@ export const LoginPage: React.FC = () => {
                   ⏱ A 6-digit OTP code has been sent to <strong style={{ color: '#451a03', WebkitTextFillColor: '#451a03', fontWeight: '800' }}>{pendingEmail}</strong>.
                 </p>
                 <p className="text-[11px] leading-relaxed pt-0.5" style={{ color: '#92400e', WebkitTextFillColor: '#92400e' }}>
-                  Once verified, today's verification remains valid for the rest of today.
+                  Once verified, your authentication remains valid for 24 hours.
                 </p>
               </div>
 
@@ -502,11 +545,15 @@ export const LoginPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleResendDailyOtp}
-                    disabled={resendingDailyOtp || verifyingDailyOtp}
+                    disabled={resendingDailyOtp || verifyingDailyOtp || resendCooldown > 0}
                     className="text-xs font-bold hover:underline bg-transparent border-none cursor-pointer disabled:opacity-50"
                     style={{ color: '#4f46e5', WebkitTextFillColor: '#4f46e5' }}
                   >
-                    {resendingDailyOtp ? 'Resending...' : 'Resend Daily OTP'}
+                    {resendingDailyOtp
+                      ? 'Resending...'
+                      : resendCooldown > 0
+                      ? `Resend OTP in ${resendCooldown}s`
+                      : 'Resend Daily OTP'}
                   </button>
 
                   <button

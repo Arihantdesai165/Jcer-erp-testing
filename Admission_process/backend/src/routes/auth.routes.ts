@@ -10,6 +10,7 @@ const router = express.Router();
 // Public Authentication Endpoints
 router.post('/login', authLimiter, authController.login);
 router.post('/verify-daily-otp', authLimiter, authController.verifyDailyOtp);
+router.post('/resend-daily-otp', authLimiter, authController.resendDailyOtp);
 router.post('/check-phone', authController.checkPhone);
 router.post('/refresh-token', refreshLimiter, authController.refreshToken);
 

@@ -160,31 +160,65 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // ─── ADMIN & PRINCIPAL DAILY OTP CHECK ─────────────────────────────────────
-    const isDailyPrivilegedUser = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'PRINCIPAL';
-    if (isDailyPrivilegedUser) {
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
+    // ─── DAILY LOGIN OTP CHECK (ADMIN, PRINCIPAL, DEAN, HOD, FACULTY) ───────────
+    if (isDailyOtpRequiredRole(user.role)) {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-      const todayVerification = await Otp.findOne({
+      const validVerification = await Otp.findOne({
         where: {
-          email: normalizedEmail,
-          purpose: 'DAILY_LOGIN',
-          verified: true,
-          createdAt: {
-            [Op.gte]: startOfToday,
-          },
+          [Op.and]: [
+            {
+              [Op.or]: [
+                { email: normalizedEmail },
+                { userId: user.id },
+              ],
+            },
+            {
+              purpose: 'DAILY_LOGIN',
+              verified: true,
+            },
+            {
+              [Op.or]: [
+                { updatedAt: { [Op.gte]: twentyFourHoursAgo } },
+                { createdAt: { [Op.gte]: twentyFourHoursAgo } },
+              ],
+            },
+          ],
         },
-        order: [['createdAt', 'DESC']],
+        order: [['updatedAt', 'DESC']],
       });
 
-      if (!todayVerification) {
-        logger.info(`DAILY_OTP_REQUIRED: First login of calendar date for ${user.email} (${user.role})`);
+      if (!validVerification) {
+        logger.info(`DAILY_OTP_REQUIRED: Daily verification required for ${user.email} (${user.role})`);
         
         // Generate and dispatch daily login OTP
-        const genResult = await otpService.generateAndSaveOtp(normalizedEmail, 'DAILY_LOGIN');
+        const genResult = await otpService.generateAndSaveOtp(normalizedEmail, 'DAILY_LOGIN', user.id);
         if (genResult.success && genResult.otp) {
-          await emailService.sendDailyLoginOTP(normalizedEmail, `${user.firstName} ${user.lastName}`, genResult.otp, user.role);
+          const sent = await emailService.sendDailyLoginOTP(
+            normalizedEmail,
+            `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'User',
+            genResult.otp,
+            user.role
+          );
+          if (!sent) {
+            logger.error(`DAILY_OTP_EMAIL_FAILED: Failed to deliver daily OTP to ${normalizedEmail}`);
+            return res.status(500).json({ error: 'Failed to send verification OTP to registered email. Please contact administrator.' });
+          }
+        } else if (!genResult.success) {
+          // If in cooldown, check if an active unexpired OTP already exists
+          const activePendingOtp = await Otp.findOne({
+            where: {
+              email: normalizedEmail,
+              purpose: 'DAILY_LOGIN',
+              verified: false,
+              expiresAt: { [Op.gt]: new Date() },
+            },
+            order: [['createdAt', 'DESC']],
+          });
+
+          if (!activePendingOtp) {
+            return res.status(429).json({ error: genResult.error || 'Too many OTP requests. Please try again later.' });
+          }
         }
 
         return res.status(200).json({
@@ -192,7 +226,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
           requiresDailyOtp: true,
           email: normalizedEmail,
           role: user.role,
-          message: `Daily OTP verification required for today's ${user.role.toLowerCase()} login.`,
+          message: `Daily OTP verification required for ${user.role.toLowerCase()} login.`,
         });
       }
     }
@@ -317,6 +351,11 @@ export const checkPhone = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+export const isDailyOtpRequiredRole = (role: string): boolean => {
+  const normalized = (role || '').trim().toUpperCase();
+  return ['ADMIN', 'SUPER_ADMIN', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'FACULTY'].includes(normalized);
+};
+
 export const verifyDailyOtp = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
   try {
     const { email, otp } = req.body;
@@ -327,7 +366,7 @@ export const verifyDailyOtp = async (req: Request, res: Response, next: NextFunc
     const normalizedEmail = email.trim().toLowerCase();
     const user = await User.findOne({ where: { email: normalizedEmail } });
 
-    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN' && user.role !== 'PRINCIPAL')) {
+    if (!user || !isDailyOtpRequiredRole(user.role)) {
       return res.status(403).json({ error: 'Unauthorized role for daily OTP verification.' });
     }
 
@@ -339,6 +378,19 @@ export const verifyDailyOtp = async (req: Request, res: Response, next: NextFunc
     if (!verifyResult.success) {
       return res.status(400).json({ error: verifyResult.error || 'Invalid or expired OTP code.' });
     }
+
+    // Associate userId on verified record if not yet set
+    await Otp.update(
+      { userId: user.id },
+      {
+        where: {
+          email: normalizedEmail,
+          purpose: 'DAILY_LOGIN',
+          verified: true,
+          userId: null,
+        },
+      }
+    );
 
     // Generate tokens and store session via AuthService
     const { accessToken, refreshToken } = await authService.generateTokens(user);
@@ -358,6 +410,61 @@ export const verifyDailyOtp = async (req: Request, res: Response, next: NextFunc
         token: accessToken,
         user: await getUserPayload(user),
       },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const resendDailyOtp = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const { email, password } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required.' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ where: { email: normalizedEmail } });
+
+    if (!user || !isDailyOtpRequiredRole(user.role)) {
+      return res.status(403).json({ error: 'Unauthorized role for daily OTP verification.' });
+    }
+
+    if (user.status !== 'ACTIVE') {
+      return res.status(403).json({ error: 'Your account is inactive or suspended.' });
+    }
+
+    // If password provided, verify credentials
+    if (password) {
+      const isMatch = await user.comparePassword(password);
+      if (!isMatch) {
+        return res.status(401).json({ error: 'Invalid credentials.' });
+      }
+    }
+
+    const genResult = await otpService.generateAndSaveOtp(normalizedEmail, 'DAILY_LOGIN', user.id);
+    if (!genResult.success || !genResult.otp) {
+      const statusCode = genResult.cooldownSeconds ? 429 : 400;
+      return res.status(statusCode).json({
+        error: genResult.error || 'Failed to generate OTP.',
+        cooldownSeconds: genResult.cooldownSeconds,
+      });
+    }
+
+    const sent = await emailService.sendDailyLoginOTP(
+      normalizedEmail,
+      `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'User',
+      genResult.otp,
+      user.role
+    );
+
+    if (!sent) {
+      return res.status(500).json({ error: 'Failed to send verification OTP email. Please try again.' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'A new verification OTP code has been sent to your registered email address.',
     });
   } catch (error) {
     return next(error);
@@ -766,6 +873,17 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
       tokenVersion: (user.tokenVersion || 0) + 1,
     });
 
+    // Invalidate any 24-hour verification records for this user
+    await Otp.destroy({
+      where: {
+        [Op.or]: [
+          { email: targetEmail },
+          { userId: user.id },
+        ],
+        purpose: 'DAILY_LOGIN',
+      },
+    });
+
     logger.info(`Password successfully reset for user ${targetEmail} (ID: ${user.id}, Role: ${user.role})`);
 
     return res.status(200).json({
@@ -810,6 +928,17 @@ export const changePassword = async (req: Request, res: Response, next: NextFunc
     await user.update({
       passwordHash: hash,
       mustChangePassword: false,
+    });
+
+    // Invalidate any 24-hour verification records for this user
+    await Otp.destroy({
+      where: {
+        [Op.or]: [
+          { email: user.email.toLowerCase() },
+          { userId: user.id },
+        ],
+        purpose: 'DAILY_LOGIN',
+      },
     });
 
     return res.status(200).json({

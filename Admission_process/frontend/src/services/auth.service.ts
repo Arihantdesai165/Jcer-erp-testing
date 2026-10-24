@@ -59,6 +59,11 @@ class AuthService {
     return user;
   }
 
+  async resendDailyOtp(email: string, password?: string): Promise<any> {
+    const response = await API.post('/auth/resend-daily-otp', { email, password });
+    return response.data;
+  }
+
   async sendRegistrationOtp(data: { firstName: string; lastName: string; email: string; phone?: string }): Promise<any> {
     return await API.post('/auth/send-registration-otp', data);
   }

@@ -21,7 +21,7 @@ class OtpService {
   /**
    * Generate 6-digit numeric OTP and save hashed copy in database.
    */
-  public async generateAndSaveOtp(email: string, purpose: OtpPurpose): Promise<GenerateOtpResult> {
+  public async generateAndSaveOtp(email: string, purpose: OtpPurpose, userId?: string): Promise<GenerateOtpResult> {
     const normalizedEmail = email.trim().toLowerCase();
     const now = new Date();
 
@@ -45,7 +45,8 @@ class OtpService {
       };
     }
 
-    // 2. Cooldown Guard: Check if an OTP was created less than 60 seconds ago
+    // 2. Cooldown Guard: Check if an OTP was created less than cooldown seconds ago (default 60s)
+    const cooldownSeconds = parseInt(process.env.DAILY_LOGIN_OTP_RESEND_SECONDS || '60', 10);
     const latestOtp = await Otp.findOne({
       where: {
         email: normalizedEmail,
@@ -56,8 +57,8 @@ class OtpService {
 
     if (latestOtp) {
       const elapsedSeconds = Math.floor((now.getTime() - new Date(latestOtp.createdAt).getTime()) / 1000);
-      if (elapsedSeconds < 60) {
-        const remainingCooldown = 60 - elapsedSeconds;
+      if (elapsedSeconds < cooldownSeconds) {
+        const remainingCooldown = cooldownSeconds - elapsedSeconds;
         return {
           success: false,
           error: `Please wait ${remainingCooldown} seconds before requesting a new OTP.`,
@@ -66,9 +67,9 @@ class OtpService {
       }
     }
 
-    // 3. Invalidate any existing active OTPs for this email and purpose
+    // 3. Invalidate any existing active unverified OTPs for this email and purpose by expiring them
     await Otp.update(
-      { verified: true },
+      { expiresAt: new Date(0) },
       {
         where: {
           email: normalizedEmail,
@@ -91,6 +92,7 @@ class OtpService {
     // 7. Save into Otp table
     await Otp.create({
       email: normalizedEmail,
+      userId: userId || null,
       otpHash,
       purpose,
       expiresAt,
@@ -161,7 +163,7 @@ class OtpService {
       await latestRecord.update({ attempts: newAttempts });
 
       if (attemptsLeft <= 0) {
-        await latestRecord.update({ verified: true });
+        await latestRecord.update({ expiresAt: new Date(0) });
         return {
           success: false,
           error: 'Invalid OTP. Maximum attempts exceeded. Please request a new OTP.',
@@ -176,9 +178,20 @@ class OtpService {
       };
     }
 
-    // OTP is valid! Invalidate all unverified OTPs for this email and purpose
+    // OTP is valid! Mark only the matched record as verified
+    const updateValues: any = {
+      verified: true,
+      updatedAt: now,
+    };
+    if (purpose === 'DAILY_LOGIN') {
+      // 24-hour verification validity period
+      updateValues.expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    }
+    await matchedRecord.update(updateValues);
+
+    // Invalidate/expire any other unverified OTPs for this email and purpose
     await Otp.update(
-      { verified: true },
+      { expiresAt: new Date(0) },
       {
         where: {
           email: normalizedEmail,
