@@ -7,7 +7,12 @@ import Admission from '../models/Admission';
 import Department from '../models/Department';
 import PromotionBatch from '../models/PromotionBatch';
 import StudentPromotionHistory from '../models/StudentPromotionHistory';
+import StudentAcademicEnrollment from '../models/StudentAcademicEnrollment';
+import AcademicYear from '../models/AcademicYear';
 import admissionService from '../services/admission.service';
+import { calculateStudentCohort } from '../utils/batchCohort.util';
+import { resolveDepartmentCanonical } from '../utils/departmentCanonical.util';
+import { normalizeAcademicYear, areAcademicYearsEqual, getAcademicYearVariants } from '../utils/academicYear.util';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -20,20 +25,27 @@ interface AuthenticatedRequest extends Request {
 export const getPromotionFilters = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
   try {
     const departments = await Department.findAll({
-      attributes: ['id', 'name', 'code'],
+      where: {
+        code: { [Op.ne]: 'AS' },
+        type: { [Op.ne]: 'SEMESTER_HANDLING' },
+        name: { [Op.notILike]: '%Applied Science%' },
+      },
+      attributes: ['id', 'name', 'code', 'type'],
       order: [['name', 'ASC']]
     });
 
-    const academicYears: string[] = [
-      '2024-2025',
-      '2025-2026',
-      '2026-2027',
-      '2027-2028',
-      '2028-2029',
-      '2029-2030',
-      '2030-2031',
-      '2031-2032'
-    ];
+    const dbYears = await AcademicYear.findAll({
+      where: {
+        isOperational: { [Op.ne]: false },
+        year: { [Op.ne]: '2025-26' },
+      },
+      order: [['year', 'ASC']]
+    });
+
+    let academicYears: string[] = dbYears.map(y => y.year);
+    if (academicYears.length === 0) {
+      academicYears = ['2026-27', '2027-28', '2028-29'];
+    }
 
     return res.status(200).json({
       success: true,
@@ -76,7 +88,8 @@ export const getPromotionStudents = async (req: Request, res: Response, next: Ne
       studentWhere.admissionType = admissionType;
     }
     if (academicYear && academicYear !== 'All') {
-      studentWhere.currentAcademicYear = academicYear;
+      const variants = getAcademicYearVariants(String(academicYear));
+      studentWhere.currentAcademicYear = { [Op.in]: variants };
     }
 
     const userWhere: any = {};
@@ -160,7 +173,7 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
     const fromSem = Number(currentSemester ?? fromSemester);
     const toSem = Number(targetSemester ?? toSemester);
     const curYear = currentAcademicYear || null;
-    const promYear = promotionAcademicYear || curYear || '2026-2027';
+    const promYear = normalizeAcademicYear(promotionAcademicYear || curYear) || '2026-27';
 
     if (isNaN(fromSem) || isNaN(toSem)) {
       return res.status(400).json({ error: 'Invalid semester selection.' });
@@ -171,13 +184,33 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
       return res.status(400).json({ error: `Invalid target semester for promotion.` });
     }
 
+    const standardDepts = await Department.findAll({
+      where: {
+        code: { [Op.ne]: 'AS' },
+        type: { [Op.ne]: 'SEMESTER_HANDLING' },
+        name: { [Op.notILike]: '%Applied Science%' }
+      }
+    });
+
     const students = await Student.findAll({
       where: { id: studentIds },
       include: [
         { model: User, as: 'user', attributes: ['firstName', 'lastName', 'email'] },
-        { model: Admission, as: 'admission', attributes: ['applicationStatus'] }
+        { model: Admission, as: 'admission', attributes: ['applicationStatus', 'branchId'] },
+        { model: Department, as: 'department', attributes: ['id', 'name', 'code', 'type'] }
       ]
     });
+
+    // Check for existing active destination enrollments to prevent duplicate promotions
+    const existingDestEnrollments = await StudentAcademicEnrollment.findAll({
+      where: {
+        studentId: studentIds,
+        academicYearId: promYear,
+        semesterId: toSem,
+        status: 'ACTIVE'
+      }
+    });
+    const destEnrollmentSet = new Set(existingDestEnrollments.map(e => e.studentId));
 
     const eligibleList: any[] = [];
     const skippedList: any[] = [];
@@ -191,7 +224,18 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
 
       const name = `${student.user?.firstName || ''} ${student.user?.lastName || ''}`.trim() || student.usn || 'Student';
 
-      if (curYear && curYear !== 'All' && student.currentAcademicYear && student.currentAcademicYear !== curYear) {
+      // Verify not already enrolled in destination semester & year
+      if (destEnrollmentSet.has(student.id)) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: `Student already has an active enrollment in Semester ${toSem} for academic year ${promYear}.`
+        });
+        return;
+      }
+
+      if (curYear && curYear !== 'All' && student.currentAcademicYear && !areAcademicYearsEqual(student.currentAcademicYear, curYear)) {
         skippedList.push({
           id,
           name,
@@ -221,6 +265,37 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
         return;
       }
 
+      // Requirement: Official USN is mandatory before promoting to Semester 2+
+      if (toSem >= 2 && (!student.usn || !student.usn.trim())) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: 'Official USN is required before this student can be promoted to Semester 2.'
+        });
+        return;
+      }
+
+      // Determine parent department (ensures CSE, CSE-AIML, ECE, ME, CV are preserved and never guessed)
+      let resolvedDept: Department | null | undefined = standardDepts.find(d => d.id === student.departmentId);
+      if (!resolvedDept && student.department && student.department.type !== 'SEMESTER_HANDLING' && student.department.code !== 'AS') {
+        resolvedDept = student.department;
+      }
+      if (!resolvedDept && student.admission?.branchId) {
+        resolvedDept = resolveDepartmentCanonical(student.admission.branchId, standardDepts);
+      }
+
+      // If moving to Semester 3+ and parent department cannot be determined without guessing, flag for manual review
+      if (toSem >= 3 && !resolvedDept) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: 'Parent department could not be resolved from admission records - requires manual review.'
+        });
+        return;
+      }
+
       eligibleList.push({
         id,
         name,
@@ -228,7 +303,11 @@ export const previewPromotion = async (req: Request, res: Response, next: NextFu
         currentSemester: student.semester,
         targetSemester: toSem,
         currentAcademicYear: student.currentAcademicYear,
-        promotionAcademicYear: promYear
+        promotionAcademicYear: promYear,
+        departmentId: resolvedDept?.id || student.departmentId,
+        departmentCode: resolvedDept?.code || student.department?.code || null,
+        departmentName: resolvedDept?.name || student.department?.name || null,
+        isAppliedScienceHandover: fromSem === 2 && toSem === 3
       });
     });
 
@@ -285,14 +364,34 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
       return res.status(400).json({ error: `Invalid target semester for promotion.` });
     }
 
+    const standardDepts = await Department.findAll({
+      where: {
+        code: { [Op.ne]: 'AS' },
+        type: { [Op.ne]: 'SEMESTER_HANDLING' },
+        name: { [Op.notILike]: '%Applied Science%' }
+      }
+    });
+
     // Step 1: Pre-fetch outside transaction to isolate valid records
     const students = await Student.findAll({
       where: { id: studentIds },
       include: [
         { model: User, as: 'user', attributes: ['firstName', 'lastName'] },
-        { model: Admission, as: 'admission', attributes: ['applicationStatus'] }
+        { model: Admission, as: 'admission', attributes: ['applicationStatus', 'branchId'] },
+        { model: Department, as: 'department', attributes: ['id', 'name', 'code', 'type'] }
       ]
     });
+
+    // Check for existing active destination enrollments
+    const existingDestEnrollments = await StudentAcademicEnrollment.findAll({
+      where: {
+        studentId: studentIds,
+        academicYearId: promYear,
+        semesterId: toSem,
+        status: 'ACTIVE'
+      }
+    });
+    const destEnrollmentSet = new Set(existingDestEnrollments.map(e => e.studentId));
 
     const validIds: string[] = [];
     const skippedList: any[] = [];
@@ -306,7 +405,17 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
 
       const name = `${student.user?.firstName || ''} ${student.user?.lastName || ''}`.trim() || student.usn || 'Student';
 
-      if (curYear && curYear !== 'All' && student.currentAcademicYear && student.currentAcademicYear !== curYear) {
+      if (destEnrollmentSet.has(student.id)) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: `Student already has an active enrollment in Semester ${toSem} for academic year ${promYear}.`
+        });
+        return;
+      }
+
+      if (curYear && curYear !== 'All' && student.currentAcademicYear && !areAcademicYearsEqual(student.currentAcademicYear, curYear)) {
         skippedList.push({
           id,
           name,
@@ -336,13 +445,44 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
         return;
       }
 
+      // Requirement: Official USN is mandatory before promoting to Semester 2+
+      if (toSem >= 2 && (!student.usn || !student.usn.trim())) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: 'Official USN is required before this student can be promoted to Semester 2.'
+        });
+        return;
+      }
+
+      // Determine parent department
+      let resolvedDept: Department | null | undefined = standardDepts.find(d => d.id === student.departmentId);
+      if (!resolvedDept && student.department && student.department.type !== 'SEMESTER_HANDLING' && student.department.code !== 'AS') {
+        resolvedDept = student.department;
+      }
+      if (!resolvedDept && student.admission?.branchId) {
+        resolvedDept = resolveDepartmentCanonical(student.admission.branchId, standardDepts);
+      }
+
+      if (toSem >= 3 && !resolvedDept) {
+        skippedList.push({
+          id,
+          name,
+          usn: student.usn,
+          reason: 'Parent department could not be resolved from admission records - requires manual review.'
+        });
+        return;
+      }
+
       validIds.push(id);
     });
 
     if (validIds.length === 0) {
+      const usnError = skippedList.find(s => s.reason?.includes('Official USN is required'));
       return res.status(400).json({
         success: false,
-        error: 'No eligible students found to promote.',
+        error: usnError ? usnError.reason : 'No eligible students found to promote.',
         data: {
           promotedCount: 0,
           skippedCount: skippedList.length,
@@ -351,10 +491,13 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
       });
     }
 
+    const studentDeptMap = new Map(students.map(s => [s.id, s.department]));
+
     // Step 2: Open SQL transaction for valid records
     transaction = await sequelize.transaction();
 
     // Re-fetch and lock for update to protect against concurrency
+    // (Omit outer joins because PostgreSQL disallows FOR UPDATE on nullable sides of outer joins)
     const lockedStudents = await Student.findAll({
       where: { id: validIds },
       include: [
@@ -364,11 +507,36 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
       transaction
     });
 
+    for (const student of lockedStudents) {
+      if (!student.department) {
+        student.department = studentDeptMap.get(student.id) as any;
+      }
+    }
+
     const finalPromoteIds: string[] = [];
     for (const student of lockedStudents) {
       const name = student.usn || student.id;
-      // Re-verify after locking
-      if (curYear && curYear !== 'All' && student.currentAcademicYear && student.currentAcademicYear !== curYear) {
+      // Re-verify after locking inside transaction
+      const existingInTx = await StudentAcademicEnrollment.findOne({
+        where: {
+          studentId: student.id,
+          academicYearId: promYear,
+          semesterId: toSem,
+          status: 'ACTIVE',
+        },
+        transaction,
+      });
+      if (existingInTx) {
+        skippedList.push({
+          id: student.id,
+          name,
+          usn: student.usn,
+          reason: `Student already has an active enrollment in Semester ${toSem} for academic year ${promYear}.`
+        });
+        continue;
+      }
+
+      if (curYear && curYear !== 'All' && student.currentAcademicYear && !areAcademicYearsEqual(student.currentAcademicYear, curYear)) {
         skippedList.push({
           id: student.id,
           name,
@@ -398,14 +566,25 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
         continue;
       }
 
+      if (toSem >= 2 && (!student.usn || !student.usn.trim())) {
+        skippedList.push({
+          id: student.id,
+          name,
+          usn: student.usn,
+          reason: 'Official USN is required before this student can be promoted to Semester 2.'
+        });
+        continue;
+      }
+
       finalPromoteIds.push(student.id);
     }
 
     if (finalPromoteIds.length === 0) {
       await transaction.rollback();
+      const usnError = skippedList.find(s => s.reason?.includes('Official USN is required'));
       return res.status(400).json({
         success: false,
-        error: 'All selected students skipped due to concurrent updates.',
+        error: usnError ? usnError.reason : 'All selected students skipped due to concurrent updates.',
         data: {
           promotedCount: 0,
           skippedCount: skippedList.length,
@@ -415,25 +594,100 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
     }
 
     // Create Promotion Batch with manual promotionAcademicYear
+    const isHandover = fromSem === 2 && toSem === 3;
+    const defaultBatchRemarks = isHandover
+      ? `Applied Science Handover: Bulk Promotion of ${finalPromoteIds.length} students from Sem 2 to Sem 3 (${promYear}) with unassigned sections for departmental HOD allocation`
+      : `Bulk Promotion of ${finalPromoteIds.length} students to ${promYear} (${toSem}th Sem)`;
+
     const batch = await PromotionBatch.create({
       academicYear: promYear,
       fromSemester: fromSem,
       toSemester: toSem,
       promotedBy: operatorId,
       studentCount: finalPromoteIds.length,
-      remarks: remarks || `Bulk Promotion of ${finalPromoteIds.length} students to ${promYear} (${toSem}th Sem)`
+      remarks: remarks || defaultBatchRemarks
     }, { transaction });
 
-    // Update students & insert history
+    // Update students & insert history & create new StudentAcademicEnrollment
     for (const student of lockedStudents) {
       if (!finalPromoteIds.includes(student.id)) continue;
 
-      await student.update({
+      // Determine parent department
+      let resolvedDept: Department | null | undefined = standardDepts.find(d => d.id === student.departmentId);
+      if (!resolvedDept && student.department && student.department.type !== 'SEMESTER_HANDLING' && student.department.code !== 'AS') {
+        resolvedDept = student.department;
+      }
+      if (!resolvedDept && student.admission?.branchId) {
+        resolvedDept = resolveDepartmentCanonical(student.admission.branchId, standardDepts);
+      }
+      const targetDeptId = resolvedDept?.id || student.departmentId;
+
+      // Update student: semester increments, section reset, rollNumber set to NULL for Sem 2+, cohort remains fixed
+      const studentUpdates: any = {
         semester: toSem,
         currentAcademicYear: promYear,
+        rollNumber: null, // Requirement 2, 3, 4: roll_number = NULL for semester >= 2
+        sectionId: null,
+        section: null,
         lastPromotedAt: new Date(),
         lastPromotedBy: operatorId
-      }, { transaction });
+      };
+      if (targetDeptId && student.departmentId !== targetDeptId) {
+        studentUpdates.departmentId = targetDeptId;
+      }
+      if (!student.admissionBatch) {
+        const cohortInfo = calculateStudentCohort({
+          batchYear: student.batchYear,
+          admissionBatch: student.admissionBatch,
+          admissionType: student.admissionType,
+          initialSemester: student.initialSemester,
+          currentAcademicYear: student.currentAcademicYear,
+          semester: fromSem,
+          usn: student.usn,
+        });
+        studentUpdates.batchYear = cohortInfo.cohortStartYear;
+        studentUpdates.admissionBatch = cohortInfo.batchDisplay;
+      }
+      await student.update(studentUpdates, { transaction });
+
+      // Update previous active academic enrollments to PROMOTED
+      await StudentAcademicEnrollment.update(
+        { status: 'PROMOTED' },
+        {
+          where: { studentId: student.id, status: 'ACTIVE' },
+          transaction
+        }
+      );
+
+      // Idempotently create or update academic enrollment for the target semester to prevent duplicate destination enrollments
+      const [newEnrollment, wasCreated] = await StudentAcademicEnrollment.findOrCreate({
+        where: {
+          studentId: student.id,
+          academicYearId: promYear,
+          semesterId: toSem,
+        },
+        defaults: {
+          studentId: student.id,
+          departmentId: targetDeptId,
+          academicYearId: promYear,
+          schemeId: student.scheme || '2025',
+          semesterId: toSem,
+          sectionId: null,
+          rollNumber: null, // Requirement 3 & 4: roll_number = NULL for promoted semester
+          entrySemester: student.initialSemester || 1,
+          status: 'ACTIVE',
+        },
+        transaction,
+      });
+
+      if (!wasCreated) {
+        await newEnrollment.update({
+          status: 'ACTIVE',
+          departmentId: targetDeptId,
+          sectionId: null,
+          rollNumber: null,
+        }, { transaction });
+      }
 
       await StudentPromotionHistory.create({
         studentId: student.id,
@@ -441,7 +695,7 @@ export const bulkPromoteStudents = async (req: AuthenticatedRequest, res: Respon
         toSemester: toSem,
         academicYear: promYear,
         promotedBy: operatorId,
-        remarks: remarks || null,
+        remarks: remarks || defaultBatchRemarks,
         promotionBatchId: batch.id,
         source: 'ADMIN_BULK'
       }, { transaction });

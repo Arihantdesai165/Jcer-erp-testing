@@ -386,15 +386,15 @@ export const DocumentVerificationPage: React.FC = () => {
           <div className="overflow-hidden rounded-[22px] glass-table-container shadow-sm border border-neutral-200/50 dark:border-neutral-850">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs uppercase font-bold tracking-wider bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800">
-                  <tr>
-                    <th className="px-5 py-4">Name &amp; ID</th>
-                    <th className="px-5 py-4">Role</th>
-                    <th className="px-5 py-4">Email / Phone</th>
-                    <th className="px-5 py-4">Username ID</th>
-                    <th className="px-5 py-4 text-center">Status</th>
-                    <th className="px-5 py-4 text-center">Last Reset At</th>
-                    <th className="px-5 py-4 text-right">Actions</th>
+                <thead className="text-xs uppercase font-extrabold tracking-wider bg-[#111111] dark:bg-neutral-950 text-white border-b border-neutral-800">
+                  <tr className="text-white">
+                    <th className="px-5 py-4 text-white font-bold">Name &amp; ID</th>
+                    <th className="px-5 py-4 text-white font-bold">Role</th>
+                    <th className="px-5 py-4 text-white font-bold">Email / Phone</th>
+                    <th className="px-5 py-4 text-white font-bold">Username ID</th>
+                    <th className="px-5 py-4 text-center text-white font-bold">Status</th>
+                    <th className="px-5 py-4 text-center text-white font-bold">Last Reset At</th>
+                    <th className="px-5 py-4 text-right text-white font-bold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -495,14 +495,14 @@ export const DocumentVerificationPage: React.FC = () => {
             <div className="overflow-hidden rounded-[22px] glass-table-container shadow-sm border border-neutral-200/50 dark:border-neutral-850">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                  <thead className="text-xs uppercase font-bold tracking-wider bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800">
-                    <tr>
-                      <th className="px-5 py-4">Request ID</th>
-                      <th className="px-5 py-4">User Details</th>
-                      <th className="px-5 py-4">Role</th>
-                      <th className="px-5 py-4">Request Date / Time</th>
-                      <th className="px-5 py-4 text-center">Status</th>
-                      <th className="px-5 py-4 text-right">Actions</th>
+                  <thead className="text-xs uppercase font-extrabold tracking-wider bg-[#111111] dark:bg-neutral-950 text-white border-b border-neutral-800">
+                    <tr className="text-white">
+                      <th className="px-5 py-4 text-white font-bold">Request ID</th>
+                      <th className="px-5 py-4 text-white font-bold">User Details</th>
+                      <th className="px-5 py-4 text-white font-bold">Role</th>
+                      <th className="px-5 py-4 text-white font-bold">Request Date / Time</th>
+                      <th className="px-5 py-4 text-center text-white font-bold">Status</th>
+                      <th className="px-5 py-4 text-right text-white font-bold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -572,14 +572,14 @@ export const DocumentVerificationPage: React.FC = () => {
           <div className="overflow-hidden rounded-[22px] glass-table-container shadow-sm border border-neutral-200/50 dark:border-neutral-850">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs uppercase font-bold tracking-wider bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800">
-                  <tr>
-                    <th className="px-5 py-4">Audit ID</th>
-                    <th className="px-5 py-4">Action Event</th>
-                    <th className="px-5 py-4">Target Account</th>
-                    <th className="px-5 py-4">Performed By</th>
-                    <th className="px-5 py-4 text-center">Result</th>
-                    <th className="px-5 py-4 text-right">Timestamp</th>
+                <thead className="text-xs uppercase font-extrabold tracking-wider bg-[#111111] dark:bg-neutral-950 text-white border-b border-neutral-800">
+                  <tr className="text-white">
+                    <th className="px-5 py-4 text-white font-bold">Audit ID</th>
+                    <th className="px-5 py-4 text-white font-bold">Action Event</th>
+                    <th className="px-5 py-4 text-white font-bold">Target Account</th>
+                    <th className="px-5 py-4 text-white font-bold">Performed By</th>
+                    <th className="px-5 py-4 text-center text-white font-bold">Result</th>
+                    <th className="px-5 py-4 text-right text-white font-bold">Timestamp</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -614,7 +614,7 @@ export const DocumentVerificationPage: React.FC = () => {
 
       {/* ── CREDENTIAL PREVIEW & DISPATCH MODAL ── */}
       {dispatchTarget && createPortal(
-        <div className="fixed inset-0 bg-neutral-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-lg bg-white dark:bg-neutral-900 rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             
             {/* Modal Header */}

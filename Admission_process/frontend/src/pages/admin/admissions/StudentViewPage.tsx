@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import admissionService, { AdmissionApplication } from '../../../services/admission.service';
 import API, { getBaseHostURL } from '../../../services/api';
@@ -703,15 +704,23 @@ export const StudentViewPage: React.FC = () => {
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-bold text-neutral-500 mt-4">
-              <span>App No: <strong className="text-neutral-700 dark:text-neutral-300">{student.applicationNumber}</strong></span>
-              {student.user?.student?.enrollmentNumber && (
-                <>
-                  <span className="hidden sm:inline">•</span>
-                  <span>USN: <strong className="text-neutral-700 dark:text-neutral-300">{student.user.student.enrollmentNumber}</strong></span>
-                </>
-              )}
+              <span>App No: <strong className="text-neutral-700 dark:text-neutral-300">{student.applicationNumber || '—'}</strong></span>
+              {(() => {
+                const assignedUsn = student.usn || student.user?.student?.usn || (student.user?.student?.enrollmentNumber && !student.user.student.enrollmentNumber.startsWith('JCER-') ? student.user.student.enrollmentNumber : null);
+                if (!assignedUsn) return null;
+                return (
+                  <>
+                    <span className="hidden sm:inline">•</span>
+                    <span>USN: <strong className="text-neutral-700 dark:text-neutral-300 font-mono">{assignedUsn}</strong></span>
+                  </>
+                );
+              })()}
               <span className="hidden sm:inline">•</span>
               <span>Branch: <strong className="text-neutral-700 dark:text-neutral-300">{student.branch?.name || 'N/A'}</strong></span>
+              <span className="hidden sm:inline">•</span>
+              <span>Semester: <strong className="text-neutral-700 dark:text-neutral-300">{student.user?.student?.semester ? `Sem ${student.user.student.semester}` : (student.entrySemester ? `Sem ${student.entrySemester}` : '—')}</strong></span>
+              <span className="hidden sm:inline">•</span>
+              <span>Academic Year: <strong className="text-neutral-700 dark:text-neutral-300">{student.academicYear || '—'}</strong></span>
               <span className="hidden sm:inline">•</span>
               <span>Type: <strong className="text-neutral-700 dark:text-neutral-300">{student.admissionType || 'N/A'}</strong></span>
             </div>
@@ -1147,7 +1156,7 @@ export const StudentViewPage: React.FC = () => {
                 {getTimelineBadge('Submitted Under Review', student.submittedAt)}
                 {getTimelineBadge('Correction Requested', student.correctionRequestedAt, student.correctionRequestedBy ? `${student.correctionRequestedBy.firstName || ''} ${student.correctionRequestedBy.lastName || ''}`.trim() || student.correctionRequestedBy.username || student.correctionRequestedBy.email : null)}
                 {getTimelineBadge('Verified / Approved by Officer', student.verifiedAt, student.verifiedByAdmin ? `${student.verifiedByAdmin.firstName || ''} ${student.verifiedByAdmin.lastName || ''}`.trim() || student.verifiedByAdmin.username || student.verifiedByAdmin.email : null)}
-                {getTimelineBadge('Admission Finalized (Enrolled)', student.applicationStatus === 'ENROLLED' ? (student.enrolledAt || student.updatedAt) : null, student.verifiedByAdmin ? `${student.verifiedByAdmin.firstName || ''} ${student.verifiedByAdmin.lastName || ''}`.trim() || student.verifiedByAdmin.username || student.verifiedByAdmin.email : (student.approvedByAdmin ? `${student.approvedByAdmin.firstName || ''} ${student.approvedByAdmin.lastName || ''}`.trim() || student.approvedByAdmin.username || student.approvedByAdmin.email : null))}
+                {getTimelineBadge('Admission Finalized (Enrolled)', student.applicationStatus === 'ENROLLED' ? (student.enrolledAt || student.updatedAt) : null, (student as any).principalReviewer ? `${(student as any).principalReviewer.firstName || ''} ${(student as any).principalReviewer.lastName || ''}`.trim() || (student as any).principalReviewer.username || (student as any).principalReviewer.email : 'Dr. S.V. Gorbal')}
                 {getTimelineBadge('Application Rejected', student.rejectedAt, student.rejectedByAdmin ? `${student.rejectedByAdmin.firstName || ''} ${student.rejectedByAdmin.lastName || ''}`.trim() || student.rejectedByAdmin.username || student.rejectedByAdmin.email : null)}
               </div>
             </div>
@@ -1210,8 +1219,8 @@ export const StudentViewPage: React.FC = () => {
       </div>
 
       {/* Direct Cancel Admission Modal */}
-      {cancelModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      {cancelModalOpen && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in duration-200">
             
             <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
@@ -1305,7 +1314,8 @@ export const StudentViewPage: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

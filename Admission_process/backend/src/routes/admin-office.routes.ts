@@ -14,4 +14,15 @@ router.get('/notifications', adminOfficeController.getNotifications);
 router.post('/notifications', adminOfficeController.createNotification);
 router.put('/notifications/:id/publish', adminOfficeController.publishNotification);
 
+// HODs & Parents Office Views
+router.get('/hods', adminOfficeController.getHODs);
+router.get('/parents', adminOfficeController.getParents);
+
+// Tickets
+router.get('/tickets', adminOfficeController.getTickets);
+router.put('/tickets/:id/resolve', adminOfficeController.resolveTicket);
+
+// Fee Reports
+router.get('/reports/fees', adminOfficeController.getFeeReports);
+
 export default router;

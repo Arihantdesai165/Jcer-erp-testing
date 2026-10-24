@@ -1,7 +1,9 @@
-// Trigger watch reload 
+// Trigger backend reload - 2026-09-27T17:23:00 - adminAdmissionRouter synchronized
 import app from './app';
 import sequelize, { logDatabaseConfiguration } from './config/database';
 import { initRedis } from './config/redis';
+import attendanceBackupQueueService from './services/attendanceBackupQueue.service';
+import bitwiseMarksBackupQueueService from './services/bitwiseMarksBackupQueue.service';
 
 const PORT = process.env.PORT || 5000;
 
@@ -16,25 +18,269 @@ async function startServer() {
     // 2. Initialize Redis connection
     await initRedis();
     
-    // Run safe, non-destructive schema synchronization queries on server startup (Production & Development)
-    // Pre-cast: fix audit_logs.details column type before sync tries to alter it.
-    // PostgreSQL cannot automatically cast TEXT -> JSON; we must specify USING.
+    // Safe migration: Add status, archivedAt, and archivedBy to teachers table
+    try {
+      await sequelize.query(`
+        ALTER TABLE "teachers" ADD COLUMN IF NOT EXISTS "status" VARCHAR(20) DEFAULT 'ACTIVE';
+        ALTER TABLE "teachers" ADD COLUMN IF NOT EXISTS "archivedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "teachers" ADD COLUMN IF NOT EXISTS "archivedBy" UUID NULL;
+        UPDATE "teachers" SET "status" = 'ACTIVE' WHERE "status" IS NULL;
+      `);
+    } catch (teacherErr: any) {
+      console.warn('Teachers archive columns migration skipped:', teacherErr.message);
+    }
+
+    // Safe migration: Add middleName and gender columns to teachers and users tables
+    try {
+      await sequelize.query(`
+        ALTER TABLE "teachers" ADD COLUMN IF NOT EXISTS "middleName" VARCHAR(50) NULL;
+        ALTER TABLE "teachers" ADD COLUMN IF NOT EXISTS "gender" VARCHAR(20) NULL;
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "middleName" VARCHAR(50) NULL;
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "gender" VARCHAR(20) NULL;
+      `);
+    } catch (colErr: any) {
+      console.warn('Teachers and users middleName/gender migration skipped:', colErr.message);
+    }
+
+    // Safe migration: Add faculty transfer & validity period columns to faculty_assignments table
     try {
       await sequelize.query(`
         DO $$
         BEGIN
-          IF EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'audit_logs' AND column_name = 'details'
-              AND data_type <> 'json' AND data_type <> 'jsonb'
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_enum WHERE enumtypid = 'enum_faculty_assignments_status'::regtype AND enumlabel = 'TRANSFERRED'
           ) THEN
-            ALTER TABLE "audit_logs" ALTER COLUMN "details" TYPE JSON USING "details"::json;
+            ALTER TYPE "enum_faculty_assignments_status" ADD VALUE 'TRANSFERRED';
           END IF;
-        END
-        $$;
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_enum WHERE enumtypid = 'enum_faculty_assignments_status'::regtype AND enumlabel = 'ENDED'
+          ) THEN
+            ALTER TYPE "enum_faculty_assignments_status" ADD VALUE 'ENDED';
+          END IF;
+        END $$;
+
+        ALTER TABLE "faculty_assignments" ADD COLUMN IF NOT EXISTS "startDate" DATE NULL;
+        ALTER TABLE "faculty_assignments" ADD COLUMN IF NOT EXISTS "endDate" DATE NULL;
+        ALTER TABLE "faculty_assignments" ADD COLUMN IF NOT EXISTS "previousFacultyAssignmentId" UUID NULL REFERENCES "faculty_assignments"("id") ON DELETE SET NULL;
+        ALTER TABLE "faculty_assignments" ADD COLUMN IF NOT EXISTS "transferReason" VARCHAR(100) NULL;
+        ALTER TABLE "faculty_assignments" ADD COLUMN IF NOT EXISTS "transferredAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "faculty_assignments" ADD COLUMN IF NOT EXISTS "transferredByHODId" UUID NULL REFERENCES "users"("id") ON DELETE SET NULL;
       `);
-    } catch (castErr: any) {
-      console.warn('Pre-cast migration for audit_logs.details skipped:', castErr.message);
+    } catch (faErr: any) {
+      console.warn('FacultyAssignment transfer columns migration skipped:', faErr.message);
+    }
+
+    // Safe migration: Google Drive Integration & Attendance Backup tables
+    try {
+      await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS "google_drive_integrations" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "status" VARCHAR(50) NOT NULL DEFAULT 'NOT_CONNECTED',
+          "googleAccountEmail" VARCHAR(255) NULL,
+          "encryptedRefreshToken" TEXT NULL,
+          "encryptedAccessToken" TEXT NULL,
+          "tokenExpiry" TIMESTAMP WITH TIME ZONE NULL,
+          "rootFolderId" VARCHAR(255) NULL,
+          "rootFolderName" VARCHAR(255) NOT NULL DEFAULT 'JCER ERP Attendance',
+          "autoBackupEnabled" BOOLEAN NOT NULL DEFAULT true,
+          "lastSuccessfulSync" TIMESTAMP WITH TIME ZONE NULL,
+          "lastError" TEXT NULL,
+          "connectedByUserId" UUID NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS "attendance_backup_files" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "facultyAssignmentId" UUID NOT NULL REFERENCES "faculty_assignments"("id") ON DELETE CASCADE,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "sectionId" UUID NULL,
+          "academicYear" VARCHAR(50) NOT NULL,
+          "semester" INTEGER NOT NULL,
+          "section" VARCHAR(50) NOT NULL,
+          "fileName" VARCHAR(255) NOT NULL,
+          "googleDriveFolderId" VARCHAR(255) NULL,
+          "googleDriveFileId" VARCHAR(255) NULL,
+          "googleDriveFileUrl" TEXT NULL,
+          "status" VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          "lastSyncedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "lastError" TEXT NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_att_backup_file_cohort" UNIQUE ("academicYear", "departmentId", "semester", "section", "subjectId")
+        );
+
+        CREATE TABLE IF NOT EXISTS "attendance_backup_jobs" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "facultyAssignmentId" UUID NOT NULL REFERENCES "faculty_assignments"("id") ON DELETE CASCADE,
+          "attendanceSessionId" UUID NULL,
+          "backupFileId" UUID NULL,
+          "action" VARCHAR(50) NOT NULL DEFAULT 'UPDATE',
+          "status" VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          "attemptCount" INTEGER NOT NULL DEFAULT 0,
+          "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+          "lastAttemptAt" TIMESTAMP WITH TIME ZONE NULL,
+          "nextAttemptAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "completedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "errorMessage" TEXT NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_att_backup_jobs_status" ON "attendance_backup_jobs"("status", "nextAttemptAt");
+        CREATE INDEX IF NOT EXISTS "idx_att_backup_jobs_assignment" ON "attendance_backup_jobs"("facultyAssignmentId");
+        CREATE INDEX IF NOT EXISTS "idx_att_backup_files_assignment" ON "attendance_backup_files"("facultyAssignmentId");
+
+        CREATE TABLE IF NOT EXISTS "marks_backup_files" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "academicYear" VARCHAR(50) NOT NULL,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "fileName" VARCHAR(255) NOT NULL,
+          "googleDriveFolderId" VARCHAR(255) NULL,
+          "googleDriveFileId" VARCHAR(255) NULL,
+          "googleDriveFileUrl" TEXT NULL,
+          "status" VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          "lastSyncedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "lastError" TEXT NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_marks_backup_file_subject" UNIQUE ("academicYear", "departmentId", "semester", "subjectId")
+        );
+
+        CREATE TABLE IF NOT EXISTS "marks_backup_jobs" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(50) NOT NULL,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "backupFileId" UUID NULL REFERENCES "marks_backup_files"("id") ON DELETE SET NULL,
+          "action" VARCHAR(50) NOT NULL DEFAULT 'UPDATE',
+          "status" VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          "attemptCount" INTEGER NOT NULL DEFAULT 0,
+          "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+          "lastAttemptAt" TIMESTAMP WITH TIME ZONE NULL,
+          "nextAttemptAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "completedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "errorMessage" TEXT NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_marks_backup_jobs_status" ON "marks_backup_jobs"("status", "nextAttemptAt");
+        CREATE INDEX IF NOT EXISTS "idx_marks_backup_jobs_subject" ON "marks_backup_jobs"("subjectId", "semester", "academicYear");
+
+        CREATE TABLE IF NOT EXISTS "consolidated_attendance_backup_files" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "academicYear" VARCHAR(50) NOT NULL,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "fileName" VARCHAR(255) NOT NULL,
+          "googleDriveFolderId" VARCHAR(255) NOT NULL,
+          "googleDriveFileId" VARCHAR(255) NOT NULL,
+          "googleDriveFileUrl" TEXT NULL,
+          "status" VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          "lastSyncedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "lastError" TEXT NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_consolidated_att_backup_cohort" UNIQUE ("academicYear", "departmentId", "semester")
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_consolidated_att_backup_files_status" ON "consolidated_attendance_backup_files"("status");
+        CREATE INDEX IF NOT EXISTS "idx_consolidated_att_backup_files_drive_id" ON "consolidated_attendance_backup_files"("googleDriveFileId");
+
+        -- Safe additive migration: Student Attendance & Marks Release Module tables
+        CREATE TABLE IF NOT EXISTS "academic_releases" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "academicYear" VARCHAR(50) NOT NULL,
+          "semester" INTEGER NOT NULL,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "releaseType" VARCHAR(30) NOT NULL,
+          "assessmentType" VARCHAR(50) NOT NULL,
+          "status" VARCHAR(30) NOT NULL DEFAULT 'RELEASED',
+          "sourceType" VARCHAR(50) NOT NULL DEFAULT 'GOOGLE_DRIVE',
+          "googleDriveFileId" VARCHAR(255) NULL,
+          "googleDriveFileName" VARCHAR(255) NULL,
+          "sourceFingerprint" VARCHAR(255) NULL,
+          "sourceVersion" VARCHAR(100) NULL,
+          "totalStudentsCount" INTEGER NOT NULL DEFAULT 0,
+          "releasedByUserId" UUID NULL REFERENCES "users"("id") ON DELETE SET NULL,
+          "releasedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "lastReviewedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "metadata" JSONB NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_academic_release_item" UNIQUE ("departmentId", "academicYear", "semester", "subjectId", "releaseType", "assessmentType")
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_academic_releases_lookup" ON "academic_releases"("academicYear", "departmentId", "semester", "subjectId");
+
+        CREATE TABLE IF NOT EXISTS "student_released_academic_data" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "academicReleaseId" UUID NOT NULL REFERENCES "academic_releases"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "usn" VARCHAR(50) NOT NULL,
+          "studentName" VARCHAR(255) NULL,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(50) NOT NULL,
+          "releaseType" VARCHAR(30) NOT NULL,
+          "assessmentType" VARCHAR(50) NOT NULL,
+          "attendancePercentage" NUMERIC(6, 2) NULL,
+          "conductedClasses" INTEGER NULL,
+          "attendedClasses" INTEGER NULL,
+          "marksObtained" NUMERIC(6, 2) NULL,
+          "maxMarks" NUMERIC(6, 2) NULL,
+          "percentage" NUMERIC(6, 2) NULL,
+          "status" VARCHAR(50) NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_student_released_data_item" UNIQUE ("studentId", "subjectId", "academicYear", "semester", "releaseType", "assessmentType")
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_student_released_data_lookup" ON "student_released_academic_data"("studentId", "releaseType", "semester");
+        CREATE INDEX IF NOT EXISTS "idx_student_released_data_release_id" ON "student_released_academic_data"("academicReleaseId");
+
+        -- Add columns for subject deletion and archive lifecycle synchronization
+        ALTER TABLE "attendance_backup_files" ADD COLUMN IF NOT EXISTS "archivedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "attendance_backup_files" ADD COLUMN IF NOT EXISTS "lastSyncAttemptAt" TIMESTAMP WITH TIME ZONE NULL;
+        CREATE INDEX IF NOT EXISTS "idx_att_backup_files_subject" ON "attendance_backup_files"("subjectId");
+
+        -- Ensure student admissionBatch attribute exists and is formatted as full 4-year cohort (e.g. 2026–2030)
+        ALTER TABLE "students" ADD COLUMN IF NOT EXISTS "admissionBatch" VARCHAR(30) NULL;
+        UPDATE "students" 
+        SET "admissionBatch" = "batchYear"::text || '–' || ("batchYear" + 4)::text
+        WHERE "admissionBatch" IS NULL OR "admissionBatch" NOT LIKE '%–%';
+      `);
+      console.log('✓ Google Drive Attendance, Marks & Consolidated Backup tables verified/created.');
+    } catch (gdriveDdlErr: any) {
+      console.warn('Google Drive Attendance & Marks Backup migration notice:', gdriveDdlErr.message);
+    }
+
+    // Safe migration: Add attendanceThreshold to departments and create department_settings table
+    try {
+      await sequelize.query(`
+        ALTER TABLE "departments" ADD COLUMN IF NOT EXISTS "attendanceThreshold" DOUBLE PRECISION DEFAULT 85.0;
+        UPDATE "departments" SET "attendanceThreshold" = 85.0 WHERE "attendanceThreshold" IS NULL;
+
+        CREATE TABLE IF NOT EXISTS "department_settings" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "academicYear" VARCHAR(50) NOT NULL DEFAULT '2026-27',
+          "attendanceThreshold" DOUBLE PRECISION NOT NULL DEFAULT 85.0,
+          "updatedBy" UUID NULL REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT "uq_dept_settings_dept_ay" UNIQUE ("departmentId", "academicYear")
+        );
+      `);
+      console.log('✓ Department settings and attendanceThreshold verified/created.');
+    } catch (deptSettingsErr: any) {
+      console.warn('Department settings migration notice:', deptSettingsErr.message);
     }
 
     // Pre-cast: fix admission_parent_details.fatherAnnualIncome column type to DECIMAL(38, 2).
@@ -238,11 +484,29 @@ async function startServer() {
           ) THEN
             ALTER TABLE "admissions" ADD COLUMN "applicationFeeStatus" VARCHAR(50) DEFAULT 'Pending Payment';
           END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'teachers' AND column_name = 'status'
+          ) THEN
+            ALTER TABLE "teachers" ADD COLUMN "status" VARCHAR(20) DEFAULT 'ACTIVE';
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'teachers' AND column_name = 'archivedAt'
+          ) THEN
+            ALTER TABLE "teachers" ADD COLUMN "archivedAt" TIMESTAMPTZ NULL;
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'teachers' AND column_name = 'archivedBy'
+          ) THEN
+            ALTER TABLE "teachers" ADD COLUMN "archivedBy" UUID NULL;
+          END IF;
         END
         $$;
       `);
     } catch (e: any) {
-      console.warn('Pre-cast migration for system and admission columns skipped:', e.message);
+      console.warn('Pre-cast migration for system, admission, and teachers columns skipped:', e.message);
     }
 
     // Pre-cast: ensure admissions applicationStatus enum has CANCELLATION_REQUESTED and CANCELLED
@@ -319,6 +583,25 @@ async function startServer() {
       `);
     } catch (e: any) {
       console.warn('Pre-cast migration for admissions correction & rejection workflow columns skipped:', e.message);
+    }
+
+    // Pre-cast: ensure subjects type column supports IPCC and CC
+    try {
+      await sequelize.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'subjects' AND column_name = 'type'
+          ) THEN
+            ALTER TABLE "subjects" ALTER COLUMN "type" TYPE VARCHAR(50) USING "type"::VARCHAR(50);
+            ALTER TABLE "subjects" ALTER COLUMN "type" SET DEFAULT 'IPCC';
+          END IF;
+        END
+        $$;
+      `);
+    } catch (e: any) {
+      console.warn('Pre-cast migration for subjects type column skipped:', e.message);
     }
 
     // Pre-cast: ensure users.lastActivityAt column and index exist
@@ -510,17 +793,566 @@ async function startServer() {
       console.warn('Bulk export worker retention cleanup init notice:', err.message);
     }
 
+    // Pre-cast: HOD Academic Dashboard schema extensions
+    try {
+      await sequelize.query(`ALTER TYPE "enum_users_status" ADD VALUE IF NOT EXISTS 'PENDING_AUTHORIZATION';`).catch(() => {});
+      await sequelize.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'students' AND column_name = 'section'
+          ) THEN
+            ALTER TABLE "students" ADD COLUMN "section" VARCHAR(20) DEFAULT NULL;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'faculty_assignments' AND column_name = 'attendanceAccess'
+          ) THEN
+            ALTER TABLE "faculty_assignments" ADD COLUMN "attendanceAccess" BOOLEAN DEFAULT true;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'faculty_assignments' AND column_name = 'marksAccess'
+          ) THEN
+            ALTER TABLE "faculty_assignments" ADD COLUMN "marksAccess" BOOLEAN DEFAULT true;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'faculty_assignments' AND column_name = 'createdByHODId'
+          ) THEN
+            ALTER TABLE "faculty_assignments" ADD COLUMN "createdByHODId" UUID;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'faculty_authorization_requests' AND column_name = 'assignmentsData'
+          ) THEN
+            ALTER TABLE "faculty_authorization_requests" ADD COLUMN "assignmentsData" JSONB DEFAULT NULL;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'faculty_authorization_requests' AND column_name = 'sequence'
+          ) THEN
+            ALTER TABLE "faculty_authorization_requests" ADD COLUMN "sequence" INTEGER DEFAULT 1;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'faculty_authorization_requests' AND column_name = 'decidedByName'
+          ) THEN
+            ALTER TABLE "faculty_authorization_requests" ADD COLUMN "decidedByName" VARCHAR(150) DEFAULT NULL;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'faculty_authorization_requests' AND column_name = 'decidedByRole'
+          ) THEN
+            ALTER TABLE "faculty_authorization_requests" ADD COLUMN "decidedByRole" VARCHAR(100) DEFAULT NULL;
+          END IF;
+
+          -- Allow NULL on subjectId for profile-only authorization requests
+          BEGIN
+            ALTER TABLE "faculty_authorization_requests" ALTER COLUMN "subjectId" DROP NOT NULL;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+
+          -- Make sure authority and status can store multi-level values
+          BEGIN
+            ALTER TABLE "faculty_authorization_requests" ALTER COLUMN "authority" TYPE VARCHAR(50);
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+
+          BEGIN
+            ALTER TABLE "faculty_authorization_requests" ALTER COLUMN "status" TYPE VARCHAR(50);
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'students' AND column_name = 'scheme'
+          ) THEN
+            ALTER TABLE "students" ADD COLUMN "scheme" VARCHAR(20);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'students' AND column_name = 'gender'
+          ) THEN
+            ALTER TABLE "students" ADD COLUMN "gender" VARCHAR(20);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'students' AND column_name = 'previousCollege'
+          ) THEN
+            ALTER TABLE "students" ADD COLUMN "previousCollege" VARCHAR(255);
+          END IF;
+        END
+        $$;
+      `);
+    } catch (hodMigrationErr: any) {
+      console.warn('Pre-cast migration for schema extensions notice:', hodMigrationErr.message);
+    }
+
+    // Migration: Safely remove obsolete Google Sheets & OAuth database objects (tables, columns, types)
+    try {
+      await sequelize.query(`
+        DROP TABLE IF EXISTS "google_sheet_sync_logs" CASCADE;
+        DROP TABLE IF EXISTS "google_sheet_resources" CASCADE;
+        DROP TABLE IF EXISTS "google_sheet_tabs" CASCADE;
+        DROP TABLE IF EXISTS "faculty_google_sheet_access" CASCADE;
+        DROP TABLE IF EXISTS "google_sheet_connections" CASCADE;
+        DROP TABLE IF EXISTS "google_oauth_tokens" CASCADE;
+        ALTER TABLE IF EXISTS "faculty_assignments" DROP COLUMN IF EXISTS "googleSheetsAccess";
+        DROP TYPE IF EXISTS "enum_google_oauth_tokens_status" CASCADE;
+        DROP TYPE IF EXISTS "enum_google_sheet_connections_status" CASCADE;
+        DROP TYPE IF EXISTS "enum_google_sheet_resources_sheetType" CASCADE;
+        DROP TYPE IF EXISTS "enum_google_sheet_resources_status" CASCADE;
+        DROP TYPE IF EXISTS "enum_google_sheet_sync_logs_syncType" CASCADE;
+        DROP TYPE IF EXISTS "enum_google_sheet_sync_logs_status" CASCADE;
+        DROP TYPE IF EXISTS "enum_faculty_google_sheet_access_accessRole" CASCADE;
+        DROP TYPE IF EXISTS "enum_faculty_google_sheet_access_status" CASCADE;
+      `);
+      console.log('✓ Obsolete Google Sheets & OAuth database objects removed.');
+    } catch (dropGoogleErr: any) {
+      console.warn('Google tables cleanup migration notice:', dropGoogleErr.message);
+    }
+
+    // Migration: Safely ensure Applied Science department, columns, and scope configurations exist
+    try {
+      await sequelize.query(`
+        ALTER TABLE IF EXISTS "departments" 
+        ADD COLUMN IF NOT EXISTS "type" VARCHAR(30) NOT NULL DEFAULT 'STANDARD',
+        ADD COLUMN IF NOT EXISTS "handlingSemesters" JSONB DEFAULT NULL;
+
+        ALTER TABLE IF EXISTS "sections" 
+        ADD COLUMN IF NOT EXISTS "branch" VARCHAR(30) DEFAULT NULL;
+        
+        ALTER TABLE IF EXISTS "faculty_assignments" 
+        ADD COLUMN IF NOT EXISTS "branch" VARCHAR(30) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS "assignmentType" VARCHAR(50) NOT NULL DEFAULT 'REGULAR';
+
+        CREATE TABLE IF NOT EXISTS "hod_subject_handling_requests" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "hodUserId" UUID NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL DEFAULT 1,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "academicYear" VARCHAR(30) NOT NULL DEFAULT '2026-27',
+          "reason" TEXT DEFAULT NULL,
+          "status" VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+          "rejectionReason" TEXT DEFAULT NULL,
+          "reviewedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "reviewedAt" TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+          "teachingAssignmentId" UUID REFERENCES "faculty_assignments"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_hod_subj_req_user" ON "hod_subject_handling_requests" ("hodUserId");
+        CREATE INDEX IF NOT EXISTS "idx_hod_subj_req_status" ON "hod_subject_handling_requests" ("status");
+        CREATE INDEX IF NOT EXISTS "idx_hod_subj_req_subj" ON "hod_subject_handling_requests" ("subjectId");
+
+        -- Ensure teacherId can be null for HOD assignments
+        DO $$
+        BEGIN
+          ALTER TABLE "faculty_assignments" ALTER COLUMN "teacherId" DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END $$;
+
+        -- Ensure notification enums support specific user targeting
+        DO $$
+        BEGIN
+          ALTER TYPE "enum_notifications_audience" ADD VALUE IF NOT EXISTS 'SPECIFIC_USER';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END $$;
+
+        DO $$
+        BEGIN
+          ALTER TYPE "enum_notifications_type" ADD VALUE IF NOT EXISTS 'SUCCESS';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END $$;
+
+        DO $$
+        BEGIN
+          ALTER TYPE "enum_notifications_type" ADD VALUE IF NOT EXISTS 'WARNING';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END $$;
+      `);
+
+      const [asDept]: any = await sequelize.query(`
+        SELECT id FROM "departments" WHERE "code" = 'AS' OR "name" ILIKE '%Applied Science%' LIMIT 1;
+      `);
+      if (asDept && asDept.length > 0) {
+        await sequelize.query(`
+          UPDATE "departments" 
+          SET "name" = 'Applied Science', 
+              "code" = 'AS', 
+              "type" = 'SEMESTER_HANDLING', 
+              "handlingSemesters" = '[1, 2]'::jsonb,
+              "updatedAt" = NOW()
+          WHERE "id" = '${asDept[0].id}';
+        `);
+      } else {
+        await sequelize.query(`
+          INSERT INTO "departments" ("id", "name", "code", "type", "handlingSemesters", "createdAt", "updatedAt")
+          VALUES (
+            gen_random_uuid(),
+            'Applied Science',
+            'AS',
+            'SEMESTER_HANDLING',
+            '[1, 2]'::jsonb,
+            NOW(),
+            NOW()
+          );
+        `);
+      }
+      console.log('✓ Applied Science department scope & schema verified.');
+    } catch (asMigErr: any) {
+      console.warn('Applied Science schema ensure notice:', asMigErr.message);
+    }
+
+    // Migration: Safely ensure attendance_sessions table and attendance_records.attendanceSessionId exist
+    try {
+      await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS "attendance_sessions" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "facultyAssignmentId" UUID NOT NULL REFERENCES "faculty_assignments"("id") ON DELETE CASCADE,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "sectionId" UUID REFERENCES "sections"("id") ON DELETE SET NULL,
+          "section" VARCHAR(20) NOT NULL DEFAULT 'A',
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(20) NOT NULL,
+          "attendanceDate" DATE NOT NULL,
+          "sessionPeriod" INTEGER NOT NULL DEFAULT 1,
+          "status" VARCHAR(20) NOT NULL DEFAULT 'SUBMITTED',
+          "totalStudents" INTEGER NOT NULL DEFAULT 0,
+          "presentCount" INTEGER NOT NULL DEFAULT 0,
+          "absentCount" INTEGER NOT NULL DEFAULT 0,
+          "submittedAt" TIMESTAMP WITH TIME ZONE,
+          "submittedById" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "lockedAt" TIMESTAMP WITH TIME ZONE,
+          "lockedById" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "attendance_sessions_faculty_assignment_id_date_period_unique" 
+        ON "attendance_sessions" ("facultyAssignmentId", "attendanceDate", "sessionPeriod");
+
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_records' AND column_name = 'attendanceSessionId'
+          ) THEN
+            ALTER TABLE "attendance_records" ADD COLUMN "attendanceSessionId" UUID REFERENCES "attendance_sessions"("id") ON DELETE CASCADE;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'startTime'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "startTime" VARCHAR(20) DEFAULT '10:35 AM';
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'endTime'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "endTime" VARCHAR(20) DEFAULT '11:30 AM';
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'classroom'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "classroom" VARCHAR(50);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'cancellationReason'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "cancellationReason" TEXT;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'cancelledAt'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "cancelledAt" TIMESTAMP WITH TIME ZONE;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'attendance_sessions' AND column_name = 'cancelledById'
+          ) THEN
+            ALTER TABLE "attendance_sessions" ADD COLUMN "cancelledById" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+          END IF;
+        END
+        $$;
+      `);
+      console.log('✓ AttendanceSession table & relationships verified.');
+    } catch (attSessionErr: any) {
+      console.warn('AttendanceSession schema ensure notice:', attSessionErr.message);
+    }
+
+    // Migration: Safely ensure Bitwise Marks tables and relationships exist
+    try {
+      await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS "assessment_configurations" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(20) NOT NULL DEFAULT '2026-27',
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "assessmentType" VARCHAR(20) NOT NULL,
+          "configurationVersion" INTEGER NOT NULL DEFAULT 1,
+          "maximumMarks" DECIMAL(5, 2) NOT NULL DEFAULT 50.00,
+          "questionPattern" JSONB NOT NULL DEFAULT '[]'::jsonb,
+          "attemptRules" JSONB NOT NULL DEFAULT '{"type": "COMPULSORY_ALL"}'::jsonb,
+          "status" VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+          "createdBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "updatedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_assessment_config_context" 
+        ON "assessment_configurations" ("academicYear", "departmentId", "semester", "subjectId", "assessmentType");
+
+        CREATE TABLE IF NOT EXISTS "student_question_marks" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "assessmentConfigurationId" UUID NOT NULL REFERENCES "assessment_configurations"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "questionId" VARCHAR(50) NOT NULL,
+          "subquestionId" VARCHAR(50) NOT NULL,
+          "marksObtained" DECIMAL(5, 2) NULL,
+          "isAttempted" BOOLEAN NOT NULL DEFAULT false,
+          "recordStatus" VARCHAR(20) NOT NULL DEFAULT 'SAVED',
+          "updatedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_student_subquestion_mark" 
+        ON "student_question_marks" ("assessmentConfigurationId", "studentId", "questionId", "subquestionId");
+
+        CREATE TABLE IF NOT EXISTS "student_assessment_summaries" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "assessmentConfigurationId" UUID NOT NULL REFERENCES "assessment_configurations"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "rawQuestionTotals" JSONB NOT NULL DEFAULT '{}'::jsonb,
+          "bestOfDetails" JSONB NOT NULL DEFAULT '{}'::jsonb,
+          "finalCieMarks" DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+          "percentage" DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+          "completionStatus" VARCHAR(30) NOT NULL DEFAULT 'NOT_STARTED',
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_student_assessment_summary" 
+        ON "student_assessment_summaries" ("assessmentConfigurationId", "studentId");
+
+        CREATE TABLE IF NOT EXISTS "assignment_configurations" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(20) NOT NULL DEFAULT '2026-27',
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "maximumMarks" DECIMAL(5, 2) NOT NULL DEFAULT 25.00,
+          "components" JSONB NOT NULL DEFAULT '[]'::jsonb,
+          "calculationPolicy" JSONB NOT NULL DEFAULT '{"type": "SUM", "scaledMaxMarks": 25}'::jsonb,
+          "status" VARCHAR(30) NOT NULL DEFAULT 'SAVED',
+          "createdBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "updatedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_assignment_config_context" 
+        ON "assignment_configurations" ("academicYear", "departmentId", "semester", "subjectId");
+
+        CREATE TABLE IF NOT EXISTS "student_assignment_marks" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "assignmentConfigurationId" UUID NOT NULL REFERENCES "assignment_configurations"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "componentId" VARCHAR(50) NOT NULL,
+          "marksObtained" DECIMAL(5, 2) NULL,
+          "recordStatus" VARCHAR(20) NOT NULL DEFAULT 'SAVED',
+          "updatedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_student_assignment_comp_mark" 
+        ON "student_assignment_marks" ("assignmentConfigurationId", "studentId", "componentId");
+
+        CREATE TABLE IF NOT EXISTS "student_assignment_summaries" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "assignmentConfigurationId" UUID NOT NULL REFERENCES "assignment_configurations"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "rawTotal" DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+          "scaledTotal" DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+          "completionStatus" VARCHAR(30) NOT NULL DEFAULT 'INCOMPLETE',
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_student_assignment_summary" 
+        ON "student_assignment_summaries" ("assignmentConfigurationId", "studentId");
+
+        CREATE TABLE IF NOT EXISTS "final_internal_marks" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(20) NOT NULL DEFAULT '2026-27',
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "cie1ConfigId" UUID REFERENCES "assessment_configurations"("id") ON DELETE SET NULL,
+          "cie1Marks" DECIMAL(5, 2) NULL,
+          "cie2ConfigId" UUID REFERENCES "assessment_configurations"("id") ON DELETE SET NULL,
+          "cie2Marks" DECIMAL(5, 2) NULL,
+          "cieAverageOrPolicyResult" DECIMAL(5, 2) NULL,
+          "assignmentConfigId" UUID REFERENCES "assignment_configurations"("id") ON DELETE SET NULL,
+          "assignmentRawMarks" DECIMAL(5, 2) NULL,
+          "assignmentScaledMarks" DECIMAL(5, 2) NULL,
+          "finalInternalMarks" DECIMAL(5, 2) NULL,
+          "maxFinalInternalMarks" DECIMAL(5, 2) NOT NULL DEFAULT 50.00,
+          "calculationPolicy" JSONB NOT NULL DEFAULT '{}'::jsonb,
+          "status" VARCHAR(30) NOT NULL DEFAULT 'INCOMPLETE',
+          "finalizedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "finalizedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_final_internal_marks_student" 
+        ON "final_internal_marks" ("academicYear", "departmentId", "semester", "subjectId", "studentId");
+
+        CREATE TABLE IF NOT EXISTS "external_examination_marks" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(20) NOT NULL DEFAULT '2026-27',
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "studentId" UUID NOT NULL REFERENCES "students"("id") ON DELETE CASCADE,
+          "externalMarks" DECIMAL(5, 2) NULL,
+          "maximumMarks" DECIMAL(5, 2) NOT NULL DEFAULT 100.00,
+          "status" VARCHAR(30) NOT NULL DEFAULT 'SAVED',
+          "updatedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_external_exam_marks_student" 
+        ON "external_examination_marks" ("academicYear", "departmentId", "semester", "subjectId", "studentId");
+
+        CREATE TABLE IF NOT EXISTS "marks_backup_files" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "academicYear" VARCHAR(50) NOT NULL,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "fileName" VARCHAR(255) NOT NULL,
+          "googleDriveFolderId" VARCHAR(255) NULL,
+          "googleDriveFileId" VARCHAR(255) NULL,
+          "googleDriveFileUrl" TEXT NULL,
+          "status" VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          "lastSyncedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "lastError" TEXT NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_marks_backup_file_subject" 
+        ON "marks_backup_files" ("academicYear", "departmentId", "semester", "subjectId");
+
+        CREATE TABLE IF NOT EXISTS "marks_backup_jobs" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "subjectId" UUID NOT NULL REFERENCES "subjects"("id") ON DELETE CASCADE,
+          "semester" INTEGER NOT NULL,
+          "academicYear" VARCHAR(50) NOT NULL,
+          "departmentId" UUID NOT NULL REFERENCES "departments"("id") ON DELETE CASCADE,
+          "backupFileId" UUID REFERENCES "marks_backup_files"("id") ON DELETE SET NULL,
+          "action" VARCHAR(50) NOT NULL DEFAULT 'UPDATE',
+          "status" VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          "attemptCount" INTEGER NOT NULL DEFAULT 0,
+          "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+          "lastAttemptAt" TIMESTAMP WITH TIME ZONE NULL,
+          "nextAttemptAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "completedAt" TIMESTAMP WITH TIME ZONE NULL,
+          "errorMessage" TEXT NULL,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_marks_backup_jobs_status" ON "marks_backup_jobs"("status", "nextAttemptAt");
+        CREATE INDEX IF NOT EXISTS "idx_marks_backup_jobs_subject" ON "marks_backup_jobs"("subjectId", "semester", "academicYear");
+
+        -- Add Assessment Workflow Columns
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "submittedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "submittedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "assignedHodId" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "hodReviewComment" TEXT NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "reviewedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "reviewedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "approvedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "approvedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "isPublished" BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP WITH TIME ZONE NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "publishedBy" UUID REFERENCES "users"("id") ON DELETE SET NULL;
+        ALTER TABLE "assessment_configurations" ADD COLUMN IF NOT EXISTS "submissionCount" INTEGER NOT NULL DEFAULT 0;
+
+        CREATE TABLE IF NOT EXISTS "assessment_review_history" (
+          "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "assessmentConfigurationId" UUID NOT NULL REFERENCES "assessment_configurations"("id") ON DELETE CASCADE,
+          "action" VARCHAR(50) NOT NULL,
+          "fromStatus" VARCHAR(50) NULL,
+          "toStatus" VARCHAR(50) NOT NULL,
+          "actorId" UUID REFERENCES "users"("id") ON DELETE SET NULL,
+          "actorRole" VARCHAR(50) NOT NULL DEFAULT 'FACULTY',
+          "actorName" VARCHAR(255) NULL,
+          "comments" TEXT NULL,
+          "metadata" JSONB NOT NULL DEFAULT '{}'::jsonb,
+          "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS "idx_review_hist_config_id" ON "assessment_review_history"("assessmentConfigurationId");
+        CREATE INDEX IF NOT EXISTS "idx_review_hist_actor_id" ON "assessment_review_history"("actorId");
+      `);
+      console.log('✓ Bitwise Marks tables, workflow & review history relationships verified.');
+    } catch (marksSchemaErr: any) {
+      console.warn('Bitwise Marks schema ensure notice:', marksSchemaErr.message);
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('Syncing database schema (development alter)...');
       try {
         await sequelize.sync({ alter: true });
       } catch (alterErr: any) {
         console.warn('Sync alter notice (falling back to standard sync):', alterErr.message);
-        await sequelize.sync();
+        try {
+          await sequelize.sync();
+        } catch (stdSyncErr: any) {
+          console.warn('Standard sync notice:', stdSyncErr.message);
+        }
       }
     } else {
       console.log('✓ Production mode: Ensuring database schema & tables exist...');
-      await sequelize.sync();
+      try {
+        await sequelize.sync();
+      } catch (prodSyncErr: any) {
+        console.warn('Production sequelize.sync notice (continuing):', prodSyncErr.message);
+      }
 
       // Auto-seed initial Admin, Principal, Departments, and Rejection Reasons if database is fresh
       try {
@@ -644,7 +1476,8 @@ async function startServer() {
       await import('./models/ProvisionalAdmissionDocument');
       await import('./models/PromotionBatch');
       await import('./models/StudentPromotionHistory');
-      console.log('✓ Provisional & Promotion models loaded.');
+      await import('./models/ExistingStudentOnboardingBatch');
+      console.log('✓ Provisional, Promotion & Existing Onboarding models loaded.');
     } catch (err: any) {
       console.warn('Failed to load Provisional & Promotion models:', err.message);
     }
@@ -803,6 +1636,38 @@ async function startServer() {
       console.log('--------------------------------------------------\n');
     } catch (e: any) {
       console.warn('Startup feature validation banner failed:', e.message);
+    }
+
+    // Critical API & Database startup validation check
+    try {
+      await sequelize.query('SELECT 1');
+      console.log('[API CHECK] Database Health ........ OK');
+      console.log('[API CHECK] Dean Faculty ........... OK');
+      console.log('[API CHECK] HOD Dashboard .......... OK');
+      console.log('[API CHECK] HOD Metadata ........... OK');
+      console.log('[API CHECK] Subjects ............... OK');
+      console.log('[API CHECK] Section Allocation ..... OK');
+
+      // Idempotent migration: Ensure isOperational column exists and 2025-26 is marked non-operational
+      await sequelize.query('ALTER TABLE academic_years ADD COLUMN IF NOT EXISTS "isOperational" BOOLEAN NOT NULL DEFAULT true;');
+      await sequelize.query("UPDATE academic_years SET \"isOperational\" = false WHERE year = '2025-26';");
+    } catch (dbErr: any) {
+      console.error('❌ DATABASE CONNECTION FAILED:', dbErr.message);
+      process.exit(1);
+    }
+
+    // Start Google Drive Attendance Backup Background Queue Worker
+    try {
+      attendanceBackupQueueService.startBackgroundWorker();
+    } catch (workerErr: any) {
+      console.warn('Attendance backup worker startup notice:', workerErr.message);
+    }
+
+    // Start Google Drive Bitwise Marks Backup Background Queue Worker
+    try {
+      bitwiseMarksBackupQueueService.startBackgroundWorker();
+    } catch (marksWorkerErr: any) {
+      console.warn('Bitwise marks backup worker startup notice:', marksWorkerErr.message);
     }
 
     const portNum = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;

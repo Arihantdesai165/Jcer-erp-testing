@@ -34,6 +34,21 @@ router.put('/budget/:id/decide', principalController.decideBudget);
 // Staff Management
 router.get('/staff', principalController.getStaffList);
 
+// Departments & Academic Years
+router.get('/departments', principalController.getDepartments as any);
+router.get('/academic-years', principalController.getAcademicYears as any);
+
+// Faculty Management (Global Directory)
+router.get('/faculty', principalController.getPrincipalFacultyList as any);
+
+// Faculty Authorization (Historical)
+router.get('/faculty/authorizations', principalController.getFacultyAuthorizations as any);
+router.get('/faculty/authorizations/count', principalController.getFacultyAuthorizationCount as any);
+router.get('/faculty-authorizations/notification-count', principalController.getFacultyAuthorizationCount as any);
+router.get('/faculty/authorizations/:id', principalController.getFacultyAuthorizationById as any);
+router.post('/faculty/authorizations/:id/approve', principalController.approveFacultyAuthorization as any);
+router.post('/faculty/authorizations/:id/reject', principalController.rejectFacultyAuthorization as any);
+
 // Leaves & Staff Requests
 router.get('/leaves/pending', principalController.getPendingLeaves);
 router.put('/leaves/:id/decide', principalController.decideLeave);
@@ -55,5 +70,9 @@ router.get('/compliance/status', principalController.getComplianceStatus);
 
 // Report Generation
 router.get('/reports/generate', principalController.generateReport);
+
+// Teaching Profile
+router.get('/teaching-profile', principalController.getPrincipalTeachingProfile as any);
+router.put('/teaching-profile', principalController.updatePrincipalTeachingProfile as any);
 
 export default router;

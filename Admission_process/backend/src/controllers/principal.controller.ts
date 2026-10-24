@@ -12,15 +12,38 @@ import AdmissionDocument from '../models/AdmissionDocument';
 import RejectionReason from '../models/RejectionReason';
 import AuditLog from '../models/AuditLog';
 import Notification from '../models/Notification';
+import Subject from '../models/Subject';
+import Teacher from '../models/Teacher';
+import FacultyAuthorizationRequest from '../models/FacultyAuthorizationRequest';
+import FacultyAssignment from '../models/FacultyAssignment';
+import AcademicYear from '../models/AcademicYear';
 import admissionService from '../services/admission.service';
 import emailService from '../services/email.service';
 import db from '../config/database';
 import AnalyticsService from '../services/analytics.service';
 import securityEvents from '../services/securityEvents.service';
+import facultyAuthorizationService from '../services/facultyAuthorization.service';
+import teachingProfileService from '../services/teachingProfile.service';
+import logger from '../utils/logger.util';
 
 interface AuthRequest extends Request {
-  user?: { id: string; role: string };
+  user?: { id: string; role: string; firstName?: string; lastName?: string; email?: string };
 }
+
+// Helper to record audit log for Principal actions
+const logPrincipalAudit = async (req: AuthRequest, action: string, details: any) => {
+  try {
+    await AuditLog.create({
+      userId: req.user?.id || null,
+      action,
+      ipAddress: req.ip || req.headers['x-forwarded-for']?.toString() || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'System',
+      details,
+    });
+  } catch (err: any) {
+    console.error('Principal AuditLog Error:', err.message);
+  }
+};
 
 // Helper to seed principal data inline if missing
 const ensurePrincipalDataSeeded = async () => {
@@ -813,3 +836,442 @@ export const getAnalyticsData = async (
     return next(err);
   }
 };
+
+// ─── FACULTY AUTHORIZATIONS ───────────────────────────────────────────────────
+
+/**
+ * GET /api/principal/faculty/authorizations
+ * List faculty authorization requests for Principal review with filtering and search
+ */
+export const getFacultyAuthorizations = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const { search, departmentId, status, academicYear, authority } = req.query;
+    const where: any = {};
+
+    if (authority && authority !== 'ALL') {
+      where.authority = authority;
+    } else {
+      where.authority = { [Op.in]: ['PRINCIPAL', 'DEAN'] };
+    }
+
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    if (departmentId && departmentId !== 'ALL') {
+      where.departmentId = departmentId;
+    }
+
+    if (academicYear && academicYear !== 'ALL') {
+      const startYear = String(academicYear).split(/[-–]/)[0].trim();
+      where.academicYear = {
+        [Op.or]: [
+          { [Op.iLike]: `${startYear}-%` },
+          { [Op.iLike]: `${startYear}–%` },
+          { [Op.eq]: academicYear },
+          { [Op.eq]: startYear },
+        ],
+      };
+    }
+
+    const searchTerm = typeof search === 'string' ? search.trim() : '';
+
+    const requests = await FacultyAuthorizationRequest.findAll({
+      where,
+      include: [
+        {
+          model: User,
+          as: 'faculty',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage', 'status'],
+          required: Boolean(searchTerm),
+          ...(searchTerm
+            ? {
+                where: {
+                  [Op.or]: [
+                    { firstName: { [Op.iLike]: `%${searchTerm}%` } },
+                    { lastName: { [Op.iLike]: `%${searchTerm}%` } },
+                    { email: { [Op.iLike]: `%${searchTerm}%` } },
+                  ],
+                },
+              }
+            : {}),
+        },
+        { model: Department, as: 'department', attributes: ['id', 'name', 'code'], required: false },
+        { model: Subject, as: 'subject', attributes: ['id', 'name', 'code'], required: false },
+        { model: User, as: 'createdByHOD', attributes: ['id', 'firstName', 'lastName', 'email'], required: false },
+        { model: User, as: 'decidedBy', attributes: ['id', 'firstName', 'lastName', 'email'], required: false },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    const formatted = await Promise.all(
+      requests.map((item: any) => facultyAuthorizationService.formatRequestForQueue(item, 'PRINCIPAL'))
+    );
+
+    return res.json({ success: true, data: formatted });
+  } catch (error: any) {
+    logger.error('Failed to get faculty authorizations for principal:', error);
+    return res.json({ success: true, data: [] });
+  }
+};
+
+/**
+ * GET /api/principal/faculty/authorizations/count
+ * Return pending authorization counts for Principal badge & metrics
+ */
+export const getFacultyAuthorizationCount = async (
+  _req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const principalPendingCount = await FacultyAuthorizationRequest.count({
+      where: {
+        status: 'PENDING',
+        authority: 'PRINCIPAL',
+      },
+    });
+
+    const totalPendingCount = await FacultyAuthorizationRequest.count({
+      where: {
+        status: 'PENDING',
+      },
+    });
+
+    return res.json({
+      success: true,
+      count: principalPendingCount,
+      principalPendingCount,
+      totalPendingCount,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/principal/faculty/authorizations/:id
+ * Get single faculty authorization request details with all assignments
+ */
+export const getFacultyAuthorizationById = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const { id } = req.params;
+
+    const request = await FacultyAuthorizationRequest.findByPk(id, {
+      include: [
+        { model: User, as: 'faculty', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage', 'status'] },
+        { model: Department, as: 'department', attributes: ['id', 'name', 'code'] },
+        { model: Subject, as: 'subject', attributes: ['id', 'name', 'code', 'credits', 'type'] },
+        { model: User, as: 'createdByHOD', attributes: ['id', 'firstName', 'lastName', 'email', 'profileImage'] },
+        { model: User, as: 'decidedBy', attributes: ['id', 'firstName', 'lastName', 'email'] },
+      ],
+    });
+
+    if (!request) {
+      return res.status(404).json({ error: 'Faculty authorization request not found.' });
+    }
+
+    const formatted = await facultyAuthorizationService.formatRequestForQueue(request, 'PRINCIPAL');
+
+    // Fetch all assignments associated with this faculty user
+    const assignments = await FacultyAssignment.findAll({
+      where: { userId: request.facultyUserId },
+      include: [{ model: Subject, as: 'subject', attributes: ['id', 'name', 'code', 'credits', 'type'] }],
+      order: [['semester', 'ASC'], ['createdAt', 'ASC']],
+    });
+
+    const responseData = {
+      ...formatted,
+      assignments: assignments.map((a: any) => ({
+        id: a.id,
+        subjectId: a.subjectId,
+        subjectName: a.subject?.name || 'General Assignment',
+        subjectCode: a.subject?.code || 'N/A',
+        subjectType: a.subject?.type || 'Theory',
+        credits: a.subject?.credits || 4,
+        semester: a.semester,
+        section: a.section,
+        academicYear: a.academicYear,
+        attendanceAccess: a.attendanceAccess,
+        marksAccess: a.marksAccess,
+        status: a.status,
+      })),
+    };
+
+    return res.json({ success: true, data: responseData });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * POST /api/principal/faculty/authorizations/:id/approve
+ * Principal approves faculty authorization request, activating user and assignments
+ */
+export const approveFacultyAuthorization = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const { id } = req.params;
+
+    const result = await facultyAuthorizationService.approveRequest({
+      requestId: id,
+      expectedAuthority: 'PRINCIPAL',
+      approver: {
+        id: req.user!.id,
+        role: req.user!.role,
+        firstName: req.user?.firstName,
+        lastName: req.user?.lastName,
+        email: req.user?.email,
+      },
+      ipAddress: req.ip || req.headers['x-forwarded-for']?.toString() || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'System',
+    });
+
+    return res.json(result);
+  } catch (error: any) {
+    logger.error('Principal approve error:', error);
+    return res.status(400).json({ error: error.message || 'Failed to approve faculty authorization.' });
+  }
+};
+
+/**
+ * POST /api/principal/faculty/authorizations/:id/reject
+ * Principal rejects faculty authorization request with required reason
+ */
+export const rejectFacultyAuthorization = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({ error: 'A rejection reason is required.' });
+    }
+
+    const result = await facultyAuthorizationService.rejectRequest({
+      requestId: id,
+      expectedAuthority: 'PRINCIPAL',
+      reason,
+      approver: {
+        id: req.user!.id,
+        role: req.user!.role,
+        firstName: req.user?.firstName,
+        lastName: req.user?.lastName,
+        email: req.user?.email,
+      },
+      ipAddress: req.ip || req.headers['x-forwarded-for']?.toString() || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'System',
+    });
+
+    return res.json(result);
+  } catch (error: any) {
+    logger.error('Principal reject error:', error);
+    return res.status(400).json({ error: error.message || 'Failed to reject faculty authorization.' });
+  }
+};
+
+/**
+ * GET /api/principal/departments
+ * Fetch departments list for filters
+ */
+export const getDepartments = async (
+  _req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const departments = await Department.findAll({
+      order: [['name', 'ASC']],
+    });
+    return res.json({ success: true, data: departments });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/principal/academic-years
+ * Fetch academic years list for filters
+ */
+export const getAcademicYears = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const includeHistorical = req.query?.includeHistorical === 'true';
+    const where: any = {};
+    if (!includeHistorical) {
+      where.isOperational = { [Op.ne]: false };
+      where.year = { [Op.ne]: '2025-26' };
+    }
+
+    const years = await AcademicYear.findAll({
+      where,
+      order: [['year', 'DESC']],
+    });
+    return res.json({ success: true, data: years });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/principal/faculty
+ * Global Faculty Directory for Principal view
+ */
+export const getPrincipalFacultyList = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const { search, departmentId, status } = req.query as any;
+
+    const whereUser: any = {};
+    if (search) {
+      whereUser[Op.or] = [
+        { firstName: { [Op.iLike]: `%${search}%` } },
+        { lastName: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+    if (status && status !== 'ALL') {
+      whereUser.status = status;
+    }
+
+    const teachers = await Teacher.findAll({
+      where: departmentId && departmentId !== 'ALL' ? { departmentId } : {},
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage', 'status', 'createdAt'],
+          where: whereUser,
+        },
+        {
+          model: Department,
+          as: 'department',
+          attributes: ['id', 'name', 'code'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    const currentYearRecord = await AcademicYear.findOne({ where: { isCurrent: true } });
+    const currentYear = currentYearRecord?.year || '2026-27';
+
+    const formatted = await Promise.all(
+      teachers.map(async (t: any) => {
+        const assignments = await FacultyAssignment.findAll({
+          where: { userId: t.userId, status: 'ACTIVE' },
+          include: [{ model: Subject, as: 'subject', attributes: ['name', 'code'] }],
+        });
+
+        const subjectNames = assignments.map((a: any) => a.subject?.name).filter(Boolean);
+
+        return {
+          id: t.id,
+          userId: t.userId,
+          name: `${t.user?.firstName || ''} ${t.user?.lastName || ''}`.trim(),
+          email: t.user?.email,
+          phone: t.user?.phone,
+          profileImage: t.user?.profileImage,
+          departmentId: t.departmentId,
+          departmentName: t.department?.name,
+          departmentCode: t.department?.code,
+          designation: t.designation,
+          status: t.user?.status || 'ACTIVE',
+          subjects: subjectNames.length > 0 ? subjectNames.join(', ') : 'General Faculty',
+          academicYear: currentYear,
+          joiningDate: t.joiningDate,
+          createdAt: t.createdAt,
+        };
+      })
+    );
+
+    return res.json({ success: true, data: formatted });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * GET /api/principal/teaching-profile
+ * Retrieves Principal's teaching profile, eligibility, and active assignments
+ */
+export const getPrincipalTeachingProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const profile = await teachingProfileService.getTeachingProfile(userId);
+    return res.json({ success: true, data: profile });
+  } catch (error: any) {
+    logger.error('PRINCIPAL_GET_TEACHING_PROFILE_ERROR:', error);
+    return next(error);
+  }
+};
+
+/**
+ * PUT /api/principal/teaching-profile
+ * Updates Principal's teaching profile (core department) to enable teaching capability
+ */
+export const updatePrincipalTeachingProfile = async (req: AuthRequest, res: Response, next: NextFunction): Promise<any> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: Session missing.' });
+    }
+
+    const { coreDepartmentId } = req.body;
+    if (!coreDepartmentId) {
+      return res.status(400).json({ error: 'Core department selection is required.' });
+    }
+
+    const updated = await teachingProfileService.updateTeachingProfile(userId, 'PRINCIPAL', coreDepartmentId);
+
+    try {
+      await AuditLog.create({
+        userId,
+        action: 'UPDATE_PRINCIPAL_TEACHING_PROFILE',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        details: {
+          userId,
+          coreDepartmentId,
+          coreDepartmentCode: updated.coreDepartmentCode,
+        },
+      });
+    } catch (auditErr) {
+      logger.warn('Failed to log audit for updatePrincipalTeachingProfile:', auditErr);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Teaching profile updated successfully. You are now eligible for teaching assignments.',
+      data: updated,
+    });
+  } catch (error: any) {
+    logger.error('PRINCIPAL_UPDATE_TEACHING_PROFILE_ERROR:', error);
+    return res.status(400).json({ error: error.message || 'Failed to update teaching profile.' });
+  }
+};
+
+

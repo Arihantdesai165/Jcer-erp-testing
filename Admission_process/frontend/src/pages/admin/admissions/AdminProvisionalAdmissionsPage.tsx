@@ -25,6 +25,7 @@ import {
   Mail,
   Phone
 } from 'lucide-react';
+import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
 
 const getOrdinal = (n: number | string): string => {
   const num = Number(n);
@@ -43,6 +44,7 @@ export const AdminProvisionalAdmissionsPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   
   // Filters
+  const [limit, setLimit] = useState<number>(10);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedSemester, setSelectedSemester] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
@@ -140,7 +142,7 @@ export const AdminProvisionalAdmissionsPage: React.FC = () => {
   useEffect(() => {
     fetchBranches();
     fetchApplications();
-  }, [selectedBranch, selectedSemester, selectedStatus, appliedSearch]);
+  }, [selectedBranch, selectedSemester, selectedStatus, appliedSearch, limit]);
 
   const fetchBranches = async () => {
     try {
@@ -161,6 +163,7 @@ export const AdminProvisionalAdmissionsPage: React.FC = () => {
       if (selectedSemester) params.semester = Number(selectedSemester);
       if (selectedStatus) params.status = selectedStatus;
       if (appliedSearch) params.search = appliedSearch;
+      if (limit) params.limit = limit;
 
       const res = await API.get('/provisional/admin/list', { params });
       if (res.data?.success) {
@@ -739,7 +742,7 @@ export const AdminProvisionalAdmissionsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex gap-2 w-full md:w-auto flex-shrink-0">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto flex-shrink-0 items-center">
             <button
               type="submit"
               className="px-5 py-2 bg-[#0F4C81] hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wide rounded-lg flex items-center justify-center gap-1.5 w-full md:w-auto"
@@ -757,6 +760,10 @@ export const AdminProvisionalAdmissionsPage: React.FC = () => {
                 Bulk Approve ({selectedIds.length})
               </button>
             )}
+            <ShowStudentsRangeSelector
+              value={limit}
+              onChange={(newLimit) => setLimit(newLimit)}
+            />
           </div>
         </form>
       </div>
@@ -788,7 +795,7 @@ export const AdminProvisionalAdmissionsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {applications.map((app, idx) => {
+                {applications.slice(0, limit).map((app, idx) => {
                   return (
                     <tr key={app.id} className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-900/30">
                       <td className="p-4 text-center font-bold text-slate-500 dark:text-slate-400">

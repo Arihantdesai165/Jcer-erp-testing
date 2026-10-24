@@ -4,7 +4,7 @@ import { activityHeartbeat } from './activityHeartbeat';
 export interface UserSession {
   id: string;
   email: string;
-  role: 'SUPER_ADMIN' | 'ADMIN' | 'HOD' | 'TEACHER' | 'STUDENT' | 'PARENT' | 'PRINCIPAL';
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'HOD' | 'TEACHER' | 'STUDENT' | 'PARENT' | 'PRINCIPAL' | 'DEAN' | 'FACULTY';
   name: string;
   profileImage: string;
   mustChangePassword?: boolean;
@@ -12,6 +12,18 @@ export interface UserSession {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  employeeId?: string;
+  designation?: string;
+  department?: {
+    id: string;
+    name: string;
+    code: string;
+    type?: 'STANDARD' | 'SEMESTER_HANDLING';
+    handlingSemesters?: number[];
+  };
+  isHod?: boolean;
+  isFaculty?: boolean;
+  workspaces?: string[];
 }
 
 export interface LoginResponse {
@@ -45,6 +57,11 @@ class AuthService {
     localStorage.setItem('user', JSON.stringify(user));
     activityHeartbeat.start();
     return user;
+  }
+
+  async resendDailyOtp(email: string, password?: string): Promise<any> {
+    const response = await API.post('/auth/resend-daily-otp', { email, password });
+    return response.data;
   }
 
   async sendRegistrationOtp(data: { firstName: string; lastName: string; email: string; phone?: string }): Promise<any> {
@@ -112,6 +129,11 @@ class AuthService {
 
   isAuthenticated(): boolean {
     return !!this.getToken();
+  }
+
+  async getUserWorkspaces(): Promise<any> {
+    const response = await API.get('/auth/workspaces');
+    return response.data?.data || response.data;
   }
 }
 

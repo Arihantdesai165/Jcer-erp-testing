@@ -1,10 +1,21 @@
 import express from 'express';
+import multer from 'multer';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { authorizeRoles } from '../middleware/rbac.middleware';
 import { uploadDocuments, uploadFeeReceiptMiddleware, singleDocumentValidationMiddleware, resolveStudentUserId } from '../middleware/upload.middleware';
 import * as admissionController from '../controllers/admission.controller';
+import * as existingOnboardingController from '../controllers/existing-student-onboarding.controller';
 
 const router = express.Router();
+const onboardingUpload = multer({ storage: multer.memoryStorage() });
+const safeUploadSingleFile = (req: any, res: any, next: any) => {
+  onboardingUpload.single('file')(req, res, (err: any) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message || 'File upload failed' });
+    }
+    next();
+  });
+};
 
 // ─── Public ──────────────────────────────────────────────────────────────────
 // Branches list (used by Step 1 dropdown — accessible to logged-in students)
@@ -53,7 +64,32 @@ applicationRouter.get('/handbook', admissionController.downloadHandbook);
 // ─── Admin Routes ─────────────────────────────────────────────────────────────
 const adminAdmissionRouter = express.Router();
 adminAdmissionRouter.use(authMiddleware);
-adminAdmissionRouter.use(authorizeRoles('ADMIN', 'SUPER_ADMIN', 'PRINCIPAL'));
+adminAdmissionRouter.use((req, res, next) => {
+  // Allow HOD read-only access to view student admission details and documents
+  const isHodAllowedPath = (
+    req.method === 'GET' &&
+    (
+      /^\/admissions\/[^/]+$/.test(req.path) ||
+      /^\/admissions\/[^/]+\/documents\/[^/]+$/.test(req.path)
+    )
+  );
+  if (isHodAllowedPath) {
+    return authorizeRoles('ADMIN', 'SUPER_ADMIN', 'ADMINISTRATOR', 'PRINCIPAL', 'HOD')(req, res, next);
+  }
+  return authorizeRoles('ADMIN', 'SUPER_ADMIN', 'ADMINISTRATOR', 'PRINCIPAL')(req, res, next);
+});
+
+// Existing Student Onboarding Routes
+adminAdmissionRouter.get('/onboarding/existing-students/context', existingOnboardingController.getOnboardingContext);
+adminAdmissionRouter.get('/students/existing-onboarding/context', existingOnboardingController.getOnboardingContext);
+adminAdmissionRouter.get('/onboarding/existing-students/template', existingOnboardingController.downloadExistingStudentsTemplate);
+adminAdmissionRouter.get('/students/existing-onboarding/template', existingOnboardingController.downloadExistingStudentsTemplate);
+adminAdmissionRouter.post('/onboarding/existing-students/validate', safeUploadSingleFile, existingOnboardingController.validateExistingStudents);
+adminAdmissionRouter.post('/students/existing-onboarding/validate', safeUploadSingleFile, existingOnboardingController.validateExistingStudents);
+adminAdmissionRouter.post('/onboarding/existing-students/import', existingOnboardingController.importExistingStudents);
+adminAdmissionRouter.post('/students/existing-onboarding/import', existingOnboardingController.importExistingStudents);
+adminAdmissionRouter.get('/onboarding/existing-students/history', existingOnboardingController.getOnboardingHistory);
+adminAdmissionRouter.get('/students/existing-onboarding/history', existingOnboardingController.getOnboardingHistory);
 
 adminAdmissionRouter.get('/usn/eligible', admissionController.listUsnEligibleApplicants);
 adminAdmissionRouter.get('/usn/summary', admissionController.getUsnSummary);
@@ -74,6 +110,7 @@ adminAdmissionRouter.get('/admissions/:id/documents/zip', admissionController.ex
 
 adminAdmissionRouter.delete('/admissions/bulk-delete-cancelled', authorizeRoles('ADMIN', 'SUPER_ADMIN'), admissionController.bulkDeleteCancelledAdmissions);
 adminAdmissionRouter.delete('/admissions/:id', authorizeRoles('ADMIN', 'SUPER_ADMIN'), admissionController.deleteAdmissionById);
+adminAdmissionRouter.get('/admissions/batches', admissionController.getAvailableBatches);
 adminAdmissionRouter.get('/admissions', admissionController.listAdmissions);
 adminAdmissionRouter.get('/admissions/:id/documents/:field', admissionController.viewAdmissionDocument);
 adminAdmissionRouter.get('/admissions/:id', admissionController.getAdmissionById);

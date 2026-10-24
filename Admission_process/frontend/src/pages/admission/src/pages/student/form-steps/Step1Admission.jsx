@@ -91,7 +91,14 @@ const Step1Admission = ({ onNext, data, updateData, applicationStatus, adminRema
         const fetchBranches = async () => {
             try {
                 const res = await api.get('/branches');
-                if (res.data.success) setBranches(res.data.data);
+                if (res.data.success) {
+                    const filtered = (res.data.data || []).filter(b => 
+                        b.code !== 'AS' && 
+                        b.type !== 'SEMESTER_HANDLING' && 
+                        !b.name?.toLowerCase().includes('applied science')
+                    );
+                    setBranches(filtered);
+                }
             } catch (err) {
                 toast.error('Failed to load branches', { id: 'fetch-branches-error' });
             }
@@ -300,7 +307,10 @@ const Step1Admission = ({ onNext, data, updateData, applicationStatus, adminRema
                         value={data.branchId || ''}
                         onChange={(val) => updateData({ branchId: val })}
                         placeholder="Select preferred engineering branch..."
-                        options={branches.map(b => ({ value: b.id, label: `${b.name} (${b.code})` }))}
+                        options={branches
+                            .filter(b => b.code !== 'AS' && b.type !== 'SEMESTER_HANDLING' && !b.name?.toLowerCase().includes('applied science'))
+                            .map(b => ({ value: b.id, label: `${b.name} (${b.code})` }))
+                        }
                     />
                     {renderFeedback('branchId')}
                     {!data.branchId && applicationStatus === 'REJECTED' && (

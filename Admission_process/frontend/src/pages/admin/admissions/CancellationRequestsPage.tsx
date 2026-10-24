@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
+import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
 
 export const CancellationRequestsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -15,6 +16,7 @@ export const CancellationRequestsPage: React.FC = () => {
   
   // Filters & Pagination
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
 
@@ -32,7 +34,7 @@ export const CancellationRequestsPage: React.FC = () => {
     try {
       const result = await admissionService.listApplications({
         page,
-        limit: 10,
+        limit,
         status: 'CANCELLATION_REQUESTED',
         search
       });
@@ -47,7 +49,7 @@ export const CancellationRequestsPage: React.FC = () => {
 
   useEffect(() => {
     fetchApplications();
-  }, [page, search]);
+  }, [page, limit, search]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -436,39 +438,48 @@ export const CancellationRequestsPage: React.FC = () => {
       {/* Main Card */}
       <div className="bg-white dark:bg-neutral-950 border border-neutral-200/60 dark:border-neutral-800 rounded-3xl p-5 shadow-sm space-y-5">
         
-        {/* Search Bar */}
-        <form onSubmit={handleSearchSubmit} className="flex gap-3 max-w-md">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 size-4" />
-            <input
-              type="text"
-              placeholder="Search by student name or admission number..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full text-xs font-semibold pl-10 pr-4 py-3 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-xl focus:outline-none focus:border-violet-500 focus:bg-white dark:focus:bg-neutral-900 dark:text-white transition-all"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-          >
-            Search
-          </button>
-        </form>
+        {/* Search & Range Selector */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <form onSubmit={handleSearchSubmit} className="flex gap-3 max-w-md flex-1">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 size-4" />
+              <input
+                type="text"
+                placeholder="Search by student name or admission number..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full text-xs font-semibold pl-10 pr-4 py-2.5 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-xl focus:outline-none focus:border-violet-500 focus:bg-white dark:focus:bg-neutral-900 dark:text-white transition-all"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              Search
+            </button>
+          </form>
+          <ShowStudentsRangeSelector
+            value={limit}
+            onChange={(newLimit) => {
+              setLimit(newLimit);
+              setPage(1);
+            }}
+          />
+        </div>
 
         {/* Requests Table */}
-        <div className="overflow-x-auto border border-neutral-100 dark:border-neutral-800/60 rounded-2xl">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 text-neutral-450 font-black uppercase tracking-wider">
-                <th className="p-4">Admission No</th>
-                <th className="p-4">Student Name</th>
-                <th className="p-4">Branch</th>
-                <th className="p-4">Admission Type</th>
-                <th className="p-4">Reason</th>
-                <th className="p-4">Requested Date</th>
-                <th className="p-4">Status</th>
-                <th className="p-4 text-right">Actions</th>
+        <div className="overflow-x-auto border border-neutral-100 dark:border-neutral-800/60 rounded-2xl shadow-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[1050px]">
+            <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase font-extrabold border-b border-neutral-800">
+              <tr className="border-b border-neutral-800 bg-[#111111] dark:bg-neutral-950 text-white font-black uppercase tracking-wider text-[10px]">
+                <th className="p-4 text-white min-w-[160px]">Admission No</th>
+                <th className="p-4 text-white min-w-[220px]">Student Name</th>
+                <th className="p-4 text-white min-w-[120px]">Branch</th>
+                <th className="p-4 text-white min-w-[120px]">Admission Type</th>
+                <th className="p-4 text-white min-w-[140px]">Reason</th>
+                <th className="p-4 text-white min-w-[150px]">Requested Date</th>
+                <th className="p-4 text-white min-w-[140px]">Status</th>
+                <th className="p-4 text-right text-white min-w-[120px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/40 text-neutral-700 dark:text-neutral-350 font-semibold">

@@ -14,8 +14,36 @@ import { activityHeartbeat } from './services/activityHeartbeat';
 import ProtectedLayout from './components/layout/ProtectedLayout';
 import AdminLayout from './components/layout/AdminLayout';
 import PrincipalLayout from './components/layout/PrincipalLayout';
+import DeanLayout from './components/layout/DeanLayout';
+import HodLayout from './components/layout/HodLayout';
+import FacultyLayout from './components/layout/FacultyLayout';
+import StudentLayout from './components/layout/StudentLayout';
 import TopLoadingBar from './components/common/TopLoadingBar';
 import PwaManager from './components/PwaManager';
+
+// ─── Student Pages ────────────────────────────────────────────────────────────
+import StudentOverviewPage from './pages/student/StudentOverviewPage';
+import StudentAttendancePage from './pages/student/StudentAttendancePage';
+import StudentMarksPage from './pages/student/StudentMarksPage';
+import StudentProfilePage from './pages/student/StudentProfilePage';
+
+// ─── Faculty Pages ────────────────────────────────────────────────────────────
+import FacultyOverviewPage from './pages/faculty/FacultyOverviewPage';
+import FacultyAttendancePage from './pages/faculty/FacultyAttendancePage';
+import FacultyAllSubjectAttendancePage from './pages/faculty/FacultyAllSubjectAttendancePage';
+import FacultyStudentAttendancePage from './pages/faculty/FacultyStudentAttendancePage';
+import FacultyAnalyticsPage from './pages/faculty/FacultyAnalyticsPage';
+import FacultyProfilePage from './pages/faculty/FacultyProfilePage';
+
+// ─── Faculty Bitwise Marks Pages ──────────────────────────────────────────────
+import FacultyMarksDashboardPage from './pages/faculty/marks/FacultyMarksDashboardPage';
+import FacultyMarksSubjectSelectPage from './pages/faculty/marks/FacultyMarksSubjectSelectPage';
+import FacultyMarksConfigPage from './pages/faculty/marks/FacultyMarksConfigPage';
+import FacultyMarksGridPage from './pages/faculty/marks/FacultyMarksGridPage';
+import FacultyAssignmentConfigPage from './pages/faculty/marks/FacultyAssignmentConfigPage';
+import FacultyAssignmentMarksPage from './pages/faculty/marks/FacultyAssignmentMarksPage';
+import FacultyFinalInternalMarksPage from './pages/faculty/marks/FacultyFinalInternalMarksPage';
+import FacultyExternalMarksPage from './pages/faculty/marks/FacultyExternalMarksPage';
 
 // ─── Common Pages ─────────────────────────────────────────────────────────────
 import LoginPage from './pages/common/LoginPage';
@@ -25,6 +53,51 @@ import { ProvisionalAcknowledgement } from './pages/common/ProvisionalAcknowledg
 import ModuleUnavailablePage from './pages/common/ModuleUnavailablePage';
 import PrivacyPolicyPage from './pages/common/PrivacyPolicyPage';
 import TermsOfUsePage from './pages/common/TermsOfUsePage';
+
+// ─── Dean Pages ───────────────────────────────────────────────────────────────
+import DeanDashboardPage from './pages/dean/DeanDashboardPage';
+import DepartmentsPage from './pages/dean/academic/DepartmentsPage';
+import DepartmentAcademicInfoPage from './pages/dean/academic/DepartmentAcademicInfoPage';
+import HodListPage from './pages/dean/hod/HodListPage';
+import CreateHodPage from './pages/dean/hod/CreateHodPage';
+import HodDetailPage from './pages/dean/hod/HodDetailPage';
+import HodAssignmentPage from './pages/dean/hod/HodAssignmentPage';
+import HodHistoryPage from './pages/dean/hod/HodHistoryPage';
+import FacultyListPage from './pages/dean/faculty/FacultyListPage';
+import DeanCreateFacultyPage from './pages/dean/faculty/DeanCreateFacultyPage';
+import DeanBulkFacultyImportPage from './pages/dean/faculty/DeanBulkFacultyImportPage';
+import DeanArchivedFacultyPage from './pages/dean/faculty/DeanArchivedFacultyPage';
+import FacultyAuthorizationPage from './pages/dean/faculty/FacultyAuthorizationPage';
+import FacultyReviewPage from './pages/dean/faculty/FacultyReviewPage';
+import FacultyAssignmentsPage from './pages/dean/faculty/FacultyAssignmentsPage';
+import DeanFacultyDetailPage from './pages/dean/faculty/DeanFacultyDetailPage';
+import DeanFacultyRegeneratePasswordPage from './pages/dean/faculty/DeanFacultyRegeneratePasswordPage';
+import DeanArchiveFacultyPage from './pages/dean/faculty/DeanArchiveFacultyPage';
+import DeanProfilePage from './pages/dean/DeanProfilePage';
+import DeanGoogleDriveBackupPage from './pages/dean/settings/DeanGoogleDriveBackupPage';
+
+// ─── HOD Pages ────────────────────────────────────────────────────────────────
+import HodDashboardPage from './pages/hod/HodDashboardPage';
+import HodStudentsPage from './pages/hod/HodStudentsPage';
+import HodStudentsSemesterPage from './pages/hod/HodStudentsSemesterPage';
+import HodSemesterCohortPage from './pages/hod/HodSemesterCohortPage';
+import HodStudentsSectionPage from './pages/hod/HodStudentsSectionPage';
+import HodSectionDetailPage from './pages/hod/HodSectionDetailPage';
+import HodSectionAllocatePage from './pages/hod/HodSectionAllocatePage';
+import HodStudentDetailPage from './pages/hod/HodStudentDetailPage';
+import HodFacultyListPage from './pages/hod/HodFacultyListPage';
+import HodFacultyManagePage from './pages/hod/HodFacultyManagePage';
+import HodFacultyAssignmentsPage from './pages/hod/HodFacultyAssignmentsPage';
+import HodSubjectsPage from './pages/hod/HodSubjectsPage';
+import HodAttendanceOverviewPage from './pages/hod/HodAttendanceOverviewPage';
+import HodAttendanceDefaultersPage from './pages/hod/HodAttendanceDefaultersPage';
+import HodAcademicsOverviewPage from './pages/hod/HodAcademicsOverviewPage';
+import HodBitwiseAnalysisPage from './pages/hod/HodBitwiseAnalysisPage';
+import HodStudentPerformancePage from './pages/hod/HodStudentPerformancePage';
+import HodReportsPage from './pages/hod/HodReportsPage';
+import HodSettingsPage from './pages/hod/HodSettingsPage';
+import HodProfilePage from './pages/hod/HodProfilePage';
+import HodPublishAttendanceMarksPage from './pages/hod/HodPublishAttendanceMarksPage';
 
 // ─── Admission Portal ─────────────────────────────────────────────────────────
 import { AuthProvider as AdmissionAuthProvider } from './pages/admission/src/context/AuthContext';
@@ -54,6 +127,7 @@ import { AdminStudentDocumentsPage } from './pages/admin/admissions/AdminStudent
 import { BulkDocumentExportPage } from './pages/admin/admissions/BulkDocumentExportPage';
 import { AdminPromotionPage } from './pages/admin/admissions/AdminPromotionPage';
 import { StudentExportPage } from './pages/admin/admissions/StudentExportPage';
+import { ExistingStudentOnboardingPage } from './pages/admin/students/ExistingStudentOnboardingPage';
 
 import AdminNotificationsPage from './pages/admin/communications/AdminNotificationsPage';
 import AdminAnnouncementsPage from './pages/admin/communications/AdminAnnouncementsPage';
@@ -63,13 +137,15 @@ import CredentialManagementPage from './pages/admin/settings/CredentialManagemen
 import AdminSystemSettingsPage from './pages/admin/settings/AdminSystemSettingsPage';
 import AdminAuditLogsPage from './pages/admin/settings/AdminAuditLogsPage';
 
-// ─── Principal Pages ──────────────────────────────────────────────────────────
 import PrincipalDashboardPage from './pages/principal/PrincipalDashboardPage';
+import PrincipalFacultyListPage from './pages/principal/PrincipalFacultyListPage';
 import CollegeAnalyticsPage from './pages/principal/CollegeAnalyticsPage';
 import ReportGenerationPage from './pages/principal/ReportGenerationPage';
 import PrincipalProfilePage from './pages/principal/PrincipalProfilePage';
 import { PrincipalAdmissionQueuePage } from './pages/principal/PrincipalAdmissionQueuePage';
 import { PrincipalAdmissionReviewPage } from './pages/principal/PrincipalAdmissionReviewPage';
+import { PrincipalFacultyAuthorizationPage } from './pages/principal/PrincipalFacultyAuthorizationPage';
+import { PrincipalFacultyReviewPage } from './pages/principal/PrincipalFacultyReviewPage';
 import GlobalFooter from './components/common/GlobalFooter';
 
 // ─── Fallback Pages ───────────────────────────────────────────────────────────
@@ -101,10 +177,13 @@ const RoleBasedRedirect: React.FC = () => {
   const role = user?.role;
 
   if (role === 'STUDENT') {
-    return <Navigate to="/admission/dashboard" replace />;
+    return <Navigate to="/student/dashboard" replace />;
   }
   if (role === 'ADMIN' || role === 'SUPER_ADMIN') return <Navigate to="/admin/dashboard" replace />;
   if (role === 'PRINCIPAL') return <Navigate to="/principal/dashboard" replace />;
+  if (role === 'DEAN') return <Navigate to="/dean/dashboard" replace />;
+  if (role === 'HOD') return <Navigate to="/hod/dashboard" replace />;
+  if (role === 'FACULTY' || role === 'TEACHER') return <Navigate to="/faculty/dashboard" replace />;
 
   return <Navigate to="/module-unavailable" replace />;
 };
@@ -154,27 +233,30 @@ const AuthBootstrap: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   return <>{children}</>;
 };
 
+import { AcademicYearProvider } from './context/AcademicYearContext';
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export const App: React.FC = () => (
   <Provider store={store}>
-    <TopLoadingBar />
-    <PwaManager />
-    <ToastContainer
-      position="top-right"
-      autoClose={3000}
-      hideProgressBar={false}
-      newestOnTop={false}
-      closeOnClick
-      rtl={false}
-      pauseOnFocusLoss
-      draggable
-      pauseOnHover
-      theme="colored"
-    />
-    <HotToaster position="top-right" />
-    <BrowserRouter>
-      <AuthBootstrap>
-        <Routes>
+    <AcademicYearProvider>
+      <TopLoadingBar />
+      <PwaManager />
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored"
+      />
+      <HotToaster position="top-right" />
+      <BrowserRouter>
+        <AuthBootstrap>
+          <Routes>
           {/* ── Public ── */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -247,8 +329,9 @@ export const App: React.FC = () => (
               <Route path="documents/:applicationId" element={<AdminStudentDocumentsPage />} />
               <Route path="documents/bulk" element={<BulkDocumentExportPage />} />
 
-              <Route path="students"         element={<StudentsDashboardPage />} />
-              <Route path="student-export"   element={<StudentExportPage />} />
+              <Route path="students"                     element={<StudentsDashboardPage />} />
+              <Route path="students/existing-onboarding" element={<ExistingStudentOnboardingPage />} />
+              <Route path="student-export"               element={<StudentExportPage />} />
               <Route path="students/view/:id" element={<StudentViewPage />} />
               <Route path="users/principals" element={<PrincipalManagementPage />} />
               <Route path="credentials"      element={<CredentialManagementPage />} />
@@ -276,9 +359,129 @@ export const App: React.FC = () => (
               <Route path="students"               element={<StudentsDashboardPage readOnly={true} />} />
               <Route path="student-export"         element={<StudentExportPage readOnly={true} />} />
               <Route path="students/view/:id"      element={<StudentViewPage />} />
+              <Route path="faculty"                element={<PrincipalFacultyListPage />} />
+              <Route path="faculty/authorizations" element={<PrincipalFacultyAuthorizationPage />} />
+              <Route path="faculty/authorizations/:id" element={<PrincipalFacultyReviewPage />} />
               <Route path="analytics"              element={<CollegeAnalyticsPage />} />
               <Route path="reports"                element={<ReportGenerationPage />} />
               <Route path="profile"                element={<PrincipalProfilePage />} />
+            </Route>
+
+            {/* ── Dean Academics Portal ── */}
+            <Route path="dean" element={<DeanLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<DeanDashboardPage />} />
+
+              {/* Academic Structure */}
+              <Route path="academic/departments" element={<DepartmentsPage />} />
+              <Route path="academic/departments/:id" element={<DepartmentAcademicInfoPage />} />
+
+              {/* HOD Management */}
+              <Route path="hods" element={<HodListPage />} />
+              <Route path="hods/create" element={<CreateHodPage />} />
+              <Route path="hods/assignments" element={<HodAssignmentPage />} />
+              <Route path="hods/history" element={<HodHistoryPage />} />
+              <Route path="hods/:id" element={<HodDetailPage />} />
+
+              {/* Faculty Management */}
+              <Route path="faculty" element={<FacultyListPage />} />
+              <Route path="faculty/create" element={<DeanCreateFacultyPage />} />
+              <Route path="faculty/bulk-import" element={<DeanBulkFacultyImportPage />} />
+              <Route path="faculty/archived" element={<DeanArchivedFacultyPage />} />
+              <Route path="faculty/authorizations" element={<FacultyAuthorizationPage />} />
+              <Route path="faculty/authorizations/:id" element={<FacultyReviewPage />} />
+              <Route path="faculty/assignments" element={<FacultyAssignmentsPage />} />
+              <Route path="faculty/:id" element={<DeanFacultyDetailPage />} />
+              <Route path="faculty/:id/archive" element={<DeanArchiveFacultyPage />} />
+              <Route path="faculty/:facultyId/archive" element={<DeanArchiveFacultyPage />} />
+              <Route path="faculty/:id/regenerate-password" element={<DeanFacultyRegeneratePasswordPage />} />
+              <Route path="faculty/:facultyId/regenerate-password" element={<DeanFacultyRegeneratePasswordPage />} />
+
+              {/* Profile & Account Settings */}
+              <Route path="profile" element={<DeanProfilePage />} />
+              <Route path="settings/google-drive" element={<DeanGoogleDriveBackupPage />} />
+            </Route>
+
+            {/* ── HOD Portal ── */}
+            <Route path="hod" element={<HodLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<HodDashboardPage />} />
+
+              {/* Students & Section Allocations */}
+              <Route path="students" element={<HodStudentsPage />} />
+              <Route path="students/semesters" element={<HodStudentsSemesterPage />} />
+              <Route path="students/semesters/:semester" element={<HodSemesterCohortPage />} />
+              <Route path="students/sections" element={<HodStudentsSectionPage />} />
+              <Route path="section-allocation" element={<Navigate to="/hod/students/sections" replace />} />
+              <Route path="students/sections/:sectionId" element={<HodSectionDetailPage />} />
+              <Route path="students/sections/:sectionId/allocate" element={<HodSectionAllocatePage />} />
+              <Route path="students/:id" element={<HodStudentDetailPage />} />
+
+              {/* Faculty */}
+              <Route path="faculty" element={<HodFacultyListPage />} />
+              <Route path="faculty/create" element={<Navigate to="/hod/faculty" replace />} />
+              <Route path="faculty/assignments" element={<HodFacultyAssignmentsPage />} />
+              <Route path="faculty/authorizations" element={<HodFacultyListPage />} />
+              <Route path="faculty/:id" element={<HodFacultyManagePage />} />
+
+              {/* Subjects */}
+              <Route path="subjects" element={<HodSubjectsPage />} />
+              <Route path="subjects/assign" element={<HodFacultyAssignmentsPage />} />
+              <Route path="subjects/semesters" element={<HodSubjectsPage />} />
+
+              {/* Attendance */}
+              <Route path="attendance" element={<HodAttendanceOverviewPage />} />
+              <Route path="attendance/semesters" element={<HodAttendanceOverviewPage />} />
+              <Route path="attendance/subjects" element={<HodAttendanceOverviewPage />} />
+              <Route path="attendance/sections" element={<HodAttendanceOverviewPage />} />
+              <Route path="attendance/defaulters" element={<HodAttendanceDefaultersPage />} />
+
+              {/* Academics */}
+              <Route path="academics" element={<HodAcademicsOverviewPage />} />
+              <Route path="academics/subjects" element={<HodAcademicsOverviewPage />} />
+              <Route path="academics/bitwise" element={<HodBitwiseAnalysisPage />} />
+              <Route path="academics/performance" element={<HodStudentPerformancePage />} />
+              <Route path="publish" element={<HodPublishAttendanceMarksPage />} />
+              <Route path="release" element={<Navigate to="/hod/publish" replace />} />
+
+              {/* Reports & Settings */}
+              <Route path="reports" element={<HodReportsPage />} />
+              <Route path="settings" element={<HodSettingsPage />} />
+              <Route path="profile" element={<HodProfilePage />} />
+            </Route>
+
+            {/* ── Faculty Portal ── */}
+            <Route path="faculty" element={<FacultyLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<FacultyOverviewPage />} />
+              <Route path="overview" element={<FacultyOverviewPage />} />
+              <Route path="attendance" element={<FacultyAttendancePage />} />
+              <Route path="all-subject-attendance" element={<FacultyAllSubjectAttendancePage />} />
+              <Route path="student-attendance" element={<FacultyStudentAttendancePage />} />
+              <Route path="analytics" element={<FacultyAnalyticsPage />} />
+              <Route path="profile" element={<FacultyProfilePage />} />
+              <Route path="settings" element={<FacultyProfilePage />} />
+
+              {/* ── Bitwise Marks Entry Module ── */}
+              <Route path="marks" element={<FacultyMarksDashboardPage />} />
+              <Route path="bitwise-marks" element={<FacultyMarksDashboardPage />} />
+              <Route path="marks/semesters/:semester" element={<FacultyMarksSubjectSelectPage />} />
+              <Route path="marks/config" element={<FacultyMarksConfigPage />} />
+              <Route path="marks/grid" element={<FacultyMarksGridPage />} />
+              <Route path="marks/assignments" element={<FacultyAssignmentMarksPage />} />
+              <Route path="marks/assignments/config" element={<FacultyAssignmentConfigPage />} />
+              <Route path="marks/final-internal" element={<FacultyFinalInternalMarksPage />} />
+              <Route path="marks/external" element={<FacultyExternalMarksPage />} />
+            </Route>
+
+            {/* ── Student Portal ── */}
+            <Route path="student" element={<StudentLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<StudentOverviewPage />} />
+              <Route path="overview" element={<StudentOverviewPage />} />
+              <Route path="attendance" element={<StudentAttendancePage />} />
+              <Route path="marks" element={<StudentMarksPage />} />
+              <Route path="profile" element={<StudentProfilePage />} />
             </Route>
           </Route>
 
@@ -287,6 +490,7 @@ export const App: React.FC = () => (
         </Routes>
       </AuthBootstrap>
     </BrowserRouter>
+    </AcademicYearProvider>
   </Provider>
 );
 

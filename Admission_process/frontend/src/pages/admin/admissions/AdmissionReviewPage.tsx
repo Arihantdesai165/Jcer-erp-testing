@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import admissionService, { AdmissionApplication } from '../../../services/admission.service';
@@ -374,6 +375,14 @@ export const AdmissionReviewPage: React.FC = () => {
   const [eligibilityVerified, setEligibilityVerified] = useState(false);
   const [verificationRemarks, setVerificationRemarks] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [highlightChecklist, setHighlightChecklist] = useState(false);
+  const checklistRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (documentsVerified && eligibilityVerified) {
+      setHighlightChecklist(false);
+    }
+  }, [documentsVerified, eligibilityVerified]);
 
   // Correction workflow states
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
@@ -796,7 +805,8 @@ export const AdmissionReviewPage: React.FC = () => {
 
     const isLegacyFeeStatus = app.applicationStatus === 'FEE_RECEIPT_UPLOADED' || app.applicationStatus === 'FEE_VERIFIED';
     if (status === 'APPROVED' && !isLegacyFeeStatus && (!documentsVerified || !eligibilityVerified)) {
-      toast.error('Please complete document and eligibility verification checks before approving the application.');
+      setHighlightChecklist(true);
+      checklistRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -1647,10 +1657,37 @@ export const AdmissionReviewPage: React.FC = () => {
         </div>
 
         {/* ─── SECTION 6: Checklist Verification ─── */}
-        <div className="border-t-2 border-neutral-100 dark:border-neutral-800 pt-6 space-y-4">
-          <h3 className="text-xs uppercase font-black tracking-widest text-neutral-400 flex items-center gap-2 border-l-4 border-primary-500 pl-2">
-            <ShieldCheck size={14} className="text-primary-500" /> Manual Audit & Verification Checklist
-          </h3>
+        <div
+          ref={checklistRef}
+          className={`border-t-2 border-neutral-100 dark:border-neutral-800 pt-6 space-y-4 transition-all duration-300 ${
+            highlightChecklist
+              ? 'p-5 rounded-2xl bg-amber-50/30 dark:bg-amber-950/20 border-2 border-amber-400 dark:border-amber-500 ring-4 ring-amber-400/20 shadow-xl'
+              : ''
+          }`}
+        >
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className="text-xs uppercase font-black tracking-widest text-neutral-400 flex items-center gap-2 border-l-4 border-primary-500 pl-2">
+              <ShieldCheck size={14} className="text-primary-500" /> Manual Audit & Verification Checklist
+            </h3>
+            {highlightChecklist && (
+              <div className="flex items-center gap-2 animate-bounce">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 flex items-center gap-1.5 shadow-xs">
+                  <AlertTriangle size={12} className="text-amber-600 shrink-0" /> Please tick verification checks to approve
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocumentsVerified(true);
+                    setEligibilityVerified(true);
+                    setHighlightChecklist(false);
+                  }}
+                  className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all cursor-pointer"
+                >
+                  ✓ Tick Both
+                </button>
+              </div>
+            )}
+          </div>
           {(app.applicationStatus === 'APPROVED' || app.applicationStatus === 'ENROLLED') ? (
             <div className="space-y-4">
               {/* Checklist Status (Read-Only) */}
@@ -1701,23 +1738,54 @@ export const AdmissionReviewPage: React.FC = () => {
                 {[
                   { checked: documentsVerified, setter: setDocumentsVerified, title: 'Verify Documents', desc: 'Certificates match originals and are legible.' },
                   { checked: eligibilityVerified, setter: setEligibilityVerified, title: 'Verify Eligibility', desc: 'Scores and ranks conform with requirements.' },
-                ].map(({ checked, setter, title, desc }) => (
-                  <label key={title} className={`flex gap-3 p-4 rounded-xl border cursor-pointer select-none transition-all ${
-                    checked ? 'bg-primary-50/30 border-primary-200 text-primary-900' : 'bg-neutral-50/30 border-neutral-200'
-                  }`}>
-                    <input type="checkbox" checked={checked} onChange={e => setter(e.target.checked)}
-                      className="w-5 h-5 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wider">{title}</p>
-                      <p className="text-[11px] text-neutral-500 leading-normal mt-0.5">{desc}</p>
-                    </div>
-                  </label>
-                ))}
+                ].map(({ checked, setter, title, desc }) => {
+                  const isMissingCheck = highlightChecklist && !checked;
+                  return (
+                    <label key={title} className={`flex gap-3 p-4 rounded-xl border cursor-pointer select-none transition-all ${
+                      checked 
+                        ? 'bg-primary-50/30 border-primary-200 text-primary-900 dark:bg-primary-950/20 dark:border-primary-800' 
+                        : isMissingCheck
+                        ? 'bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-500 ring-4 ring-amber-400/30 shadow-md animate-pulse text-amber-900 dark:text-amber-200'
+                        : 'bg-neutral-50/30 border-neutral-200 dark:bg-neutral-800/30 dark:border-neutral-700'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={e => {
+                          const val = e.target.checked;
+                          setter(val);
+                          if (val && (title === 'Verify Documents' ? eligibilityVerified : documentsVerified)) {
+                            setHighlightChecklist(false);
+                          }
+                        }}
+                        className={`w-5 h-5 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 mt-0.5 shrink-0 ${
+                          isMissingCheck ? 'ring-2 ring-amber-500 ring-offset-1' : ''
+                        }`}
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-black uppercase tracking-wider">{title}</p>
+                          {isMissingCheck && (
+                            <span className="text-[9px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700">
+                              Required to approve
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-neutral-500 leading-normal mt-0.5">{desc}</p>
+                        {isMissingCheck && (
+                          <p className="text-[10px] font-extrabold text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                            👉 Click here to tick
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
 
               <div className="flex justify-end pt-2">
                 <button onClick={handleVerifyChecklist} disabled={verifying}
-                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl text-xs font-bold transition-all disabled:opacity-50 border border-neutral-200 dark:border-neutral-700">
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl text-xs font-bold transition-all disabled:opacity-50 border border-neutral-200 dark:border-neutral-700 cursor-pointer">
                   {verifying ? 'Updating checklist...' : 'Save Audit Checklist'}
                 </button>
               </div>
@@ -1922,8 +1990,8 @@ export const AdmissionReviewPage: React.FC = () => {
       />
 
       {/* ─── DIRECT CANCEL ADMISSION MODAL ─── */}
-      {cancelDirectModalOpen && app && (
-        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      {cancelDirectModalOpen && app && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in duration-200">
             
             {cancelDirectStep === 1 ? (
@@ -2119,7 +2187,8 @@ export const AdmissionReviewPage: React.FC = () => {
             )}
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </CorrectionContext.Provider>
   );

@@ -12,7 +12,17 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     role: string;
     tokenVersion: number;
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    profileImage?: string;
+    status?: string;
   };
+  departmentId?: string;
+  department?: any;
+  hod?: any;
+  isSemesterHandling?: boolean;
   correlationId?: string;
 }
 
@@ -84,6 +94,12 @@ export const authMiddleware = async (
       id: user.id,
       role: user.role,
       tokenVersion: user.tokenVersion,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      profileImage: user.profileImage,
+      status: user.status,
     };
 
     // Run the rest of the request lifecycle in the AsyncLocalStorage context

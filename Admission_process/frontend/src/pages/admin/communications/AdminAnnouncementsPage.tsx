@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Megaphone, Search, Plus, Calendar, CheckCircle2, AlertCircle, X, Send } from 'lucide-react';
 import officeService, { Notification } from '../../../services/office.service';
 import { toast } from 'react-toastify';
@@ -171,8 +172,8 @@ export const AdminAnnouncementsPage: React.FC = () => {
       </div>
 
       {/* CREATE MODAL */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-sm animate-fade-in">
+      {isAddModalOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 flex flex-col max-h-[90vh]">
             <div className="px-6 py-5 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-center bg-neutral-50/50 dark:bg-neutral-800/50">
               <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
@@ -249,7 +250,8 @@ export const AdminAnnouncementsPage: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

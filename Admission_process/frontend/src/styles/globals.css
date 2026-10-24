@@ -28,6 +28,47 @@ body {
   transition: background-color 0.3s ease;
 }
 
+/* High-Visibility Large Scrollbar for Data Entry Grids */
+.marks-grid-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: #64748b #e2e8f0;
+}
+
+.marks-grid-scroll::-webkit-scrollbar {
+  width: 14px;
+  height: 16px; /* prominent, easy to click and drag horizontal scrollbar */
+}
+
+.marks-grid-scroll::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 8px;
+}
+
+.dark .marks-grid-scroll::-webkit-scrollbar-track {
+  background: #1e293b;
+  border-radius: 8px;
+}
+
+.marks-grid-scroll::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 8px;
+  border: 3px solid #e2e8f0;
+}
+
+.dark .marks-grid-scroll::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 8px;
+  border: 3px solid #1e293b;
+}
+
+.marks-grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+.dark .marks-grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
 /* Custom Modern Pastel Mesh Gradient Background - Dark Mode */
 .dark body {
   background-color: #0b0f19;
@@ -249,6 +290,35 @@ a.light-footer-link:hover,
   color: #1d4ed8 !important;
 }
 
+/* Ensure buttons with white/light background always have visible dark/black text and icons */
+.btn-white-action,
+.btn-white-action *,
+.dark .btn-white-action,
+.dark .btn-white-action *,
+button.bg-white,
+button.bg-white *,
+.dark button.bg-white,
+.dark button.bg-white *,
+a.bg-white,
+a.bg-white *,
+.dark a.bg-white,
+.dark a.bg-white * {
+  color: #000000 !important;
+}
+
+/* Explicit dark badge override to preserve crisp white text */
+.badge-dark,
+.badge-dark *,
+.dark .badge-dark,
+.dark .badge-dark *,
+span.badge-dark,
+span.badge-dark * {
+  color: #ffffff !important;
+  background-color: #0f172a !important;
+}
+
+
+
 /* Explicit Dark Icon override for inputs in login card */
 .dark-input-icon,
 .dark .dark-input-icon,
@@ -356,6 +426,23 @@ input.light-input-mode::placeholder,
 .header-dark-btn svg,
 .btn-primary-custom svg {
   color: #ffffff !important;
+}
+
+/* Ensure SVG icons inside group-hover elements with white text get white stroke & color */
+.group:hover .group-hover\:text-white,
+.group:hover .group-hover\:\!text-white,
+.group:hover [class*="group-hover:text-white"],
+.group:hover [class*="group-hover:\!text-white"] {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+.group:hover .group-hover\:text-white svg,
+.group:hover .group-hover\:\!text-white svg,
+.group:hover [class*="group-hover:text-white"] svg,
+.group:hover [class*="group-hover:\!text-white"] svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
 }
 
 /* Handle Tailwind dark:bg-* variant classes — these apply on elements with class 'dark:bg-neutral-800' etc. in dark mode */
@@ -681,7 +768,7 @@ input.light-input-mode::placeholder,
 
 /* Table Header styling: solid black background with white texts */
 .glass-table-container thead {
-  background-color: #1a1a1a !important;
+  background-color: #000000 !important;
 }
 
 .glass-table-container thead th,
@@ -825,27 +912,28 @@ table {
   border-spacing: 0 !important;
 }
 
-/* 2nd Image Dark Header Style */
-table thead {
-  background-color: #111111 !important; /* Deep black bg */
+/* Table Header Style: Solid Pure Black */
+table thead,
+table thead tr,
+table thead th,
+.dark table thead,
+.dark table thead tr,
+.dark table thead th {
+  background-color: #000000 !important; /* Pure solid black */
   color: #ffffff !important;
 }
 
-.dark table thead {
-  background-color: #18181b !important; /* Deep zinc-900 bg for dark mode */
-  color: #ffffff !important;
-}
-
-table thead th {
+table thead th,
+.dark table thead th {
   color: #ffffff !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
-  font-size: 0.75rem !important; /* xs size matching image */
+  font-size: 0.75rem !important; /* xs size */
   letter-spacing: 0.05em !important;
   padding: 12px 16px !important;
   border-right: 1px solid rgba(255, 255, 255, 0.15) !important; /* Vertical columns grid in header */
   vertical-align: middle !important;
-  text-align: center !important;
+  text-align: center;
 }
 
 /* Grids / Vertical lines in body column middle */
@@ -854,7 +942,7 @@ table tbody td {
   border-right: 1px solid rgba(0, 0, 0, 0.08) !important; /* Vertical grid lines for columns */
   border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
   vertical-align: middle !important;
-  text-align: center !important;
+  text-align: center;
 }
 
 .dark table tbody td {
@@ -862,9 +950,31 @@ table tbody td {
   border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
 }
 
-/* Keep first column left-aligned for readability */
-table thead th:first-child,
-table tbody td:first-child {
+/* Specific alignments override general rules */
+table thead th.text-left,
+table tbody td.text-left,
+table thead th[class*="text-left"],
+table tbody td[class*="text-left"] {
+  text-align: left !important;
+}
+
+table thead th.text-center,
+table tbody td.text-center,
+table thead th[class*="text-center"],
+table tbody td[class*="text-center"] {
+  text-align: center !important;
+}
+
+table thead th.text-right,
+table tbody td.text-right,
+table thead th[class*="text-right"],
+table tbody td[class*="text-right"] {
+  text-align: right !important;
+}
+
+/* Keep first column left-aligned ONLY if it doesn't explicitly specify text-center */
+table thead th:first-child:not(.text-center):not([class*="text-center"]),
+table tbody td:first-child:not(.text-center):not([class*="text-center"]) {
   text-align: left !important;
 }
 
@@ -881,3 +991,136 @@ table tbody tr:hover {
 .dark table tbody tr:hover {
   background-color: rgba(255, 255, 255, 0.02) !important;
 }
+
+/* ========================================================================= */
+/* HOD, FACULTY & DEAN PORTALS: ALL TABLE HEADER TEXTS CENTER-ALIGNED        */
+/* ========================================================================= */
+body[data-portal="dean"] table thead th,
+body[data-portal="hod"] table thead th,
+body[data-portal="faculty"] table thead th,
+.portal-table-center table thead th,
+[data-portal="dean"] table thead th,
+[data-portal="hod"] table thead th,
+[data-portal="faculty"] table thead th {
+  text-align: center !important;
+}
+
+/* Allow explicit text-left on th when specified */
+body[data-portal="dean"] table thead th.text-left,
+body[data-portal="dean"] table thead th[class*="text-left"],
+body[data-portal="hod"] table thead th.text-left,
+body[data-portal="hod"] table thead th[class*="text-left"],
+body[data-portal="faculty"] table thead th.text-left,
+body[data-portal="faculty"] table thead th[class*="text-left"],
+.portal-table-center table thead th.text-left,
+.portal-table-center table thead th[class*="text-left"],
+[data-portal="dean"] table thead th.text-left,
+[data-portal="hod"] table thead th.text-left,
+[data-portal="faculty"] table thead th.text-left {
+  text-align: left !important;
+}
+
+body[data-portal="dean"] table thead th.text-right,
+body[data-portal="dean"] table thead th[class*="text-right"],
+body[data-portal="hod"] table thead th.text-right,
+body[data-portal="hod"] table thead th[class*="text-right"],
+body[data-portal="faculty"] table thead th.text-right,
+body[data-portal="faculty"] table thead th[class*="text-right"],
+.portal-table-center table thead th.text-right,
+.portal-table-center table thead th[class*="text-right"],
+[data-portal="dean"] table thead th.text-right,
+[data-portal="hod"] table thead th.text-right,
+[data-portal="faculty"] table thead th.text-right {
+  text-align: center !important;
+}
+
+body[data-portal="dean"] table thead th:first-child,
+body[data-portal="hod"] table thead th:first-child,
+body[data-portal="faculty"] table thead th:first-child,
+.portal-table-center table thead th:first-child,
+[data-portal="dean"] table thead th:first-child,
+[data-portal="hod"] table thead th:first-child,
+[data-portal="faculty"] table thead th:first-child {
+  text-align: center !important;
+}
+
+body[data-portal="dean"] table thead th:last-child,
+body[data-portal="hod"] table thead th:last-child,
+body[data-portal="faculty"] table thead th:last-child,
+.portal-table-center table thead th:last-child,
+[data-portal="dean"] table thead th:last-child,
+[data-portal="hod"] table thead th:last-child,
+[data-portal="faculty"] table thead th:last-child {
+  text-align: center !important;
+}
+
+/* Ensure flex containers & sort icons inside table headers are centered */
+body[data-portal="dean"] table thead th div.flex,
+body[data-portal="dean"] table thead th .flex,
+body[data-portal="hod"] table thead th div.flex,
+body[data-portal="hod"] table thead th .flex,
+body[data-portal="faculty"] table thead th div.flex,
+body[data-portal="faculty"] table thead th .flex,
+.portal-table-center table thead th div.flex,
+.portal-table-center table thead th .flex,
+[data-portal="dean"] table thead th div.flex,
+[data-portal="dean"] table thead th .flex,
+[data-portal="hod"] table thead th div.flex,
+[data-portal="hod"] table thead th .flex,
+[data-portal="faculty"] table thead th div.flex,
+[data-portal="faculty"] table thead th .flex {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  width: fit-content !important;
+}
+
+body[data-portal="dean"] table thead th > *,
+body[data-portal="hod"] table thead th > *,
+body[data-portal="faculty"] table thead th > *,
+.portal-table-center table thead th > *,
+[data-portal="dean"] table thead th > *,
+[data-portal="hod"] table thead th > *,
+[data-portal="faculty"] table thead th > * {
+  text-align: center !important;
+}
+
+/* Specific text-left overrides for columns like Faculty Name */
+body[data-portal="dean"] table thead th.text-left div.flex,
+body[data-portal="dean"] table thead th.text-left .flex,
+body[data-portal="hod"] table thead th.text-left div.flex,
+body[data-portal="hod"] table thead th.text-left .flex,
+body[data-portal="faculty"] table thead th.text-left div.flex,
+body[data-portal="faculty"] table thead th.text-left .flex,
+.portal-table-center table thead th.text-left div.flex,
+.portal-table-center table thead th.text-left .flex,
+[data-portal="dean"] table thead th.text-left div.flex,
+[data-portal="hod"] table thead th.text-left div.flex,
+[data-portal="faculty"] table thead th.text-left div.flex {
+  justify-content: flex-start !important;
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  text-align: left !important;
+}
+
+body[data-portal="dean"] table thead th.text-left > *,
+body[data-portal="hod"] table thead th.text-left > *,
+body[data-portal="faculty"] table thead th.text-left > *,
+.portal-table-center table thead th.text-left > *,
+[data-portal="dean"] table thead th.text-left > *,
+[data-portal="hod"] table thead th.text-left > *,
+[data-portal="faculty"] table thead th.text-left > * {
+  text-align: left !important;
+}
+
+table tbody td.text-left,
+table tbody td[class*="text-left"],
+.portal-table-center table tbody td.text-left,
+.portal-table-center table tbody td[class*="text-left"] {
+  text-align: left !important;
+}
+
+

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search, Filter, ChevronLeft, ChevronRight, Eye, CheckCircle2, Clock, XCircle, FileText, 
-  RefreshCw, Download, User, Phone, MapPin, Calendar, BookOpen, Loader2, ArrowRight, ShieldCheck, Mail, ClipboardList, ShieldAlert, Award, Edit, GraduationCap, X, Briefcase, FileSignature, CheckSquare, Trash2, Ban, AlertTriangle
+  RefreshCw, Download, User, Phone, MapPin, Calendar, BookOpen, Loader2, ArrowRight, ShieldCheck, Mail, ClipboardList, ShieldAlert, Award, Edit, GraduationCap, X, Briefcase, FileSignature, CheckSquare, Trash2, Ban, AlertTriangle, Layers
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { getAcademicYear } from '../../../utils/date.util';
@@ -10,6 +11,8 @@ import API from '../../../services/api';
 import admissionService, { AdmissionApplication } from '../../../services/admission.service';
 import { downloadAdmissionPDF } from '../../admission/src/utils/pdfGenerator';
 import { generateStudentReport, ExportFilterMetadata } from '../../../utils/studentExportGenerator';
+import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
+import { useAcademicYear } from '../../../context/AcademicYearContext';
 
 const STATUS_COLOR_MAP: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700',
@@ -76,13 +79,17 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
 
   const [branches, setBranches] = useState<{ id: string; name: string; code: string }[]>([]);
   
+  const { academicYear: contextAcademicYear, academicYears: availableAcademicYears } = useAcademicYear();
+
   // Pagination & Filtering state
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
   const [search, setSearch] = useState('');
-  const [academicYear, setAcademicYear] = useState('ALL');
+  const [academicYear, setAcademicYear] = useState<string>(contextAcademicYear || 'ALL');
+  const [batch, setBatch] = useState('ALL');
   const [branchId, setBranchId] = useState('ALL');
   const [semester, setSemester] = useState('ALL');
   const [status, setStatus] = useState('ENROLLED');
@@ -97,9 +104,20 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [showFilters, setShowFilters] = useState(true);
 
+  // Available batches list (dynamic from server + default cohorts)
+  const [availableBatches, setAvailableBatches] = useState<string[]>([
+    '2026–2030',
+    '2025–2029',
+    '2024–2028',
+    '2023–2027',
+    '2022–2026',
+    '2021–2025'
+  ]);
+
   // Pending filter state (applied only on "Apply Filters")
   const [pendingSearch, setPendingSearch] = useState('');
-  const [pendingAcademicYear, setPendingAcademicYear] = useState('ALL');
+  const [pendingAcademicYear, setPendingAcademicYear] = useState<string>(contextAcademicYear || 'ALL');
+  const [pendingBatch, setPendingBatch] = useState('ALL');
   const [pendingBranchId, setPendingBranchId] = useState('ALL');
   const [pendingSemester, setPendingSemester] = useState('ALL');
   const [pendingStatus, setPendingStatus] = useState('ENROLLED');
@@ -200,14 +218,20 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
 
   const fetchStatsAndBranches = async () => {
     try {
-      const [statsData, branchData] = await Promise.all([
+      const [statsData, branchData, batchData] = await Promise.all([
         admissionService.getStats(),
-        admissionService.getBranches()
+        admissionService.getBranches(),
+        admissionService.getAvailableBatches()
       ]);
-      if (statsData) setStats(statsData as any);
+      if (statsData) {
+        setStats(statsData as any);
+      }
       if (branchData) setBranches(branchData);
+      if (batchData && Array.isArray(batchData) && batchData.length > 0) {
+        setAvailableBatches(batchData);
+      }
     } catch (e) {
-      console.error('Failed to load stats/branches', e);
+      console.error('Failed to load stats/branches/batches', e);
     }
   };
 
@@ -216,7 +240,7 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
     try {
       const res = await admissionService.listApplications({
         page,
-        limit: 10,
+        limit,
         status: status === 'ALL' ? undefined : status,
         branchId: branchId === 'ALL' ? undefined : branchId,
         semester: semester === 'ALL' ? undefined : semester,
@@ -226,6 +250,7 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
         category: category === 'ALL' ? undefined : category,
         district: district.trim() || undefined,
         academicYear: academicYear === 'ALL' ? undefined : academicYear,
+        batch: batch === 'ALL' ? undefined : batch,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         search: search.trim() || undefined,
@@ -233,9 +258,12 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
         sortOrder
       });
 
-      setStudents(res.applications);
-      setTotalPages(res.totalPages);
-      setTotalCount(res.total);
+      let mergedApplications = res.applications || [];
+      let mergedTotal = res.total || 0;
+
+      setStudents(mergedApplications);
+      setTotalPages(res.totalPages || 1);
+      setTotalCount(mergedTotal);
     } catch (err) {
       console.error(err);
       toast.error('Failed to load student records');
@@ -243,6 +271,7 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchStatsAndBranches();
@@ -267,10 +296,18 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
   }, [location.pathname, navigate]);
 
   useEffect(() => {
+    if (contextAcademicYear) {
+      setAcademicYear(contextAcademicYear);
+      setPendingAcademicYear(contextAcademicYear);
+      setPage(1);
+    }
+  }, [contextAcademicYear]);
+
+  useEffect(() => {
     fetchStudentsList();
   }, [
-    page, status, branchId, semester, admissionType, qualification, gender, category, 
-    district, startDate, endDate, sortBy, sortOrder, search, academicYear
+    page, limit, status, branchId, semester, admissionType, qualification, gender, category, 
+    district, startDate, endDate, sortBy, sortOrder, search, academicYear, batch
   ]);
 
   // Debounced auto-search as user types
@@ -287,6 +324,7 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
   const handleExecuteSearch = () => {
     setSearch(pendingSearch.trim());
     setAcademicYear(pendingAcademicYear);
+    setBatch(pendingBatch);
     setBranchId(pendingBranchId);
     setSemester(pendingSemester);
     setStatus(pendingStatus);
@@ -530,6 +568,48 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
         </div>
       </div>
 
+      {/* Semester Tabs Row */}
+      <div className="space-y-2">
+        <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-450 dark:text-neutral-500">
+          Quick Filter by Semester
+        </label>
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scroll-smooth">
+          {/* 'All Semesters' Tab */}
+          <button
+            onClick={() => {
+              setSemester('ALL');
+              setPendingSemester('ALL');
+              setPage(1);
+            }}
+            className={`px-3 py-2 rounded-xl border text-center transition-all duration-200 shrink-0 min-w-[75px] h-10 flex items-center justify-center text-xs font-black shadow-sm ${
+              semester === 'ALL'
+                ? 'bg-blue-600 border-blue-700 text-white'
+                : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 hover:scale-[1.01]'
+            }`}
+          >
+            <span className="w-full text-center leading-none">ALL SEM</span>
+          </button>
+
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+            <button
+              key={s}
+              onClick={() => {
+                setSemester(s.toString());
+                setPendingSemester(s.toString());
+                setPage(1);
+              }}
+              className={`px-3 py-2 rounded-xl border text-center transition-all duration-200 shrink-0 min-w-[75px] h-10 flex items-center justify-center text-xs font-black shadow-sm ${
+                semester === s.toString()
+                  ? 'bg-blue-600 border-blue-700 text-white'
+                  : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 hover:scale-[1.01]'
+              }`}
+            >
+              <span className="w-full text-center leading-none">Sem {s}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Filters Panel */}
       <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200/60 dark:border-neutral-800">
 
@@ -573,13 +653,20 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
             <Search size={14} />
             Search
           </button>
+          <ShowStudentsRangeSelector
+            value={limit}
+            onChange={(newLimit) => {
+              setLimit(newLimit);
+              setPage(1);
+            }}
+          />
         </div>
 
         {showFilters && (
           <div className="px-5 pt-4 pb-5 space-y-4">
 
-            {/* Row 1: 5 primary dropdowns */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-3">
+            {/* Row 1: Primary dropdowns */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-x-3.5 gap-y-3">
               {/* Academic Year */}
               <div className="space-y-1">
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">Academic Year</label>
@@ -588,16 +675,81 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                   </span>
                   <select
-                    value={pendingAcademicYear}
-                    onChange={(e) => setPendingAcademicYear(e.target.value)}
+                    value={academicYear}
+                    onChange={(e) => {
+                      setPendingAcademicYear(e.target.value);
+                      setAcademicYear(e.target.value);
+                      setPage(1);
+                    }}
                     className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
                   >
                     <option value="ALL">All Years</option>
-                    {Array.from({ length: 5 }).map((_, i) => {
-                      const y = 2026 + i;
-                      const opt = `${y}-${y + 1}`;
-                      return <option key={opt} value={opt}>{opt}</option>;
-                    })}
+                    {availableAcademicYears && availableAcademicYears.length > 0
+                      ? availableAcademicYears.map((ay) => (
+                          <option key={ay.id || ay.year} value={ay.year}>
+                            {ay.year}
+                          </option>
+                        ))
+                      : ['2027-28', '2026-27'].map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Batch */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">Batch</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none">
+                    <Layers size={12} />
+                  </span>
+                  <select
+                    value={batch}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPendingBatch(val);
+                      setBatch(val);
+                      setPage(1);
+                    }}
+                    className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
+                  >
+                    <option value="ALL">All Batches</option>
+                    {availableBatches.map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Semester */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">Semester</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none">
+                    <GraduationCap size={12} />
+                  </span>
+                  <select
+                    value={semester}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPendingSemester(val);
+                      setSemester(val);
+                      setPage(1);
+                    }}
+                    className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
+                  >
+                    <option value="ALL">All Semesters</option>
+                    <option value="1">1st Semester</option>
+                    <option value="2">2nd Semester</option>
+                    <option value="3">3rd Semester</option>
+                    <option value="4">4th Semester</option>
+                    <option value="5">5th Semester</option>
+                    <option value="6">6th Semester</option>
+                    <option value="7">7th Semester</option>
+                    <option value="8">8th Semester</option>
                   </select>
                 </div>
               </div>
@@ -610,8 +762,12 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   </span>
                   <select
-                    value={pendingStatus}
-                    onChange={(e) => setPendingStatus(e.target.value)}
+                    value={status}
+                    onChange={(e) => {
+                      setPendingStatus(e.target.value);
+                      setStatus(e.target.value);
+                      setPage(1);
+                    }}
                     className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
                   >
                     <option value="ALL">All Statuses</option>
@@ -635,8 +791,12 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   </span>
                   <select
-                    value={pendingAdmissionType}
-                    onChange={(e) => setPendingAdmissionType(e.target.value)}
+                    value={admissionType}
+                    onChange={(e) => {
+                      setPendingAdmissionType(e.target.value);
+                      setAdmissionType(e.target.value);
+                      setPage(1);
+                    }}
                     className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
                   >
                     <option value="ALL">All Types</option>
@@ -656,8 +816,12 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
                   </span>
                   <select
-                    value={pendingQualification}
-                    onChange={(e) => setPendingQualification(e.target.value)}
+                    value={qualification}
+                    onChange={(e) => {
+                      setPendingQualification(e.target.value);
+                      setQualification(e.target.value);
+                      setPage(1);
+                    }}
                     className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
                   >
                     <option value="ALL">All Qualifications</option>
@@ -675,8 +839,12 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
                   </span>
                   <select
-                    value={pendingGender}
-                    onChange={(e) => setPendingGender(e.target.value)}
+                    value={gender}
+                    onChange={(e) => {
+                      setPendingGender(e.target.value);
+                      setGender(e.target.value);
+                      setPage(1);
+                    }}
                     className="w-full pl-7 pr-2 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer"
                   >
                     <option value="ALL">All Genders</option>
@@ -695,8 +863,12 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
               <div className="space-y-1">
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400 whitespace-nowrap">Category</label>
                 <select
-                  value={pendingCategory}
-                  onChange={(e) => setPendingCategory(e.target.value)}
+                  value={category}
+                  onChange={(e) => {
+                    setPendingCategory(e.target.value);
+                    setCategory(e.target.value);
+                    setPage(1);
+                  }}
                   className="bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-2.5 py-2 text-xs font-semibold text-neutral-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer min-w-[130px] h-[36px]"
                 >
                   <option value="ALL">All Categories</option>
@@ -773,12 +945,13 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
             <div className="flex items-center justify-center gap-3 pt-1">
               <button
                 onClick={() => {
-                  setPendingSearch(''); setPendingAcademicYear('ALL'); setPendingBranchId('ALL');
-                  setPendingStatus('ENROLLED'); setPendingAdmissionType('ALL'); setPendingQualification('ALL');
+                  const defaultAy = contextAcademicYear || 'ALL';
+                  setPendingSearch(''); setPendingAcademicYear(defaultAy); setPendingBatch('ALL'); setPendingBranchId('ALL');
+                  setPendingSemester('ALL'); setPendingStatus('ENROLLED'); setPendingAdmissionType('ALL'); setPendingQualification('ALL');
                   setPendingGender('ALL'); setPendingCategory('ALL'); setPendingDistrict('');
                   setPendingStartDate(''); setPendingEndDate('');
                   setPendingSortBy('date'); setPendingSortOrder('DESC');
-                  setSearch(''); setAcademicYear('ALL'); setBranchId('ALL');
+                  setSearch(''); setAcademicYear(defaultAy); setBatch('ALL'); setBranchId('ALL'); setSemester('ALL');
                   setStatus('ENROLLED'); setAdmissionType('ALL'); setQualification('ALL');
                   setGender('ALL'); setCategory('ALL'); setDistrict('');
                   setStartDate(''); setEndDate(''); setSortBy('date'); setSortOrder('DESC'); setPage(1);
@@ -790,8 +963,8 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
               </button>
               <button
                 onClick={() => {
-                  setSearch(pendingSearch); setAcademicYear(pendingAcademicYear);
-                  setBranchId(pendingBranchId); setStatus(pendingStatus);
+                  setSearch(pendingSearch); setAcademicYear(pendingAcademicYear); setBatch(pendingBatch);
+                  setBranchId(pendingBranchId); setSemester(pendingSemester); setStatus(pendingStatus);
                   setAdmissionType(pendingAdmissionType); setQualification(pendingQualification);
                   setGender(pendingGender); setCategory(pendingCategory);
                   setDistrict(pendingDistrict); setStartDate(pendingStartDate);
@@ -827,21 +1000,21 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-neutral-200 dark:border-neutral-800 text-[10px] font-black uppercase tracking-widest text-neutral-400 bg-neutral-50/50 dark:bg-neutral-800/20">
-                  <th className="py-4.5 px-3 text-center w-12">Sl No</th>
-                  <th className="py-4.5 px-3">App No / USN</th>
-                  <th className="py-4.5 px-3">Student Name</th>
-                  <th className="py-4.5 px-3">Branch</th>
-                  <th className="py-4.5 px-3 text-center">Semester</th>
-                  <th className="py-4.5 px-3">Type</th>
-                  <th className="py-4.5 px-3">Qual</th>
-                  <th className="py-4.5 px-3">Mobile Number</th>
-                  <th className="py-4.5 px-3">Status</th>
-                  <th className="py-4.5 px-3">Submitted Date</th>
-                  <th className="py-4.5 px-3">Last Updated</th>
-                  <th className="py-4.5 px-3 text-right">Actions</th>
+            <table className="w-full text-left border-collapse min-w-[1260px]">
+              <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase tracking-wider font-extrabold border-b border-neutral-800">
+                <tr className="border-b border-neutral-800 text-[10px] font-black uppercase tracking-widest text-white">
+                  <th className="py-4 px-3 text-center w-12 text-white">Sl No</th>
+                  <th className="py-4 px-3 text-white min-w-[160px]">App No / USN</th>
+                  <th className="py-4 px-4 text-white min-w-[220px]">Student Name</th>
+                  <th className="py-4 px-3 text-center text-white min-w-[90px]">Branch</th>
+                  <th className="py-4 px-3 text-center text-white min-w-[90px]">Semester</th>
+                  <th className="py-4 px-3 text-white min-w-[110px]">Type</th>
+                  <th className="py-4 px-3 text-white min-w-[100px]">Qual</th>
+                  <th className="py-4 px-3 text-white min-w-[140px]">Mobile Number</th>
+                  <th className="py-4 px-3 text-white min-w-[120px]">Status</th>
+                  <th className="py-4 px-3 text-white min-w-[160px]">Submitted Date</th>
+                  <th className="py-4 px-3 text-white min-w-[160px]">Last Updated</th>
+                  <th className="py-4 px-3 text-right text-white min-w-[120px] pr-5">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/40 text-xs font-semibold">
@@ -853,25 +1026,40 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
                       <td className="py-4 px-3 text-center text-neutral-400 font-bold">
                         {(page - 1) * 10 + idx + 1}
                       </td>
-                      <td className="py-4 px-3 font-bold whitespace-nowrap">
-                        <button
-                          onClick={() => handleViewStudent(app.id)}
-                          className="hover:underline text-left text-neutral-800 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors"
-                        >
-                          {app.applicationStatus === 'ENROLLED' ? app.user?.student?.enrollmentNumber || app.applicationNumber : app.applicationNumber}
-                        </button>
+                      <td className="py-4 px-3 font-bold whitespace-nowrap min-w-[160px]">
+                        {(() => {
+                          const rawUsn = app.usn || app.user?.student?.usn;
+                          const enrollmentNo = app.user?.student?.enrollmentNumber;
+                          // If enrollmentNo is a valid USN (does not start with JCER-), use as fallback USN
+                          const isEnrollmentUsn = enrollmentNo && !enrollmentNo.startsWith('JCER-');
+                          const assignedUsn = (rawUsn || (isEnrollmentUsn ? enrollmentNo : '') || '').trim();
+                          const displayId = assignedUsn || app.applicationNumber || enrollmentNo || 'N/A';
+
+                          return (
+                            <button
+                              onClick={() => handleViewStudent(app.id)}
+                              className="hover:underline text-left text-neutral-800 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors font-mono"
+                              title={assignedUsn && app.applicationNumber && assignedUsn !== app.applicationNumber ? `USN: ${assignedUsn} | App No: ${app.applicationNumber}` : `Identifier: ${displayId}`}
+                            >
+                              {displayId}
+                            </button>
+                          );
+                        })()}
                       </td>
-                      <td className="py-4 px-3 font-bold whitespace-nowrap">
+                      <td className="py-4 px-4 font-bold whitespace-nowrap min-w-[220px]">
                         <button
                           onClick={() => handleViewStudent(app.id)}
                           className="hover:underline text-left text-neutral-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 transition-colors"
                         >
-                          {pd
-                            ? `${pd.firstName} ${pd.middleName ? pd.middleName + ' ' : ''}${pd.lastName}`.replace(/\s+/g, ' ').trim()
-                            : app.user
-                              ? `${app.user.firstName || ''} ${app.user.lastName || ''}`.trim()
-                              : 'N/A'
-                          }
+                          {(() => {
+                            const pdName = pd
+                              ? `${pd.firstName || ''} ${pd.middleName ? pd.middleName + ' ' : ''}${pd.lastName || ''}`.replace(/\s+/g, ' ').trim()
+                              : '';
+                            const userName = app.user
+                              ? `${app.user.firstName || ''} ${app.user.lastName || ''}`.replace(/\s+/g, ' ').trim()
+                              : '';
+                            return pdName || userName || 'N/A';
+                          })()}
                         </button>
                       </td>
                       <td className="py-4 px-3 font-extrabold text-neutral-600 dark:text-neutral-400 whitespace-nowrap">
@@ -968,8 +1156,8 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
       </div>
 
       {/* Export Modal */}
-      {exportModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {exportModalOpen && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-6 space-y-5 animate-in fade-in duration-200 shadow-2xl">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-extrabold uppercase tracking-wider text-neutral-900 dark:text-white">Export Student Database</h3>
@@ -1100,12 +1288,13 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
               </button>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Edit Student Modal */}
-      {editModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {editModalOpen && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl animate-in fade-in duration-200">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-extrabold uppercase tracking-wider text-neutral-900 dark:text-white">Modify Student Application</h3>
@@ -1181,12 +1370,13 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Direct Cancel Admission Modal (Two-Step Workflow) */}
-      {cancelDirectModalOpen && selectedStudent && (
-        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      {cancelDirectModalOpen && selectedStudent && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in duration-200">
             
             {cancelDirectStep === 1 ? (
@@ -1382,12 +1572,13 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
             )}
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete Cancelled Modal */}
-      {deleteModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {deleteModalOpen && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl animate-in fade-in duration-200">
             <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
               <h3 className="text-base font-black text-rose-600 dark:text-rose-400 uppercase tracking-wide flex items-center gap-2">
@@ -1450,7 +1641,8 @@ export const StudentsDashboardPage: React.FC<StudentsDashboardPageProps> = ({ re
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

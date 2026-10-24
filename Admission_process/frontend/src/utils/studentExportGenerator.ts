@@ -55,9 +55,14 @@ export function mapSummaryExportData(applications: AdmissionApplication[]) {
     const pd = app.studentpersonaldetails;
     const user = app.user;
     const branch = app.branch;
+    const rawUsn = app.usn || app.user?.student?.usn;
+    const enrollmentNo = app.user?.student?.enrollmentNumber;
+    const isEnrollmentUsn = enrollmentNo && !enrollmentNo.startsWith('JCER-');
+    const assignedUsn = (rawUsn || (isEnrollmentUsn ? enrollmentNo : '') || '').trim();
 
     return {
       'Sl No': index + 1,
+      'USN': assignedUsn || 'N/A',
       'Admission Number': app.applicationNumber || 'N/A',
       'Student Name': user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'N/A',
       'Gender': pd?.gender || 'N/A',
@@ -91,9 +96,14 @@ export function mapCompleteExportData(applications: AdmissionApplication[]) {
     const acad = app.studentacademicdetails;
     const docs = app.studentdocuments;
     const branch = app.branch;
+    const rawUsn = app.usn || app.user?.student?.usn;
+    const enrollmentNo = app.user?.student?.enrollmentNumber;
+    const isEnrollmentUsn = enrollmentNo && !enrollmentNo.startsWith('JCER-');
+    const assignedUsn = (rawUsn || (isEnrollmentUsn ? enrollmentNo : '') || '').trim();
 
     return {
       // SECTION A: ADMISSION DETAILS
+      'USN': assignedUsn || 'N/A',
       'Admission Number': app.applicationNumber || 'N/A',
       'Academic Year': app.academicYear || 'N/A',
       'Branch': branch ? `${branch.name} (${branch.code})` : 'N/A',
@@ -231,24 +241,57 @@ async function exportToExcel(
   const columns = Object.keys(data[0]);
   const numCols = Math.max(columns.length, 1);
 
-  // 1. Title & Metadata Header Rows (Centered across table width)
-  const titleRow = worksheet.addRow(['JAIN COLLEGE OF ENGINEERING & RESEARCH']);
-  titleRow.height = 26;
-  worksheet.mergeCells(1, 1, 1, numCols);
-  titleRow.getCell(1).font = { name: 'Segoe UI', size: 14, bold: true, color: { argb: 'FF0F4C81' } };
-  titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+  // 1. Institutional Official Banner (Rows 1 - 3)
+  try {
+    const bannerResp = await fetch('/Excelheader.png');
+    if (bannerResp.ok) {
+      const bannerBuffer = await bannerResp.arrayBuffer();
+      const imageId = workbook.addImage({
+        buffer: bannerBuffer,
+        extension: 'png',
+      });
 
+      const approxTableWidthPx = numCols * 110;
+      const bannerWidth = Math.min(Math.max(approxTableWidthPx * 0.65, 480), 720);
+      const bannerHeight = Math.round(bannerWidth / (2172 / 386));
+      const leftOffsetPx = Math.max(0, (approxTableWidthPx - bannerWidth) / 2);
+      const colAnchor = Math.max(0, leftOffsetPx / 110);
+
+      const r1 = worksheet.addRow([]);
+      r1.height = 32;
+      const r2 = worksheet.addRow([]);
+      r2.height = 32;
+      const r3 = worksheet.addRow([]);
+      r3.height = 30;
+
+      worksheet.addImage(imageId, {
+        tl: { col: Number(colAnchor.toFixed(2)), row: 0.10 },
+        ext: { width: bannerWidth, height: bannerHeight },
+      });
+    }
+  } catch (err) {
+    console.warn('Failed to embed official college banner in student export:', err);
+  }
+
+  // 2. Report Subtitle & Metadata Header Rows (Below Banner)
   const subtitleRow = worksheet.addRow([`Student Database Report (${type.toUpperCase()} REPORT)`]);
   subtitleRow.height = 22;
-  worksheet.mergeCells(2, 1, 2, numCols);
-  subtitleRow.getCell(1).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF334155' } };
+  const subIdx = subtitleRow.number;
+  worksheet.mergeCells(subIdx, 1, subIdx, numCols);
+  subtitleRow.getCell(1).font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF0F4C81' } };
   subtitleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+  subtitleRow.getCell(1).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFF8FAFC' },
+  };
 
   const metaRow1 = worksheet.addRow([
     `Academic Session: ${meta.academicYear} | Generated On: ${new Date().toLocaleString('en-IN')} | Total Records: ${data.length}`
   ]);
   metaRow1.height = 18;
-  worksheet.mergeCells(3, 1, 3, numCols);
+  const meta1Idx = metaRow1.number;
+  worksheet.mergeCells(meta1Idx, 1, meta1Idx, numCols);
   metaRow1.getCell(1).font = { name: 'Segoe UI', size: 9.5, italic: true, color: { argb: 'FF64748B' } };
   metaRow1.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
@@ -256,7 +299,8 @@ async function exportToExcel(
     `Applied Filters: Branch=${meta.branchCode}, Status=${meta.statusLabel}, Type=${meta.admissionType}, Qual=${meta.qualification}`
   ]);
   metaRow2.height = 18;
-  worksheet.mergeCells(4, 1, 4, numCols);
+  const meta2Idx = metaRow2.number;
+  worksheet.mergeCells(meta2Idx, 1, meta2Idx, numCols);
   metaRow2.getCell(1).font = { name: 'Segoe UI', size: 9.5, color: { argb: 'FF64748B' } };
   metaRow2.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
 

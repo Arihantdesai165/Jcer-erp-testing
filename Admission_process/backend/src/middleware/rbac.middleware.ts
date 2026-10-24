@@ -26,10 +26,32 @@ export const PERMISSION_MATRIX: Record<string, string[]> = {
     'view_fees',
     'view_timetable', 'view_logs'
   ],
+  DEAN: [
+    'manage_academic_structure',
+    'view_academic_structure',
+    'manage_hods',
+    'view_hods',
+    'view_departments',
+    'authorize_faculty',
+    'view_faculty',
+    'view_faculty_assignments',
+    'view_logs'
+  ],
   HOD: [
-    'view_students', 'edit_students',
-    'edit_results', 'view_results',
-    'view_timetable'
+    'view_hod_dashboard',
+    'view_department',
+    'view_faculty',
+    'manage_department_faculty',
+    'create_faculty',
+    'view_subjects',
+    'view_workload',
+    'view_students',
+    'edit_students',
+    'edit_results',
+    'view_results',
+    'view_timetable',
+    'view_reports',
+    'view_notifications'
   ],
   TEACHER: [
     'view_students',

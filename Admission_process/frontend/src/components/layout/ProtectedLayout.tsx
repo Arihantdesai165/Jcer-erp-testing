@@ -37,13 +37,32 @@ export const ProtectedLayout: React.FC = () => {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  // HOD routes: only HOD
-  if (location.pathname.startsWith('/hod') && role !== 'HOD') {
+  // HOD routes: HOD, SUPER_ADMIN, or ADMIN
+  if (location.pathname.startsWith('/hod') && role !== 'HOD' && role !== 'SUPER_ADMIN' && role !== 'ADMIN') {
     return <Navigate to="/unauthorized" replace />;
   }
 
   // Principal routes: PRINCIPAL, SUPER_ADMIN, or ADMIN
   if (location.pathname.startsWith('/principal') && role !== 'PRINCIPAL' && role !== 'SUPER_ADMIN' && role !== 'ADMIN') {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  // Dean routes: DEAN, SUPER_ADMIN, or ADMIN
+  if (location.pathname.startsWith('/dean') && role !== 'DEAN' && role !== 'SUPER_ADMIN' && role !== 'ADMIN') {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  // Faculty routes: FACULTY, TEACHER, HOD, DEAN, PRINCIPAL, SUPER_ADMIN, or ADMIN
+  if (
+    location.pathname.startsWith('/faculty') &&
+    role !== 'FACULTY' &&
+    role !== 'TEACHER' &&
+    role !== 'HOD' &&
+    role !== 'DEAN' &&
+    role !== 'PRINCIPAL' &&
+    role !== 'SUPER_ADMIN' &&
+    role !== 'ADMIN'
+  ) {
     return <Navigate to="/unauthorized" replace />;
   }
 
@@ -54,7 +73,7 @@ export const ProtectedLayout: React.FC = () => {
 
   return (
     <>
-      {user?.mustChangePassword && <ForcePasswordChange />}
+      {user?.mustChangePassword && role !== 'HOD' && role !== 'FACULTY' && role !== 'TEACHER' && <ForcePasswordChange />}
       <Outlet />
     </>
   );

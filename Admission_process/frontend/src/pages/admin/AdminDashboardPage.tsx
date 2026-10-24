@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import officeService, { DashboardData } from '../../services/office.service';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { toast } from 'react-toastify';
 import {
   Users, ClipboardList, TrendingUp,
@@ -21,12 +22,13 @@ const getActionIcon = (action: string) => {
 };
 
 export const AdminDashboardPage: React.FC = () => {
+  const { academicYear } = useAcademicYear();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = (isInitial = false) => {
     if (isInitial) setLoading(true);
-    officeService.getDashboardData()
+    officeService.getDashboardData({ academicYear })
       .then(res => setData(res))
       .catch(err => console.error('Failed to load dashboard data:', err))
       .finally(() => {
@@ -43,7 +45,7 @@ export const AdminDashboardPage: React.FC = () => {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [academicYear]);
 
   return (
     <div className="space-y-6 pb-6 animate-fade-in max-w-7xl">

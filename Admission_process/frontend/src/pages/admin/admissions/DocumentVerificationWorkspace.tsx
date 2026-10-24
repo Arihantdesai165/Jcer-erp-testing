@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import API, { getBaseHostURL } from '../../../services/api';
 import {
@@ -1163,8 +1164,8 @@ export const DocumentVerificationWorkspaceContent: React.FC<DocumentVerification
       </div>
 
       {/* ─── REJECTION MODAL OVERLAY ─── */}
-      {showRejectModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-2xs flex items-center justify-center p-4 animate-fade-in">
+      {showRejectModal && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-rose-700 uppercase tracking-wider flex items-center gap-2">
@@ -1232,7 +1233,8 @@ export const DocumentVerificationWorkspaceContent: React.FC<DocumentVerification
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

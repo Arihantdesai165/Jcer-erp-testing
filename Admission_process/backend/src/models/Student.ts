@@ -10,17 +10,24 @@ class Student extends Model {
   public enrollmentNumber!: string;
   public rollNumber!: string;
   public batchYear!: number;
+  public admissionBatch!: string | null;
+  public batch!: string;
   public departmentId!: string;
   public semester!: number;
-  public dateOfBirth!: Date;
+  public dateOfBirth!: Date | null;
   public address!: string;
   public fatherName!: string;
   public motherName!: string;
   public parentPhone!: string;
   public parentEmail!: string;
   public admissionStatus!: 'PENDING' | 'VALIDATED' | 'APPROVED' | 'REJECTED';
-  public admissionType!: 'FRESH' | 'LATERAL';
+  public admissionType!: 'FRESH' | 'LATERAL' | 'EXISTING' | string;
   public initialSemester!: number;
+  public section!: string | null;
+  public sectionId!: string | null;
+  public scheme!: string | null;
+  public gender!: string | null;
+  public previousCollege!: string | null;
   public currentAcademicYear!: string;
   public lastPromotedAt!: Date | null;
   public lastPromotedBy!: string | null;
@@ -64,6 +71,25 @@ Student.init(
     batchYear: {
       type: DataTypes.INTEGER,
       allowNull: false,
+    },
+    admissionBatch: {
+      type: DataTypes.STRING(30),
+      allowNull: true,
+      defaultValue: null,
+    },
+    batch: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        const adm = this.getDataValue('admissionBatch');
+        if (adm) {
+          const match = String(adm).match(/^(\d{4})[-–](\d{4})$/);
+          if (match && parseInt(match[2], 10) - parseInt(match[1], 10) === 4) {
+            return `${match[1]}–${match[2]}`;
+          }
+        }
+        const bYear = this.getDataValue('batchYear') || 2026;
+        return `${bYear}–${bYear + 4}`;
+      },
     },
     departmentId: {
       type: DataTypes.UUID,
@@ -116,6 +142,34 @@ Student.init(
       allowNull: false,
       defaultValue: 1,
     },
+    section: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null,
+    },
+    sectionId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'sections',
+        key: 'id',
+      },
+    },
+    scheme: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null,
+    },
+    gender: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null,
+    },
+    previousCollege: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      defaultValue: null,
+    },
     currentAcademicYear: {
       type: DataTypes.STRING(30),
       allowNull: false,
@@ -160,17 +214,24 @@ Student.init(
       {
         fields: ['semester'],
       },
+      {
+        fields: ['sectionId'],
+      },
     ],
   }
 );
 
 import Admission from './Admission';
+import Section from './Section';
 
 // Associations
 Student.belongsTo(User, { as: 'user', foreignKey: 'userId' });
 Student.belongsTo(Department, { as: 'department', foreignKey: 'departmentId' });
+Student.belongsTo(Section, { as: 'sectionEntity', foreignKey: 'sectionId' });
+Section.hasMany(Student, { as: 'students', foreignKey: 'sectionId' });
 User.hasOne(Student, { as: 'student', foreignKey: 'userId' });
 Student.hasOne(Admission, { as: 'admission', foreignKey: 'userId', sourceKey: 'userId' });
 Admission.belongsTo(Student, { as: 'student', foreignKey: 'userId', targetKey: 'userId' });
 
+export { Student };
 export default Student;

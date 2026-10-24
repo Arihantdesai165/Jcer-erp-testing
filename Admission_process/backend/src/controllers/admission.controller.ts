@@ -19,6 +19,7 @@ import AdmissionParentDetail from '../models/AdmissionParentDetail';
 import AdmissionAddress from '../models/AdmissionAddress';
 import AdmissionAcademicDetail from '../models/AdmissionAcademicDetail';
 import Student from '../models/Student';
+import HOD from '../models/HOD';
 import ProvisionalAdmission from '../models/ProvisionalAdmission';
 import ProvisionalAdmissionDocument from '../models/ProvisionalAdmissionDocument';
 import UsnRegistry from '../models/UsnRegistry';
@@ -27,6 +28,7 @@ import * as r2 from '../services/r2.service';
 import sharp from 'sharp';
 import { StreamingZip } from '../utils/zip.util';
 import { buildR2Key, buildR2Folder, sanitizeStudentName } from '../utils/r2Key.util';
+import { getAcademicYearVariants, normalizeAcademicYear } from '../utils/academicYear.util';
 
 export const MAPPED_DOC_NAMES: Record<string, string> = {
   photo: 'Photo',
@@ -633,6 +635,22 @@ export const downloadHandbook = async (
 
 // ─── Admin Endpoints ─────────────────────────────────────────────────────────
 
+/** GET /api/admin/admissions/batches */
+export const getAvailableBatches = async (
+  _req: AuthRequest, res: Response, _next: NextFunction
+): Promise<any> => {
+  try {
+    const batches = await admissionService.getAvailableBatches();
+    return res.json({ success: true, data: batches });
+  } catch (err: any) {
+    logger.error('Failed to get available batches:', err);
+    return res.json({
+      success: true,
+      data: ['2026–2030', '2025–2029', '2024–2028', '2023–2027', '2022–2026', '2021–2025']
+    });
+  }
+};
+
 /** GET /api/admin/admissions */
 export const listAdmissions = async (
   req: AuthRequest, res: Response, _next: NextFunction
@@ -653,6 +671,7 @@ export const listAdmissions = async (
       category,
       district,
       academicYear,
+      batch,
       startDate,
       endDate
     } = req.query as any;
@@ -671,26 +690,18 @@ export const listAdmissions = async (
       category,
       district,
       academicYear,
+      batch,
       startDate,
       endDate,
       includeFullDetails: req.query.includeFullDetails === 'true'
     });
     
-    if (!result || result.total === 0) {
-      return res.json({
-        success: true,
-        data: [],
-        total: 0
-      });
-    }
-
     return res.json({ success: true, data: result });
   } catch (err) {
     console.error("Error in listAdmissions controller:", err);
     return res.json({
       success: true,
-      data: [],
-      total: 0
+      data: { total: 0, page: 1, totalPages: 1, applications: [] }
     });
   }
 };
@@ -703,6 +714,53 @@ export const getAdmissionById = async (
     const { id } = req.params;
     const data = await admissionService.getApplicationById(id);
     if (!data) return res.status(404).json({ error: 'Application not found' });
+
+    // Enforce HOD departmental scope & Applied Science semester 1-2 rules
+    if (req.user?.role === 'HOD') {
+      const hod = await HOD.findOne({
+        where: { userId: req.user.id, isActive: true },
+        include: [{ model: Department, as: 'department' }],
+      }) || await HOD.findOne({
+        where: { userId: req.user.id },
+        include: [{ model: Department, as: 'department' }],
+        order: [['updatedAt', 'DESC']],
+      });
+
+      if (!hod || !(hod as any).department) {
+        return res.status(403).json({ error: 'Forbidden. No active department assigned to this HOD account.' });
+      }
+
+      const dept = (hod as any).department;
+      const isSemesterHandling = dept.type === 'SEMESTER_HANDLING' || dept.code === 'AS';
+
+      // Resolve student branch and semester
+      const studentBranchId = data.branchId || data.branch?.id;
+      let studentSem = data.user?.student?.semester || data.entrySemester || 1;
+      if (!data.user?.student?.semester) {
+        const studentRow = await Student.findOne({
+          where: { [Op.or]: [{ id: data.id }, { userId: data.userId }] },
+          attributes: ['semester', 'departmentId']
+        });
+        if (studentRow) {
+          studentSem = studentRow.semester;
+        }
+      }
+
+      if (isSemesterHandling) {
+        const handlingSemesters = dept.handlingSemesters || [1, 2];
+        if (!handlingSemesters.includes(Number(studentSem))) {
+          return res.status(403).json({
+            error: 'Access denied. Student is outside the semester scope of your department.'
+          });
+        }
+      } else {
+        if (String(studentBranchId) !== String(hod.departmentId)) {
+          return res.status(403).json({
+            error: 'Access denied. Student does not belong to your department.'
+          });
+        }
+      }
+    }
 
     // Requirement 8 Logging before sending response
     const studentId = data.userId || data.user?.id || data.user?.student?.id || 'N/A';
@@ -725,7 +783,7 @@ export const getAdmissionById = async (
   }
 };
 
-/** GET /api/admin/admissions/:id/documents/:field — Admin views a student document */
+/** GET /api/admin/admissions/:id/documents/:field — Admin/HOD views a student document */
 export const viewAdmissionDocument = async (
   req: AuthRequest, res: Response, next: NextFunction
 ): Promise<any> => {
@@ -737,12 +795,65 @@ export const viewAdmissionDocument = async (
       return res.status(400).json({ error: 'Invalid document field.' });
     }
 
-    const admission = await Admission.findByPk(id);
+    let admission = await Admission.findByPk(id);
+    let studentObj: any = null;
+    if (!admission) {
+      studentObj = await Student.findOne({
+        where: { [Op.or]: [{ id }, { userId: id }] },
+      });
+      if (studentObj && studentObj.userId) {
+        admission = await Admission.findOne({ where: { userId: studentObj.userId } });
+      }
+    }
     if (!admission) {
       return res.status(404).json({ error: 'No admission application found.' });
     }
 
-    const documents = await AdmissionDocument.findOne({ where: { admissionId: id } });
+    // Enforce HOD departmental scope & Applied Science semester 1-2 rules
+    if (req.user?.role === 'HOD') {
+      const hod = await HOD.findOne({
+        where: { userId: req.user.id, isActive: true },
+        include: [{ model: Department, as: 'department' }],
+      }) || await HOD.findOne({
+        where: { userId: req.user.id },
+        include: [{ model: Department, as: 'department' }],
+        order: [['updatedAt', 'DESC']],
+      });
+
+      if (!hod || !(hod as any).department) {
+        return res.status(403).json({ error: 'Forbidden. No active department assigned to this HOD account.' });
+      }
+
+      const dept = (hod as any).department;
+      const isSemesterHandling = dept.type === 'SEMESTER_HANDLING' || dept.code === 'AS';
+
+      if (!studentObj) {
+        studentObj = await Student.findOne({
+          where: { [Op.or]: [{ id: admission.id }, { userId: admission.userId }] },
+          attributes: ['semester', 'departmentId']
+        });
+      }
+
+      const studentSem = studentObj?.semester || admission.entrySemester || 1;
+      const studentBranchId = admission.branchId || studentObj?.departmentId;
+
+      if (isSemesterHandling) {
+        const handlingSemesters = dept.handlingSemesters || [1, 2];
+        if (!handlingSemesters.includes(Number(studentSem))) {
+          return res.status(403).json({
+            error: 'Access denied. Student is outside the semester scope of your department.'
+          });
+        }
+      } else {
+        if (String(studentBranchId) !== String(hod.departmentId)) {
+          return res.status(403).json({
+            error: 'Access denied. Student does not belong to your department.'
+          });
+        }
+      }
+    }
+
+    const documents = await AdmissionDocument.findOne({ where: { admissionId: admission.id } });
     if (!documents) {
       return res.status(404).json({ error: 'No documents found for this application.' });
     }
@@ -1456,10 +1567,73 @@ export const updateAdmissionDetails = async (
     const { id } = req.params;
     const payload = req.body;
 
-    const admission = await Admission.findByPk(id, { transaction });
+    let admission = await Admission.findByPk(id, { transaction });
     if (!admission) {
+      const student = await Student.findOne({
+        where: { [Op.or]: [{ id }, { userId: id }] },
+        transaction
+      });
+
+      if (student) {
+        const sanitizePayload = (obj: any) => {
+          if (!obj || typeof obj !== 'object') return obj;
+          const sanitized = { ...obj };
+          for (const key of Object.keys(sanitized)) {
+            if (sanitized[key] === '') {
+              sanitized[key] = null;
+            }
+          }
+          return sanitized;
+        };
+
+        if (payload.branchId !== undefined) {
+          student.departmentId = payload.branchId === 'ALL' || payload.branchId === '' ? student.departmentId : payload.branchId;
+        }
+        if (payload.academicYear !== undefined) student.currentAcademicYear = payload.academicYear;
+        if (payload.admissionType !== undefined) student.admissionType = payload.admissionType;
+        if (payload.semester !== undefined) {
+          const s = parseInt(payload.semester, 10);
+          if (!isNaN(s)) student.semester = s;
+        }
+
+        if (payload.user) {
+          const user = await User.findByPk(student.userId, { transaction });
+          if (user) {
+            const sanitizedUser = sanitizePayload(payload.user);
+            if (sanitizedUser.firstName !== undefined) user.firstName = sanitizedUser.firstName;
+            if (sanitizedUser.lastName !== undefined) user.lastName = sanitizedUser.lastName;
+            if (sanitizedUser.email !== undefined) user.email = sanitizedUser.email;
+            if (sanitizedUser.phone !== undefined) user.phone = sanitizedUser.phone;
+            await user.save({ transaction });
+          }
+        }
+
+        if (payload.studentpersonaldetails) {
+          const spd = sanitizePayload(payload.studentpersonaldetails);
+          if (spd.gender !== undefined) student.gender = spd.gender;
+          if (spd.dateOfBirth !== undefined) student.dateOfBirth = spd.dateOfBirth ? new Date(spd.dateOfBirth) : null;
+        }
+
+        if (payload.studentparentdetails) {
+          const spar = sanitizePayload(payload.studentparentdetails);
+          if (spar.fatherName !== undefined) student.fatherName = spar.fatherName;
+          if (spar.motherName !== undefined) student.motherName = spar.motherName;
+          if (spar.fatherPhone !== undefined || spar.parentPhone !== undefined) student.parentPhone = spar.fatherPhone || spar.parentPhone;
+          if (spar.fatherEmail !== undefined) student.parentEmail = spar.fatherEmail;
+        }
+
+        if (payload.studentaddress) {
+          const saddr = sanitizePayload(payload.studentaddress);
+          if (saddr.currentAddressLine1 !== undefined) student.address = saddr.currentAddressLine1;
+        }
+
+        await student.save({ transaction });
+        await transaction.commit();
+        return res.json({ success: true, message: 'Student details updated successfully.' });
+      }
+
       await transaction.rollback();
-      return res.status(404).json({ error: 'Admission application not found.' });
+      return res.status(404).json({ error: 'Admission or Student record not found.' });
     }
 
     const sanitizePayload = (obj: any) => {
@@ -1935,39 +2109,53 @@ export const listUsnEligibleApplicants = async (
     const limitNum = parseInt(limit) || 25;
     const offset = (pageNum - 1) * limitNum;
 
-    // Base query only includes eligible statuses
+    // Base query only includes eligible verified/approved statuses
     const where: any = {
       applicationStatus: { [Op.in]: ['APPROVED', 'PRINCIPAL_APPROVED', 'ENROLLED'] },
     };
 
-    // Filter by Academic Year
+    // Filter by Academic Year using canonical normalization and variants (handles 2027-28, 2027-2028, 2027–28)
     if (academicYear && academicYear !== 'ALL') {
-      where.academicYear = academicYear;
+      const variants = getAcademicYearVariants(String(academicYear));
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { academicYear: { [Op.in]: variants } },
+          { '$user.student.currentAcademicYear$': { [Op.in]: variants } },
+        ]
+      });
     }
 
     // Filter by Branch
     if (branchId && branchId !== 'ALL') {
-      where.branchId = branchId;
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({
+        [Op.or]: [
+          { branchId: branchId },
+          { '$user.student.departmentId$': branchId }
+        ]
+      });
     }
 
     // Filter by Semester
     if (semester && semester !== 'ALL') {
-      const semNum = parseInt(semester);
+      const semNum = parseInt(semester, 10);
+      where[Op.and] = where[Op.and] || [];
       if (semNum === 3) {
-        where[Op.and] = where[Op.and] || [];
         where[Op.and].push({
           [Op.or]: [
             { entrySemester: 3 },
             { qualification: 'DIPLOMA' },
             { admissionType: 'DCET' },
             { applicationType: 'LATERAL_ENTRY' },
+            { '$user.student.semester$': 3 }
           ]
         });
       } else if (semNum === 1) {
-        where[Op.and] = where[Op.and] || [];
         where[Op.and].push({
           [Op.or]: [
             { entrySemester: 1 },
+            { '$user.student.semester$': 1 },
             {
               [Op.and]: [
                 { entrySemester: { [Op.or]: [1, null] } },
@@ -1979,7 +2167,6 @@ export const listUsnEligibleApplicants = async (
           ]
         });
       } else if (!isNaN(semNum)) {
-        where[Op.and] = where[Op.and] || [];
         where[Op.and].push({
           [Op.or]: [
             { entrySemester: semNum },
@@ -1991,25 +2178,37 @@ export const listUsnEligibleApplicants = async (
 
     // Filter by Entry Type (Regular or Lateral)
     if (entryType && entryType !== 'ALL') {
+      where[Op.and] = where[Op.and] || [];
       if (entryType === 'LATERAL') {
-        where[Op.or] = [
-          { qualification: 'DIPLOMA' },
-          { admissionType: 'DCET' },
-        ];
+        where[Op.and].push({
+          [Op.or]: [
+            { qualification: 'DIPLOMA' },
+            { admissionType: 'DCET' },
+            { applicationType: 'LATERAL_ENTRY' }
+          ]
+        });
       } else if (entryType === 'REGULAR') {
-        where[Op.and] = [
-          { qualification: { [Op.or]: [{ [Op.ne]: 'DIPLOMA' }, { [Op.eq]: null }] } },
-          { admissionType: { [Op.or]: [{ [Op.ne]: 'DCET' }, { [Op.eq]: null }] } },
-        ];
+        where[Op.and].push({
+          qualification: { [Op.or]: [{ [Op.ne]: 'DIPLOMA' }, { [Op.eq]: null }] },
+          admissionType: { [Op.or]: [{ [Op.ne]: 'DCET' }, { [Op.eq]: null }] },
+        });
       }
     }
 
     // Filter by USN Status
     if (usnStatus && usnStatus !== 'ALL') {
+      where[Op.and] = where[Op.and] || [];
       if (usnStatus === 'PENDING') {
-        where.usn = null;
+        where[Op.and].push({
+          [Op.or]: [
+            { usn: null },
+            { usn: '' }
+          ]
+        });
       } else if (usnStatus === 'ASSIGNED') {
-        where.usn = { [Op.ne]: null };
+        where[Op.and].push({
+          usn: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] }
+        });
       }
     }
 
@@ -2065,7 +2264,7 @@ export const listUsnEligibleApplicants = async (
     if (sortBy === 'applicationNumber') {
       order = [['applicationNumber', dir]];
     } else if (sortBy === 'usn') {
-      order = [['usn', dir]];
+      order = [['usn', `${dir} NULLS LAST`]];
     } else if (sortBy === 'usnStatus') {
       order = [['usn', dir === 'ASC' ? 'NULLS FIRST' : 'NULLS LAST']];
     } else {
@@ -2086,7 +2285,12 @@ export const listUsnEligibleApplicants = async (
           as: 'user',
           attributes: ['id', 'email', 'firstName', 'lastName'],
           include: [
-            { model: Student, as: 'student', attributes: ['id', 'semester', 'enrollmentNumber', 'rollNumber'], required: false }
+            {
+              model: Student,
+              as: 'student',
+              attributes: ['id', 'semester', 'enrollmentNumber', 'rollNumber', 'currentAcademicYear', 'departmentId'],
+              required: false,
+            }
           ]
         },
         { model: Department, as: 'branch', attributes: ['id', 'name', 'code'] },
@@ -2121,17 +2325,123 @@ export const getUsnSummary = async (
   next: NextFunction
 ): Promise<any> => {
   try {
-    const baseWhere = {
+    const { academicYear, branchId, semester, entryType } = req.query as any;
+
+    const baseWhere: any = {
       applicationStatus: { [Op.in]: ['APPROVED', 'PRINCIPAL_APPROVED', 'ENROLLED'] },
     };
 
-    const totalEligible = await Admission.count({ where: baseWhere });
+    if (academicYear && academicYear !== 'ALL') {
+      const variants = getAcademicYearVariants(String(academicYear));
+      baseWhere[Op.and] = baseWhere[Op.and] || [];
+      baseWhere[Op.and].push({
+        [Op.or]: [
+          { academicYear: { [Op.in]: variants } },
+          { '$user.student.currentAcademicYear$': { [Op.in]: variants } }
+        ]
+      });
+    }
+
+    if (branchId && branchId !== 'ALL') {
+      baseWhere[Op.and] = baseWhere[Op.and] || [];
+      baseWhere[Op.and].push({
+        [Op.or]: [
+          { branchId: branchId },
+          { '$user.student.departmentId$': branchId }
+        ]
+      });
+    }
+
+    if (semester && semester !== 'ALL') {
+      const semNum = parseInt(semester, 10);
+      baseWhere[Op.and] = baseWhere[Op.and] || [];
+      if (semNum === 3) {
+        baseWhere[Op.and].push({
+          [Op.or]: [
+            { entrySemester: 3 },
+            { qualification: 'DIPLOMA' },
+            { admissionType: 'DCET' },
+            { applicationType: 'LATERAL_ENTRY' },
+            { '$user.student.semester$': 3 }
+          ]
+        });
+      } else if (semNum === 1) {
+        baseWhere[Op.and].push({
+          [Op.or]: [
+            { entrySemester: 1 },
+            { '$user.student.semester$': 1 },
+            {
+              [Op.and]: [
+                { entrySemester: { [Op.or]: [1, null] } },
+                { qualification: { [Op.or]: [{ [Op.ne]: 'DIPLOMA' }, { [Op.eq]: null }] } },
+                { admissionType: { [Op.or]: [{ [Op.ne]: 'DCET' }, { [Op.eq]: null }] } },
+                { applicationType: { [Op.or]: [{ [Op.ne]: 'LATERAL_ENTRY' }, { [Op.eq]: null }] } },
+              ]
+            }
+          ]
+        });
+      } else if (!isNaN(semNum)) {
+        baseWhere[Op.and].push({
+          [Op.or]: [
+            { entrySemester: semNum },
+            { '$user.student.semester$': semNum }
+          ]
+        });
+      }
+    }
+
+    if (entryType && entryType !== 'ALL') {
+      baseWhere[Op.and] = baseWhere[Op.and] || [];
+      if (entryType === 'LATERAL') {
+        baseWhere[Op.and].push({
+          [Op.or]: [
+            { qualification: 'DIPLOMA' },
+            { admissionType: 'DCET' },
+            { applicationType: 'LATERAL_ENTRY' }
+          ]
+        });
+      } else if (entryType === 'REGULAR') {
+        baseWhere[Op.and].push({
+          qualification: { [Op.or]: [{ [Op.ne]: 'DIPLOMA' }, { [Op.eq]: null }] },
+          admissionType: { [Op.or]: [{ [Op.ne]: 'DCET' }, { [Op.eq]: null }] },
+        });
+      }
+    }
+
+    const include = [
+      {
+        model: User,
+        as: 'user',
+        attributes: ['id'],
+        include: [
+          {
+            model: Student,
+            as: 'student',
+            attributes: ['id', 'semester', 'currentAcademicYear', 'departmentId'],
+            required: false,
+          }
+        ],
+        required: false,
+      }
+    ];
+
+    const totalEligible = await Admission.count({
+      where: baseWhere,
+      include,
+      distinct: true,
+      col: 'id',
+    });
+
     const assigned = await Admission.count({
       where: {
         ...baseWhere,
-        usn: { [Op.ne]: null },
+        usn: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] },
       },
+      include,
+      distinct: true,
+      col: 'id',
     });
+
     const pending = totalEligible - assigned;
     const completionRate = totalEligible > 0 ? parseFloat(((assigned / totalEligible) * 100).toFixed(1)) : 0;
 
@@ -2356,17 +2666,16 @@ export const bulkAssignUsns = async (
       if (admission.applicationStatus === 'ENROLLED') {
         const student = await Student.findOne({ where: { userId: admission.userId }, transaction });
         if (student) {
-          const m = cleanUsn ? cleanUsn.match(/^2JR(\d{2})([A-Z]{2})(\d{3})$/) : null;
-          let rollNumber = student.rollNumber;
-          let batchYear = student.batchYear;
-          if (m && cleanUsn) {
-            batchYear = parseInt('20' + m[1]);
-            rollNumber = `${batchYear}${m[2]}${m[3]}`;
-          }
-          await student.update({ usn: cleanUsn || null, enrollmentNumber: cleanUsn || null, rollNumber, batchYear }, { transaction });
+          // Requirement 1 & 5: Permanent Student Identity
+          // USN is updated on the existing student record.
+          // Never overwrite permanent enrollmentNumber or replace historical rollNumber.
+          await student.update({
+            usn: cleanUsn || null,
+            ...(student.enrollmentNumber ? {} : { enrollmentNumber: cleanUsn || null }),
+          }, { transaction });
         }
         const user = await User.findByPk(admission.userId, { transaction });
-        if (user) await user.update({ username: cleanUsn ? cleanUsn.toLowerCase() : user.email }, { transaction });
+        if (user && cleanUsn) await user.update({ username: cleanUsn.toLowerCase() }, { transaction });
       }
 
       await AuditLog.create({
@@ -2469,17 +2778,16 @@ export const assignSingleUsn = async (
         if (admission.applicationStatus === 'ENROLLED') {
           const student = await Student.findOne({ where: { userId: admission.userId }, transaction });
           if (student) {
-            const m = cleanUsn ? cleanUsn.match(/^2JR(\d{2})([A-Z]{2})(\d{3})$/) : null;
-            let rollNumber = student.rollNumber;
-            let batchYear = student.batchYear;
-            if (m && cleanUsn) {
-              batchYear = parseInt('20' + m[1]);
-              rollNumber = `${batchYear}${m[2]}${m[3]}`;
-            }
-            await student.update({ usn: cleanUsn || null, enrollmentNumber: cleanUsn || null, rollNumber, batchYear }, { transaction });
+            // Requirement 1 & 5: Permanent Student Identity
+            // USN is updated on the existing student record.
+            // Never overwrite permanent enrollmentNumber or replace historical rollNumber.
+            await student.update({
+              usn: cleanUsn || null,
+              ...(student.enrollmentNumber ? {} : { enrollmentNumber: cleanUsn || null }),
+            }, { transaction });
           }
           const user = await User.findByPk(admission.userId, { transaction });
-          if (user) await user.update({ username: cleanUsn ? cleanUsn.toLowerCase() : user.email }, { transaction });
+          if (user && cleanUsn) await user.update({ username: cleanUsn.toLowerCase() }, { transaction });
         }
 
         await AuditLog.create({

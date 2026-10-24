@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import admissionService, { AdmissionApplication, AdmissionListResult } from '../../../services/admission.service';
 import { 
@@ -9,6 +10,7 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import API from '../../../services/api';
+import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
 
 const getPhotoUrl = (path: string | null | undefined, appId?: string) => {
   if (!path) return '';
@@ -54,6 +56,7 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
   
   // Filters & Pagination
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [status, setStatus] = useState<string>(defaultStatus);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [branchId, setBranchId] = useState('ALL');
@@ -105,7 +108,7 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
 
       const result = await admissionService.listApplications({
         page,
-        limit: 10,
+        limit,
         status: activeStatus,
         branchId: branchId === 'ALL' ? undefined : branchId,
         admissionType: admissionType === 'ALL' ? undefined : admissionType,
@@ -137,7 +140,7 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
   useEffect(() => {
     fetchApplications();
     // eslint-disable-next-line
-  }, [page, status, statusFilter, branchId, admissionType, sortBy, sortOrder, search]);
+  }, [page, limit, status, statusFilter, branchId, admissionType, sortBy, sortOrder, search]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -409,7 +412,13 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                 type="text" 
                 placeholder="Search by name, app number..." 
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
+                onChange={(e) => {
+                  setSearchInput(e.target.value);
+                  if (!e.target.value && search) {
+                    setSearch('');
+                    setPage(1);
+                  }
+                }}
                 className="w-full pl-10 pr-4 py-2.5 bg-neutral-50 dark:bg-neutral-800/40 border border-neutral-200 dark:border-neutral-700/60 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 h-[38px]"
               />
             </div>
@@ -496,6 +505,13 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                 <option value="DESC">Descending</option>
                 <option value="ASC">Ascending</option>
               </select>
+              <ShowStudentsRangeSelector
+                value={limit}
+                onChange={(newLimit) => {
+                  setLimit(newLimit);
+                  setPage(1);
+                }}
+              />
             </div>
           </div>
         </div>
@@ -561,11 +577,11 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
         )}
 
         {/* Applications List Table */}
-        <div className="overflow-x-auto rounded-xl border border-neutral-100 dark:border-neutral-800">
-          <table className="w-full text-left text-xs whitespace-nowrap">
-            <thead className="bg-neutral-50 dark:bg-neutral-800/40 text-neutral-500 dark:text-neutral-400 border-b border-neutral-100 dark:border-neutral-800 text-[10px] uppercase tracking-wider">
-              <tr>
-                <th className="px-4 py-3 w-12 text-center">
+        <div className="overflow-x-auto rounded-xl border border-neutral-100 dark:border-neutral-800 shadow-xs">
+          <table className="w-full text-left text-xs whitespace-nowrap min-w-[1260px]">
+            <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase tracking-wider font-extrabold border-b border-neutral-800 text-[10px]">
+              <tr className="text-white">
+                <th className="px-4 py-3.5 w-12 text-center text-white">
                   <input 
                     type="checkbox" 
                     checked={data?.applications.length ? selectedIds.length === data.applications.length : false}
@@ -573,14 +589,14 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                     className="rounded border-neutral-300 text-violet-600 focus:ring-violet-500 w-4 h-4 cursor-pointer"
                   />
                 </th>
-                <th className="px-4 py-3 font-bold">App ID</th>
-                <th className="px-4 py-3 font-bold">Applicant Info</th>
-                <th className="px-4 py-3 font-bold">Branch</th>
-                <th className="px-4 py-3 font-bold">Entrance / Merit</th>
-                <th className="px-4 py-3 font-bold">Submitted Date</th>
-                <th className="px-4 py-3 font-bold">Status</th>
-                <th className="px-4 py-3 font-bold">{getActionColumnHeader(status)}</th>
-                <th className="px-4 py-3 font-bold text-right">Actions</th>
+                <th className="px-4 py-3.5 font-bold text-white min-w-[170px] w-[170px]">App ID</th>
+                <th className="px-5 py-3.5 font-bold text-white min-w-[260px] w-[260px]">Applicant Info</th>
+                <th className="px-4 py-3.5 font-bold text-white min-w-[100px] text-center">Branch</th>
+                <th className="px-4 py-3.5 font-bold text-white min-w-[140px]">Entrance / Merit</th>
+                <th className="px-4 py-3.5 font-bold text-white min-w-[170px]">Submitted Date</th>
+                <th className="px-4 py-3.5 font-bold text-white min-w-[130px] text-center">Status</th>
+                <th className="px-4 py-3.5 font-bold text-white min-w-[180px]">{getActionColumnHeader(status)}</th>
+                <th className="px-4 py-3.5 font-bold text-right text-white min-w-[150px] pr-6">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60 bg-white dark:bg-transparent">
@@ -603,7 +619,7 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                   return (
                     <React.Fragment key={app.id}>
                       <tr className={`hover:bg-neutral-50/50 dark:hover:bg-neutral-800/10 transition-colors ${isChecked ? 'bg-violet-50/10' : ''}`}>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3.5 text-center w-12">
                           <input 
                             type="checkbox" 
                             checked={isChecked}
@@ -611,20 +627,20 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                             className="rounded border-neutral-300 text-violet-600 focus:ring-violet-500 w-4 h-4 cursor-pointer"
                           />
                         </td>
-                        <td className="px-4 py-3 font-bold">
+                        <td className="px-4 py-3.5 font-bold min-w-[170px] w-[170px]">
                           <Link
                             to={app.applicationStatus === 'ENROLLED' ? `/admin/students/view/${app.id}` : `/admin/admissions/review/${app.id}`}
-                            className="hover:underline text-left text-neutral-900 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors"
+                            className="hover:underline text-left text-neutral-900 hover:text-orange-600 dark:text-neutral-200 dark:hover:text-orange-400 transition-colors font-mono"
                           >
                             {app.applicationNumber}
                           </Link>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
+                        <td className="px-5 py-3.5 min-w-[260px] w-[260px]">
+                          <div className="flex items-center gap-3">
                             {app.studentdocuments?.photoUrl || app.user?.profileImage ? (
-                               <img src={getPhotoUrl(app.studentdocuments?.photoUrl || app.user?.profileImage, app.id)} alt="profile" className="w-7 h-7 rounded-full object-cover border border-neutral-200 dark:border-neutral-700 bg-neutral-100" />
+                               <img src={getPhotoUrl(app.studentdocuments?.photoUrl || app.user?.profileImage, app.id)} alt="profile" className="w-8 h-8 rounded-full object-cover border border-neutral-200 dark:border-neutral-700 bg-neutral-100 flex-shrink-0" />
                             ) : (
-                              <div className="w-7 h-7 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-black text-[10px] uppercase">
+                              <div className="w-8 h-8 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-black text-[10px] uppercase flex-shrink-0">
                                 {app.user?.firstName?.[0] || ''}{app.user?.lastName?.[0] || ''}
                               </div>
                             )}
@@ -636,10 +652,12 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                             </Link>
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-bold text-neutral-700 dark:text-neutral-300">
-                          {app.branch?.code || '-'}
+                        <td className="px-4 py-3.5 text-center min-w-[100px]">
+                          <span className="inline-block px-2.5 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 font-extrabold text-[11px]">
+                            {app.branch?.code || '-'}
+                          </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3.5 min-w-[140px]">
                           <span className="font-bold text-neutral-700 dark:text-neutral-300">
                             {app.admissionType || '—'}
                           </span>
@@ -650,16 +668,16 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                             <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Rank: #{acad.dcetRank}</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 font-semibold text-neutral-500 whitespace-nowrap">
+                        <td className="px-4 py-3.5 font-semibold text-neutral-500 whitespace-nowrap min-w-[170px]">
                           {app.submittedAt ? format(new Date(app.submittedAt), 'dd MMM yyyy, hh:mm a') : '-'}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3.5 text-center min-w-[130px]">
                           {getStatusBadge(app)}
                         </td>
-                        <td className="px-4 py-3 font-semibold text-neutral-600 dark:text-neutral-300">
+                        <td className="px-4 py-3.5 font-semibold text-neutral-600 dark:text-neutral-300 min-w-[180px]">
                           {getActionAttribution(app, status)}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3.5 text-right min-w-[150px] pr-6">
                           <div className="flex justify-end gap-1.5">
                             {app.applicationStatus === 'ENROLLED' ? (
                               <button 
@@ -671,7 +689,7 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                             ) : (
                               <Link 
                                 to={`/admin/admissions/review/${app.id}`}
-                                className={`inline-flex items-center justify-center px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm ${
+                                className={`inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm ${
                                   app.applicationStatus === 'APPROVED' 
                                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
                                     : 'bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
@@ -750,8 +768,8 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
         )}
 
         {/* Onboarding Credentials Modal */}
-        {credentialsModalApp && (
-          <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        {credentialsModalApp && createPortal(
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
             <div className="bg-white dark:bg-neutral-900 rounded-[32px] w-full max-w-md p-6 border border-neutral-100 dark:border-neutral-800 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
               <button 
                 onClick={() => setCredentialsModalApp(null)}
@@ -847,7 +865,8 @@ export const AdmissionQueuePage: React.FC<AdmissionQueuePageProps> = ({ defaultS
                 </div>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </div>

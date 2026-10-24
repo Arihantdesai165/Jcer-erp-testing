@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { loginStart, loginSuccess, loginFailure } from '../../store/authSlice';
@@ -22,13 +23,41 @@ export const LoginPage: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Daily OTP Modal State for Admin & Principal
+  // Daily OTP Modal State for Admin, Principal, Dean, HOD, and Faculty
   const [showDailyOtpModal, setShowDailyOtpModal] = useState(false);
   const [dailyOtp, setDailyOtp] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
   const [pendingRole, setPendingRole] = useState('');
   const [verifyingDailyOtp, setVerifyingDailyOtp] = useState(false);
   const [resendingDailyOtp, setResendingDailyOtp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  const formatRoleTitle = (role: string) => {
+    switch ((role || '').toUpperCase()) {
+      case 'ADMIN':
+      case 'SUPER_ADMIN':
+        return 'Administrator';
+      case 'PRINCIPAL':
+        return 'Principal';
+      case 'DEAN':
+        return 'Dean Academic';
+      case 'HOD':
+        return 'Head of Department';
+      case 'TEACHER':
+      case 'FACULTY':
+        return 'Faculty Member';
+      default:
+        return role || 'User';
+    }
+  };
+
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -53,28 +82,45 @@ export const LoginPage: React.FC = () => {
 
   const handleRedirect = (userRole: string) => {
     const dashboardRoutes: Record<string, string> = {
-      STUDENT: '/admission/dashboard',
-      TEACHER: '/teacher/dashboard',
+      STUDENT: '/student/dashboard',
+      FACULTY: '/faculty/dashboard',
+      TEACHER: '/faculty/dashboard',
       HOD: '/hod/dashboard',
       ADMIN: '/admin/dashboard',
       SUPER_ADMIN: '/admin/dashboard',
       PRINCIPAL: '/principal/dashboard',
       PARENT: '/parent/dashboard',
+      DEAN: '/dean/dashboard',
     };
 
-    const targetDashboard = dashboardRoutes[userRole];
+    const normalizedRole = (userRole || '').trim().toUpperCase();
+    const targetDashboard = dashboardRoutes[normalizedRole];
 
     if (targetDashboard) {
-      const redirectPath = (location.state as any)?.from?.pathname || targetDashboard;
-      if (redirectPath.startsWith('/student') && userRole !== 'STUDENT') {
-        navigate(targetDashboard, { replace: true });
-      } else {
-        navigate(redirectPath, { replace: true });
+      let redirectPath = (location.state as any)?.from?.pathname;
+      if (!redirectPath || redirectPath === '/login' || redirectPath === '/unauthorized' || redirectPath === '/module-unavailable') {
+        redirectPath = targetDashboard;
       }
+      if (redirectPath.startsWith('/student') && normalizedRole !== 'STUDENT') {
+        redirectPath = targetDashboard;
+      }
+      if (redirectPath.startsWith('/admin') && normalizedRole !== 'ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
+        redirectPath = targetDashboard;
+      }
+      if (redirectPath.startsWith('/principal') && normalizedRole !== 'PRINCIPAL' && normalizedRole !== 'SUPER_ADMIN') {
+        redirectPath = targetDashboard;
+      }
+      if (redirectPath.startsWith('/dean') && normalizedRole !== 'DEAN') {
+        redirectPath = targetDashboard;
+      }
+      if (redirectPath.startsWith('/hod') && normalizedRole !== 'HOD') {
+        redirectPath = targetDashboard;
+      }
+      navigate(redirectPath, { replace: true });
     } else {
       authService.logout();
-      dispatch(loginFailure('Invalid user role assigned.'));
-      setToast({ type: 'error', message: 'Account configuration error. Please contact administration.' });
+      dispatch(loginFailure(`Invalid user role assigned: ${userRole}`));
+      setToast({ type: 'error', message: `Account configuration error: Unrecognized role "${userRole}". Please contact administration.` });
     }
   };
 
@@ -94,9 +140,11 @@ export const LoginPage: React.FC = () => {
         setPendingEmail(res.email || email);
         setPendingRole(res.role || '');
         setShowDailyOtpModal(true);
+        setDailyOtp('');
+        setResendCooldown(60);
         setToast({
           type: 'success',
-          message: `🔐 Daily OTP required for ${res.role || 'Admin'} login. Check your inbox for the 6-digit code.`,
+          message: `🔐 Daily OTP required for ${formatRoleTitle(res.role || '')} login. Check your inbox for the 6-digit code.`,
         });
         return;
       }
@@ -127,7 +175,7 @@ export const LoginPage: React.FC = () => {
       const token = authService.getToken() || '';
       dispatch(loginSuccess({ user, token }));
       setShowDailyOtpModal(false);
-      setToast({ type: 'success', message: '✅ Today\'s Daily OTP verified successfully! Welcome back.' });
+      setToast({ type: 'success', message: '✅ Daily security verification successful! Welcome back.' });
       handleRedirect(user.role);
     } catch (err: any) {
       const errMsg = err.response?.data?.error || 'Daily OTP verification failed.';
@@ -138,12 +186,25 @@ export const LoginPage: React.FC = () => {
   };
 
   const handleResendDailyOtp = async () => {
+    if (resendCooldown > 0) {
+      setToast({ type: 'error', message: `Please wait ${resendCooldown} seconds before resending OTP.` });
+      return;
+    }
     setResendingDailyOtp(true);
     try {
-      await authService.login(email, password);
-      setToast({ type: 'success', message: 'A new Daily OTP code has been sent to your email address.' });
+      const res = await authService.resendDailyOtp(pendingEmail, password);
+      setResendCooldown(60);
+      setToast({ type: 'success', message: res.message || 'A new verification code has been sent to your email address.' });
     } catch (err: any) {
-      setToast({ type: 'error', message: 'Failed to resend Daily OTP. Please try logging in again.' });
+      // Fallback to login call if resend route is unavailable
+      try {
+        await authService.login(email, password);
+        setResendCooldown(60);
+        setToast({ type: 'success', message: 'A new verification code has been sent to your email address.' });
+      } catch (fallbackErr: any) {
+        const errMsg = err.response?.data?.error || fallbackErr.response?.data?.error || 'Failed to resend Daily OTP. Please try logging in again.';
+        setToast({ type: 'error', message: errMsg });
+      }
     } finally {
       setResendingDailyOtp(false);
     }
@@ -215,17 +276,19 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col justify-between font-sans selection:bg-indigo-500/30 bg-slate-950">
+    <div className="min-h-screen min-h-[100dvh] w-full flex flex-col justify-between font-sans selection:bg-indigo-500/30 bg-slate-950">
       
       {/* ── HERO / LOGIN MAIN CONTENT SECTION ── */}
-      <main className="flex-1 w-full flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 relative overflow-hidden min-h-[600px]">
-        {/* Background Image Container strictly scoped inside main hero section */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0 blur-[3px] scale-105" 
-          style={{ backgroundImage: 'url("/college.png")' }}
-        />
-        {/* Slightly blue/indigo dark overlay for readability and premium aesthetic */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-slate-950/80 via-blue-950/60 to-indigo-900/40 z-0"></div>
+      <main className="flex-1 w-full flex flex-col justify-center items-center px-4 py-4 sm:py-6 lg:py-8 relative">
+        {/* Background Image Container strictly scoped and clipped */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          <div 
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat blur-[3px] scale-105" 
+            style={{ backgroundImage: 'url("/college.png")' }}
+          />
+          {/* Slightly blue/indigo dark overlay for readability and premium aesthetic */}
+          <div className="absolute inset-0 bg-gradient-to-tr from-slate-950/80 via-blue-950/60 to-indigo-900/40"></div>
+        </div>
 
         {/* Back to Home Button at top left */}
         <button
@@ -249,10 +312,10 @@ export const LoginPage: React.FC = () => {
         )}
 
         {/* Global Header Section */}
-        <div className="w-full max-w-4xl text-center space-y-4 mb-6 z-10 hidden sm:block">
+        <div className="w-full max-w-4xl text-center space-y-3 mb-4 sm:mb-5 lg:mb-6 z-10 hidden sm:block">
           <div className="flex justify-center">
             <div 
-              className="w-[100px] h-[100px] rounded-full bg-white overflow-hidden flex items-center justify-center shadow-sm"
+              className="w-[88px] h-[88px] sm:w-[94px] sm:h-[94px] rounded-full bg-white overflow-hidden flex items-center justify-center shadow-sm"
               style={{ backgroundColor: '#ffffff' }}
             >
               <img
@@ -264,7 +327,7 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
           <div className="space-y-1">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
+            <h2 className="text-2xl sm:text-3xl md:text-[32px] font-extrabold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
               JAIN COLLEGE OF ENGINEERING AND RESEARCH
             </h2>
             <p className="text-xs sm:text-sm font-semibold text-neutral-200 drop-shadow-sm">
@@ -273,17 +336,17 @@ export const LoginPage: React.FC = () => {
             <p className="text-xs sm:text-sm font-semibold text-neutral-200 drop-shadow-sm">
               NBA Accredited Programs - ECE & ME
             </p>
-            <p className="text-sky-300 pt-1 text-sm font-bold tracking-wider uppercase drop-shadow-sm">
+            <p className="text-sky-300 pt-0.5 text-xs sm:text-sm font-bold tracking-wider uppercase drop-shadow-sm">
               Secure ERP Portal
             </p>
           </div>
         </div>
 
         {/* Mobile-Only Header Layout */}
-        <div className="w-full text-center space-y-3 mb-6 z-10 sm:hidden">
+        <div className="w-full text-center space-y-2.5 mb-4 z-10 sm:hidden">
           <div className="flex justify-center">
             <div 
-              className="w-[80px] h-[80px] rounded-full bg-white overflow-hidden flex items-center justify-center shadow-sm"
+              className="w-[76px] h-[76px] rounded-full bg-white overflow-hidden flex items-center justify-center shadow-sm"
               style={{ backgroundColor: '#ffffff' }}
             >
               <img 
@@ -303,11 +366,11 @@ export const LoginPage: React.FC = () => {
         </div>
 
         {/* Login Card Container */}
-        <div className="w-full max-w-md bg-white/40 backdrop-blur-md border border-white/20 rounded-3xl z-10 p-6 sm:p-8 shadow-xl shadow-neutral-200/30">
-          <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="w-full max-w-[450px] bg-white/40 backdrop-blur-md border border-white/20 rounded-3xl z-10 px-6 sm:px-8 py-7 sm:py-8 md:py-9 shadow-xl shadow-neutral-200/30">
+          <form onSubmit={handleSubmit} className="space-y-4.5 sm:space-y-5">
             {/* User ID / Email */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider pl-1">
+            <div className="space-y-1.5 sm:space-y-2">
+              <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider pl-1">
                 User ID / Email
               </label>
               <div className="relative">
@@ -319,7 +382,7 @@ export const LoginPage: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={`e.g. email@example.com`}
-                  className="w-full bg-white/90 border border-neutral-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl py-3.5 pl-11 pr-4 text-sm font-medium focus:outline-none transition-all duration-200 placeholder:text-neutral-400 text-slate-900 light-input-mode shadow-sm"
+                  className="w-full h-[48px] sm:h-[50px] bg-white/90 border border-neutral-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl pl-11 pr-4 text-sm font-medium focus:outline-none transition-all duration-200 placeholder:text-neutral-400 text-slate-900 light-input-mode shadow-sm"
                   style={{ color: '#0F172A', WebkitTextFillColor: '#0F172A' }}
                   required
                 />
@@ -327,9 +390,9 @@ export const LoginPage: React.FC = () => {
             </div>
 
             {/* Password */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 sm:space-y-2">
               <div className="flex justify-between items-center pl-1 pr-1">
-                <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider">
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider">
                   Password
                 </label>
                 <button
@@ -353,7 +416,7 @@ export const LoginPage: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full bg-white/90 border border-neutral-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl py-3.5 pl-11 pr-11 text-sm font-medium focus:outline-none transition-all duration-200 placeholder:text-neutral-400 text-slate-900 light-input-mode shadow-sm"
+                  className="w-full h-[48px] sm:h-[50px] bg-white/90 border border-neutral-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl pl-11 pr-11 text-sm font-medium focus:outline-none transition-all duration-200 placeholder:text-neutral-400 text-slate-900 light-input-mode shadow-sm"
                   style={{ color: '#0F172A', WebkitTextFillColor: '#0F172A' }}
                   required
                 />
@@ -374,23 +437,25 @@ export const LoginPage: React.FC = () => {
             </div>
 
             {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="group w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-2xl shadow-lg shadow-indigo-600/30 hover:shadow-indigo-600/40 transition-all duration-300 text-sm cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center space-x-2 mt-4"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Authenticating...</span>
-                </>
-              ) : (
-                <>
-                  <span>Sign In Securely</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-300" />
-                </>
-              )}
-            </button>
+            <div className="pt-1">
+              <button
+                type="submit"
+                disabled={loading}
+                className="group w-full h-[48px] sm:h-[50px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 rounded-2xl shadow-lg shadow-indigo-600/30 hover:shadow-indigo-600/40 transition-all duration-300 text-sm cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Authenticating...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In Securely</span>
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-300" />
+                  </>
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </main>
@@ -399,8 +464,8 @@ export const LoginPage: React.FC = () => {
       <GlobalFooter variant="light-glass" className="relative z-20 shrink-0" />
 
       {/* ─── ADMIN & PRINCIPAL DAILY OTP MODAL ───────────────────────────────── */}
-      {showDailyOtpModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in">
+      {showDailyOtpModal && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div 
             className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 sm:p-7 relative overflow-hidden"
             style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
@@ -438,7 +503,7 @@ export const LoginPage: React.FC = () => {
                     className="text-xs font-semibold mt-0.5"
                     style={{ color: '#64748b', WebkitTextFillColor: '#64748b' }}
                   >
-                    First login of calendar date for <strong style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', fontWeight: '800' }}>{pendingRole}</strong> ({pendingEmail})
+                    Daily security verification for <strong style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', fontWeight: '800' }}>{formatRoleTitle(pendingRole)}</strong> ({pendingEmail})
                   </p>
                 </div>
               </div>
@@ -452,7 +517,7 @@ export const LoginPage: React.FC = () => {
                   ⏱ A 6-digit OTP code has been sent to <strong style={{ color: '#451a03', WebkitTextFillColor: '#451a03', fontWeight: '800' }}>{pendingEmail}</strong>.
                 </p>
                 <p className="text-[11px] leading-relaxed pt-0.5" style={{ color: '#92400e', WebkitTextFillColor: '#92400e' }}>
-                  Once verified, today's verification remains valid for the rest of today.
+                  Once verified, your authentication remains valid for 24 hours.
                 </p>
               </div>
 
@@ -480,11 +545,15 @@ export const LoginPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleResendDailyOtp}
-                    disabled={resendingDailyOtp || verifyingDailyOtp}
+                    disabled={resendingDailyOtp || verifyingDailyOtp || resendCooldown > 0}
                     className="text-xs font-bold hover:underline bg-transparent border-none cursor-pointer disabled:opacity-50"
                     style={{ color: '#4f46e5', WebkitTextFillColor: '#4f46e5' }}
                   >
-                    {resendingDailyOtp ? 'Resending...' : 'Resend Daily OTP'}
+                    {resendingDailyOtp
+                      ? 'Resending...'
+                      : resendCooldown > 0
+                      ? `Resend OTP in ${resendCooldown}s`
+                      : 'Resend Daily OTP'}
                   </button>
 
                   <button
@@ -506,12 +575,13 @@ export const LoginPage: React.FC = () => {
               </form>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ─── REUSABLE FORGOT PASSWORD MODAL (ALL ROLES) ────────────────────── */}
-      {showForgotModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in">
+      {showForgotModal && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div 
             className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 sm:p-7 relative overflow-hidden"
             style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
@@ -755,7 +825,8 @@ export const LoginPage: React.FC = () => {
 
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

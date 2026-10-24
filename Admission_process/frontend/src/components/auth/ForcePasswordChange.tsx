@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
 import { Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
@@ -48,16 +49,16 @@ const ForcePasswordChange: React.FC = () => {
       } else {
         setError(res.data.message || 'Failed to change password.');
       }
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.response?.data?.message;
       setError(msg || 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-6">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
       <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-8">
         {/* Header */}
         <div className="flex flex-col items-center mb-6">
@@ -137,7 +138,8 @@ const ForcePasswordChange: React.FC = () => {
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

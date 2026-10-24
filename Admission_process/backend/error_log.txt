@@ -1,0 +1,10 @@
+Error
+    at Query.run (E:\JCER-ERP-SYSTEM\Admission_process\backend\node_modules\sequelize\src\dialects\postgres\query.js:76:25)
+    at <anonymous> (E:\JCER-ERP-SYSTEM\Admission_process\backend\node_modules\sequelize\src\sequelize.js:650:28)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async PostgresQueryInterface.select (E:\JCER-ERP-SYSTEM\Admission_process\backend\node_modules\sequelize\src\dialects\abstract\query-interface.js:1001:12)
+    at async Function.findAll (E:\JCER-ERP-SYSTEM\Admission_process\backend\node_modules\sequelize\src\model.js:1824:21)
+    at async Promise.all (index 1)
+    at async Function.findAndCountAll (E:\JCER-ERP-SYSTEM\Admission_process\backend\node_modules\sequelize\src\model.js:2183:27)
+    at async AdmissionService.listApplications (E:\JCER-ERP-SYSTEM\Admission_process\backend\src\services\admission.service.ts:1625:31)
+    at async listAdmissions (E:\JCER-ERP-SYSTEM\Admission_process\backend\src\controllers\admission.controller.ts:678:20)

@@ -2,6 +2,7 @@
 import express, { Application, Request, Response, RequestHandler, NextFunction } from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import multer from 'multer';
 import path from 'path';
 import compression from 'compression';
 import { authMiddleware, AuthenticatedRequest } from './middleware/auth.middleware';
@@ -19,11 +20,18 @@ import authRoutes from './routes/auth.routes';
 import systemRoutes from './routes/system.routes';
 import adminRoutes from './routes/admin.routes';
 import adminOfficeRouter from './routes/admin-office.routes';
+import * as existingOnboardingController from './controllers/existing-student-onboarding.controller';
 import { getBranches, downloadHandbook } from './controllers/admission.controller';
 import { studentRouter, applicationRouter, adminAdmissionRouter } from './routes/admission.routes';
 import principalRoutes from './routes/principal.routes';
 import provisionalRoutes from './routes/provisional.routes';
 import promotionRoutes from './routes/promotion.routes';
+import deanRoutes from './routes/dean.routes';
+import hodRoutes from './routes/hod.routes';
+import facultyRoutes from './routes/faculty.routes';
+import bitwiseMarksRoutes from './routes/bitwiseMarks.routes';
+import googleDriveRoutes from './routes/googleDrive.routes';
+import studentAcademicRoutes from './routes/student.routes';
 const app: Application = express();
 
 // Trust first proxy hop (e.g. Nginx, Cloudflare, Load Balancer)
@@ -127,26 +135,75 @@ app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api', (_req: Request, res: Response) => {
   res.json({
-    status: 'success',
+    success: true,
+    status: 'healthy',
     message: 'College ERP API Server is running',
-    timestamp: new Date()
-  });
-});
-
-app.get('/health', (_req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
-    service: 'JCER Admission Backend',
     timestamp: new Date().toISOString(),
   });
 });
 
-app.get('/api/health', (_req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
-    service: 'JCER Admission Backend',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/health', async (_req: Request, res: Response) => {
+  try {
+    const { default: sequelize } = await import('./config/database');
+    await sequelize.authenticate();
+    return res.status(200).json({
+      success: true,
+      status: 'healthy',
+      database: 'connected',
+      service: 'JCER ERP Backend',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(503).json({
+      success: false,
+      status: 'unhealthy',
+      database: 'disconnected',
+      service: 'JCER ERP Backend',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+app.get('/api/health', async (_req: Request, res: Response) => {
+  try {
+    const { default: sequelize } = await import('./config/database');
+    await sequelize.authenticate();
+    return res.status(200).json({
+      success: true,
+      status: 'healthy',
+      database: 'connected',
+      service: 'JCER ERP Backend',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(503).json({
+      success: false,
+      status: 'unhealthy',
+      database: 'disconnected',
+      service: 'JCER ERP Backend',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+app.get('/api/health/db', async (_req: Request, res: Response) => {
+  try {
+    const { default: sequelize } = await import('./config/database');
+    await sequelize.authenticate();
+    return res.status(200).json({
+      success: true,
+      status: 'healthy',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(503).json({
+      success: false,
+      status: 'unhealthy',
+      database: 'disconnected',
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 // ── API Routes ────────────────────────────────────────────────────────────────
 
@@ -154,6 +211,10 @@ const v1Router = express.Router();
 
 // Auth routes
 v1Router.use('/auth', authRoutes);
+v1Router.get('/me/workspaces', authMiddleware, async (req: any, res: any, next: any) => {
+  const { getUserWorkspaces } = await import('./controllers/auth.controller');
+  return getUserWorkspaces(req, res, next);
+});
 
 // Document viewer route for R2 object keys and static uploads
 v1Router.get('/documents/view/*', async (req: Request, res: Response, next: NextFunction): Promise<any> => {
@@ -211,6 +272,7 @@ v1Router.get('/documents/view/*', async (req: Request, res: Response, next: Next
 
 // System routes
 v1Router.use('/system', systemRoutes);
+v1Router.get('/academic-years', (systemRoutes as any));
 
 // Branches list (public-ish, used by admission Step 1)
 v1Router.get('/branches', getBranches as any);
@@ -259,6 +321,10 @@ v1Router.get('/address/districts', (_req: Request, res: Response) => {
   });
 });
 
+// Student academic dashboard endpoints
+v1Router.use('/student', studentAcademicRoutes);
+v1Router.use('/student/academic', studentAcademicRoutes);
+
 // Student admission endpoints
 v1Router.use('/student', studentRouter);
 
@@ -271,25 +337,83 @@ v1Router.use('/admin/promotion', promotionRoutes);
 // Application endpoints
 v1Router.use('/application', applicationRouter);
 
+// Admin dashboard + onboarding + profile routes
+v1Router.use('/admin', adminRoutes);
+
 // Admin admission management
 v1Router.use('/admin', adminAdmissionRouter);
 
 // Admin office endpoints
 v1Router.use('/admin', adminOfficeRouter);
 
-// Admin dashboard + profile routes
-v1Router.use('/admin', adminRoutes);
-
 // Principal Dashboard routes
 v1Router.use('/principal', principalRoutes);
+
+// Dean Academics Dashboard routes
+v1Router.use('/dean', deanRoutes);
+
+// HOD Dashboard routes
+v1Router.use('/hod', hodRoutes);
+v1Router.use('/teaching-allocations', hodRoutes);
+
+// Faculty Dashboard routes
+v1Router.use('/faculty', facultyRoutes);
+v1Router.use('/faculty/marks', bitwiseMarksRoutes);
+v1Router.use('/faculty/bitwise-marks', bitwiseMarksRoutes);
+v1Router.use('/bitwise-marks', bitwiseMarksRoutes);
+
+// Google Drive Integration & Attendance Backup routes
+v1Router.use('/', googleDriveRoutes);
+
+// Explicit bulletproof routes for Existing Student Onboarding
+const existingOnboardingUpload = multer({ storage: multer.memoryStorage() });
+const safeUploadFile = (req: any, res: any, next: any) => {
+  existingOnboardingUpload.single('file')(req, res, (err: any) => {
+    if (err) return res.status(400).json({ success: false, error: err.message || 'File upload error' });
+    next();
+  });
+};
+
+// Mount on v1Router under all possible URL paths
+v1Router.post('/admin/onboarding/existing-students/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+v1Router.post('/admin/students/existing-onboarding/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+v1Router.post('/onboarding/existing-students/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+v1Router.post('/students/existing-onboarding/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+
+v1Router.post('/admin/onboarding/existing-students/validate', safeUploadFile, existingOnboardingController.validateExistingStudents);
+v1Router.post('/admin/students/existing-onboarding/validate', safeUploadFile, existingOnboardingController.validateExistingStudents);
+v1Router.post('/onboarding/existing-students/validate', safeUploadFile, existingOnboardingController.validateExistingStudents);
+v1Router.post('/students/existing-onboarding/validate', safeUploadFile, existingOnboardingController.validateExistingStudents);
+
+v1Router.get('/admin/onboarding/existing-students/context', (authMiddleware as any), existingOnboardingController.getOnboardingContext);
+v1Router.get('/admin/students/existing-onboarding/context', (authMiddleware as any), existingOnboardingController.getOnboardingContext);
+v1Router.get('/onboarding/existing-students/context', (authMiddleware as any), existingOnboardingController.getOnboardingContext);
+v1Router.get('/students/existing-onboarding/context', (authMiddleware as any), existingOnboardingController.getOnboardingContext);
+
+v1Router.get('/admin/onboarding/existing-students/template', existingOnboardingController.downloadExistingStudentsTemplate);
+v1Router.get('/admin/students/existing-onboarding/template', existingOnboardingController.downloadExistingStudentsTemplate);
+v1Router.get('/onboarding/existing-students/template', existingOnboardingController.downloadExistingStudentsTemplate);
+v1Router.get('/students/existing-onboarding/template', existingOnboardingController.downloadExistingStudentsTemplate);
+
+v1Router.get('/admin/onboarding/existing-students/history', (authMiddleware as any), existingOnboardingController.getOnboardingHistory);
+v1Router.get('/admin/students/existing-onboarding/history', (authMiddleware as any), existingOnboardingController.getOnboardingHistory);
+v1Router.get('/onboarding/existing-students/history', (authMiddleware as any), existingOnboardingController.getOnboardingHistory);
+v1Router.get('/students/existing-onboarding/history', (authMiddleware as any), existingOnboardingController.getOnboardingHistory);
 
 // Mount the v1 router to both versioned and legacy base paths
 app.use('/api', v1Router);
 app.use('/api/v1', v1Router);
 
+// Direct top-level app route aliases to guarantee 100% resolution even without /api prefix
+app.post('/api/admin/onboarding/existing-students/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+app.post('/api/admin/students/existing-onboarding/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+app.post('/admin/onboarding/existing-students/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+app.post('/admin/students/existing-onboarding/import', (authMiddleware as any), existingOnboardingController.importExistingStudents);
+
 // ── Global 404 handler ────────────────────────────────────────────────────────
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+app.use((req: Request, res: Response) => {
+  logger.warn(`404 NOT FOUND: [${req.method}] ${req.originalUrl}`);
+  res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl, method: req.method });
 });
 
 // ── Global Error Handler ───────────────────────────────────────────────────────

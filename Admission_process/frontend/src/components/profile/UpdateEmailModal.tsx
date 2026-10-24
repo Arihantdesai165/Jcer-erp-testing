@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Mail, ShieldCheck, Loader2, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import emailChangeService from '../../services/emailChange.service';
@@ -171,8 +172,10 @@ export const UpdateEmailModal: React.FC<UpdateEmailModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
       <div 
         className="w-full max-w-md bg-white dark:bg-neutral-900 rounded-3xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -333,7 +336,8 @@ export const UpdateEmailModal: React.FC<UpdateEmailModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

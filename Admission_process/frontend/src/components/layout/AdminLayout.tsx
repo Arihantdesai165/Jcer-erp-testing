@@ -40,8 +40,10 @@ import {
   Archive,
   ArrowUpCircle,
   Download,
+  UserPlus,
 } from 'lucide-react';
 import admissionService from '../../services/admission.service';
+import AcademicYearSelector from '../common/AcademicYearSelector';
 import usePwa from '../../hooks/usePwa';
 import PwaConfirmationModal from '../common/PwaConfirmationModal';
 
@@ -364,6 +366,7 @@ export const AdminLayout: React.FC = () => {
       title: 'STUDENT MANAGEMENT',
       items: [
         { name: 'Students', path: '/admin/students', icon: Users },
+        { name: 'Existing Student Onboarding', path: '/admin/students/existing-onboarding', icon: UserPlus },
       ],
     },
     {
@@ -414,6 +417,7 @@ export const AdminLayout: React.FC = () => {
     '/admin/admissions/promotion':    'Academic Promotion Workspace',
     '/admin/admissions/history':      'Admission History',
     '/admin/students': 'Student Management',
+    '/admin/students/existing-onboarding': 'Existing Student Onboarding',
     '/admin/reports': 'Report Generator',
     '/admin/documents/bulk': 'Bulk Document Export',
     '/admin/notifications': 'Notifications',
@@ -582,6 +586,9 @@ export const AdminLayout: React.FC = () => {
 
           {/* Right Controls */}
           <div className="flex items-center space-x-2.5 flex-shrink-0">
+            {/* Global Academic Year Selector */}
+            <AcademicYearSelector />
+
             <button 
               onClick={() => setShowSearch(true)}
               className="w-9 h-9 rounded-full flex items-center justify-center header-dark-btn shadow-sm hover:scale-[1.05] active:scale-[0.95] cursor-pointer"
@@ -756,7 +763,7 @@ export const AdminLayout: React.FC = () => {
             aria-hidden="true"
           >
             <img 
-              src="/logo.png" 
+              src="/emaillogo.png" 
               alt="" 
               className="w-[620px] h-[620px] max-w-[70vw] max-h-[70vh] object-contain opacity-[0.045] dark:opacity-[0.025] select-none" 
             />

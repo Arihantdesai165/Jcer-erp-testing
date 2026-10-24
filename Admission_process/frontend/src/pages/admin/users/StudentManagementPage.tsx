@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Plus, Edit, X, Lock, Download, Save, Loader2 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../../store';
 import userManagementService, { StudentProfile } from '../../../services/userManagement.service';
 import { toast } from 'react-toastify';
 import { BulkOnboardingModal } from '../../../components/admin/BulkOnboardingModal';
+import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
 
 export const StudentManagementPage: React.FC = () => {
   const { user: _currentUser } = useSelector((state: RootState) => state.auth);
@@ -36,12 +38,13 @@ export const StudentManagementPage: React.FC = () => {
     address: '',
   });
 
-  const fetchStudents = async (page = 1) => {
+  const fetchStudents = async (page = 1, limitOverride?: number) => {
     setLoading(true);
     try {
+      const currentLimit = limitOverride ?? pagination.limit;
       const res = await userManagementService.getStudents({
         page,
-        limit: pagination.limit,
+        limit: currentLimit,
         search: searchTerm || undefined,
         departmentId: deptFilter !== 'ALL' ? deptFilter : undefined,
         semester: semFilter !== 'ALL' ? semFilter : undefined,
@@ -160,11 +163,11 @@ export const StudentManagementPage: React.FC = () => {
               >
                 <option value="ALL">All Depts</option>
                 {/* Fallback to code if ID is needed, or just let backend handle it if we adapt it. For now, assuming mock UUIDs aren't available, we use ALL */}
-                <option value="CS">Computer Science</option>
-                <option value="CS-AIML">Computer Science & Engineering (AIML)</option>
-                <option value="EC">Electronics</option>
-                <option value="ME">Mechanical</option>
-                <option value="CV">Civil</option>
+                <option value="CSE">Computer Science & Engineering</option>
+                <option value="CSE-AIML">Computer Science & Engineering (AIML)</option>
+                <option value="ECE">Electronics & Communication Engineering</option>
+                <option value="ME">Mechanical Engineering</option>
+                <option value="CV">Civil Engineering</option>
               </select>
             </div>
 
@@ -193,14 +196,23 @@ export const StudentManagementPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="relative w-full md:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search by name, email..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-medium focus:border-violet-500 outline-none shadow-sm"
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Search by name, email..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-medium focus:border-violet-500 outline-none shadow-sm"
+              />
+            </div>
+            <ShowStudentsRangeSelector
+              value={pagination.limit}
+              onChange={(newLimit) => {
+                setPagination(prev => ({ ...prev, limit: newLimit }));
+                fetchStudents(1, newLimit);
+              }}
             />
           </div>
         </div>
@@ -211,14 +223,14 @@ export const StudentManagementPage: React.FC = () => {
       <div className="glass-panel rounded-2xl shadow-ambient border border-neutral-200/50 dark:border-neutral-800/40 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-neutral-50/80 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 border-b border-neutral-200/60 dark:border-neutral-700/60 text-xs uppercase tracking-wider">
-              <tr>
-                <th className="px-5 py-4 font-bold">No</th>
-                <th className="px-5 py-4 font-bold">Name</th>
-                <th className="px-5 py-4 font-bold">Enrollment #</th>
-                <th className="px-5 py-4 font-bold">Dept & Sem</th>
-                <th className="px-5 py-4 font-bold">Status</th>
-                <th className="px-5 py-4 font-bold text-right">Actions</th>
+            <thead className="bg-[#111111] dark:bg-neutral-950 text-white border-b border-neutral-800 text-xs uppercase tracking-wider font-extrabold">
+              <tr className="text-white">
+                <th className="px-5 py-4 font-bold text-white">No</th>
+                <th className="px-5 py-4 font-bold text-white">Name</th>
+                <th className="px-5 py-4 font-bold text-white">Enrollment #</th>
+                <th className="px-5 py-4 font-bold text-white">Dept & Sem</th>
+                <th className="px-5 py-4 font-bold text-white">Status</th>
+                <th className="px-5 py-4 font-bold text-right text-white">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60 bg-white dark:bg-transparent">
@@ -326,8 +338,8 @@ export const StudentManagementPage: React.FC = () => {
     </div>
 
       {/* EDIT MODAL PLACEHOLDER (To match layout, we build a static UI for now) */}
-      {isEditModalOpen && selectedStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-sm animate-fade-in">
+      {isEditModalOpen && selectedStudent && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 flex flex-col max-h-[90vh]">
             
             <div className="px-6 py-5 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-center bg-neutral-50/50 dark:bg-neutral-800/50">
@@ -463,12 +475,13 @@ export const StudentManagementPage: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ADD NEW MODAL PLACEHOLDER */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 backdrop-blur-sm animate-fade-in">
+      {isAddModalOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800 flex flex-col max-h-[90vh]">
             <div className="px-6 py-5 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-center bg-neutral-50/50 dark:bg-neutral-800/50">
               <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
@@ -514,10 +527,12 @@ export const StudentManagementPage: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-neutral-500 uppercase block mb-1">Batch Year *</label>
+                    <label className="text-[10px] font-bold text-neutral-500 uppercase block mb-1">Batch (Cohort) *</label>
                     <select className="w-full bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-500">
-                      <option>2024</option>
-                      <option>2023</option>
+                      <option>2026–2030</option>
+                      <option>2025–2029</option>
+                      <option>2024–2028</option>
+                      <option>2023–2027</option>
                     </select>
                   </div>
                 </div>
@@ -549,7 +564,8 @@ export const StudentManagementPage: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* BULK ONBOARDING MODAL */}

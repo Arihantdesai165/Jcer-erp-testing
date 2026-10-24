@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Search
 } from 'lucide-react';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 interface ReportPreset {
   id: string;
@@ -34,6 +35,7 @@ interface ReportPreset {
 }
 
 export const ReportGenerationPage: React.FC = () => {
+  const { academicYears } = useAcademicYear();
   const [loading, setLoading] = useState<boolean>(false);
   const [generating, setGenerating] = useState<boolean>(false);
   const [applications, setApplications] = useState<AdmissionApplication[]>([]);
@@ -361,11 +363,9 @@ export const ReportGenerationPage: React.FC = () => {
               className="w-full bg-slate-50 dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 rounded-xl px-3 py-2 text-xs font-bold outline-none"
             >
               <option value="ALL">All Academic Years</option>
-              {Array.from({ length: 5 }).map((_, i) => {
-                const y = new Date().getFullYear() + i;
-                const opt = `${y}-${y + 1}`;
-                return <option key={opt} value={opt}>{opt}</option>;
-              })}
+              {academicYears.map((ay) => (
+                <option key={ay.id || ay.year} value={ay.year}>{ay.year}</option>
+              ))}
             </select>
           </div>
 
@@ -452,7 +452,7 @@ export const ReportGenerationPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-100 dark:border-neutral-800 text-slate-400 font-extrabold uppercase text-[10px] tracking-wider bg-slate-50/50 dark:bg-neutral-800/50">
+                <tr className="bg-[#111111] dark:bg-neutral-950 text-white font-extrabold uppercase text-[11px] tracking-wider border-b border-neutral-800">
                   <th className="py-3.5 px-4">#</th>
                   <th className="py-3.5 px-4">Admission No</th>
                   <th className="py-3.5 px-4">Student Name</th>

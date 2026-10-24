@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import admissionService, { AdmissionApplication } from '../../services/admission.service';
 import API from '../../services/api';
@@ -791,8 +792,8 @@ export const PrincipalAdmissionReviewPage: React.FC = () => {
       </div>
 
       {/* ═══ DOCUMENT PREVIEW MODAL ═══ */}
-      {previewDoc && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      {previewDoc && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-slate-900 rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-700 shadow-2xl">
             <div className="p-4 border-b border-slate-800 flex items-center justify-between">
               <h3 className="text-sm font-black text-white uppercase tracking-wider">{previewDoc.label} Preview</h3>
@@ -821,7 +822,8 @@ export const PrincipalAdmissionReviewPage: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

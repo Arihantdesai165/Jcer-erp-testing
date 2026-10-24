@@ -1,0 +1,65 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import deanService from '../services/dean.service';
+
+interface UseDeanNotificationCountOptions {
+  pollingIntervalMs?: number; // default: 10000ms (10 seconds)
+  enabled?: boolean;
+}
+
+export const useDeanNotificationCount = (options: UseDeanNotificationCountOptions = {}) => {
+  const { pollingIntervalMs = 10000, enabled = true } = options;
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const isMountedRef = useRef<boolean>(true);
+
+  const fetchCount = useCallback(async () => {
+    if (!enabled) return;
+    try {
+      const data = await deanService.getFacultyAuthorizationNotificationCount();
+      if (isMountedRef.current && typeof data?.count === 'number') {
+        setCount(data.count);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch Dean authorization notification count:', err);
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchCount();
+
+    if (!enabled) return;
+
+    // Periodic polling to update count automatically
+    const timer = setInterval(() => {
+      fetchCount();
+    }, pollingIntervalMs);
+
+    // Refresh immediately when Dean switches back to the application window/tab
+    const handleFocus = () => {
+      fetchCount();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Refresh immediately when local faculty authorization status changes
+    const handleAuthChanged = () => {
+      fetchCount();
+    };
+    window.addEventListener('faculty-auth-changed', handleAuthChanged);
+
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('faculty-auth-changed', handleAuthChanged);
+    };
+  }, [fetchCount, pollingIntervalMs, enabled]);
+
+  return { count, loading, refreshCount: fetchCount };
+};
+
+export default useDeanNotificationCount;

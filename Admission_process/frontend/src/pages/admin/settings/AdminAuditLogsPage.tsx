@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import API from '../../../services/api';
 import { 
   Activity, ShieldAlert, Search, Filter, RotateCcw, RefreshCw, Loader2, Eye, Download, 
@@ -477,8 +478,8 @@ export const AdminAuditLogsPage: React.FC = () => {
       </div>
 
       {/* Log Detail Inspection Modal */}
-      {selectedLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      {selectedLog && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-2xl p-6 space-y-5 shadow-2xl relative">
             
             <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
@@ -568,7 +569,8 @@ export const AdminAuditLogsPage: React.FC = () => {
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

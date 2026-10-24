@@ -161,8 +161,8 @@ const officeService = {
   },
 
   // Dashboard
-  getDashboardData: async (): Promise<DashboardData> => {
-    const res = await API.get('/admin/dashboard');
+  getDashboardData: async (params?: { academicYear?: string }): Promise<DashboardData> => {
+    const res = await API.get('/admin/dashboard', { params });
     return res.data.data;
   },
 

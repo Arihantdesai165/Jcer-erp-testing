@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import admissionService, { AdmissionApplication } from '../../../services/admission.service';
 import { 
@@ -349,8 +350,8 @@ export const FeeReviewPage: React.FC = () => {
       </div>
 
       {/* Reject Modal */}
-      {showRejectModal && (
-        <div className="fixed inset-0 bg-neutral-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {showRejectModal && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fade-in">
             <div className="space-y-1">
               <h3 className="text-base font-extrabold text-neutral-900">Reject Fee Receipt</h3>
@@ -387,7 +388,8 @@ export const FeeReviewPage: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

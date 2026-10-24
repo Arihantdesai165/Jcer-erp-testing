@@ -3,6 +3,8 @@ services:
     image: pgvector/pgvector:pg15
     container_name: college_erp_postgres
     restart: unless-stopped
+    ports:
+      - "5432:5432"
     env_file:
       - ./backend/.env
     environment:
@@ -24,6 +26,8 @@ services:
     image: redis:7-alpine
     container_name: college_erp_redis
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -38,7 +42,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: college_erp_backend
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "127.0.0.1:5000:5000"
     environment:
@@ -65,7 +69,7 @@ services:
       args:
         VITE_API_URL: /api
     container_name: college_erp_frontend
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8080:80"
     depends_on:

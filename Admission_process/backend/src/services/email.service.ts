@@ -322,9 +322,23 @@ export function getAdminSecurityOtpEmailHtml(params: AdminOtpEmailParams): strin
   const expiryMinutes = params.otpExpiryMinutes || 5;
 
   const roleUpper = (params.role || 'ADMIN').toUpperCase();
-  const isPrincipal = roleUpper === 'PRINCIPAL';
-  const portalName = isPrincipal ? 'Principal Portal' : 'Admin Portal';
-  const badgeText = `${roleUpper} SECURITY AUTHENTICATION`;
+  let portalName = 'Admin Portal';
+  let badgeRole = 'ADMINISTRATOR';
+
+  if (roleUpper === 'PRINCIPAL') {
+    portalName = 'Principal Portal';
+    badgeRole = 'PRINCIPAL';
+  } else if (roleUpper === 'DEAN') {
+    portalName = 'Dean Academic Portal';
+    badgeRole = 'DEAN ACADEMIC';
+  } else if (roleUpper === 'HOD') {
+    portalName = 'HOD Portal';
+    badgeRole = 'HOD';
+  } else if (roleUpper === 'TEACHER' || roleUpper === 'FACULTY') {
+    portalName = 'Faculty Portal';
+    badgeRole = 'FACULTY';
+  }
+  const badgeText = `${badgeRole} SECURITY AUTHENTICATION`;
 
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', {
@@ -765,17 +779,25 @@ class EmailService {
     );
   }
 
-  /** Admin / Principal Daily Login OTP */
+  /** Daily Login OTP for Administrator, Principal, Dean Academic, HOD, and Faculty */
   public async sendDailyLoginOTP(
     email: string,
     name: string,
     otp: string,
-    role: 'ADMIN' | 'PRINCIPAL' | string
+    role: string
   ): Promise<boolean> {
-    const portalName =
-      role?.toUpperCase() === 'PRINCIPAL'
-        ? 'Principal Portal'
-        : 'Admin Portal';
+    const roleUpper = (role || 'ADMIN').toUpperCase();
+    let portalName = 'Admin Portal';
+
+    if (roleUpper === 'PRINCIPAL') {
+      portalName = 'Principal Portal';
+    } else if (roleUpper === 'DEAN') {
+      portalName = 'Dean Academic Portal';
+    } else if (roleUpper === 'HOD') {
+      portalName = 'HOD Portal';
+    } else if (roleUpper === 'TEACHER' || roleUpper === 'FACULTY') {
+      portalName = 'Faculty Portal';
+    }
 
     const subject = `JCER ERP ${portalName} — Security Verification Code`;
 

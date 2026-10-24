@@ -7,26 +7,105 @@ import Teacher from '../models/Teacher';
 import Admin from '../models/Admin';
 import RejectionReason from '../models/RejectionReason';
 import HOD from '../models/HOD';
+import AcademicYear from '../models/AcademicYear';
+import Semester from '../models/Semester';
+import Section from '../models/Section';
+import HODAssignmentHistory from '../models/HODAssignmentHistory';
+import FacultyAuthorizationRequest from '../models/FacultyAuthorizationRequest';
+import FacultyAssignment from '../models/FacultyAssignment';
 
 export async function seed(exitOnComplete = false) {
   try {
     console.log('Initiating database schema sync...');
-    await sequelize.sync({ force: true });
+    await sequelize.sync();
     console.log('Database synced. Starting seed...');
 
-    // ─── 1. Departments (Branches) ─────────────────────────────────────────
-    const depts = await Department.bulkCreate([
+    // ─── 1. Academic Years ──────────────────────────────────────────────────
+    await AcademicYear.findOrCreate({
+      where: { year: '2026-27' },
+      defaults: {
+        year: '2026-27',
+        startDate: new Date('2026-07-01'),
+        endDate: new Date('2027-06-30'),
+        status: 'ACTIVE',
+        isCurrent: true,
+      },
+    });
+
+    await AcademicYear.findOrCreate({
+      where: { year: '2025-26' },
+      defaults: {
+        year: '2025-26',
+        startDate: new Date('2025-07-01'),
+        endDate: new Date('2026-06-30'),
+        status: 'ARCHIVED',
+        isCurrent: false,
+      },
+    });
+
+    await AcademicYear.findOrCreate({
+      where: { year: '2027-28' },
+      defaults: {
+        year: '2027-28',
+        startDate: new Date('2027-07-01'),
+        endDate: new Date('2028-06-30'),
+        status: 'UPCOMING',
+        isCurrent: false,
+      },
+    });
+    console.log('✓ Academic Years created.');
+
+    // ─── 2. Departments (Branches) ─────────────────────────────────────────
+    const departmentsData = [
       { name: 'Computer Science & Engineering', code: 'CSE' },
       { name: 'Electronics & Communication Engineering', code: 'ECE' },
       { name: 'Mechanical Engineering', code: 'ME' },
       { name: 'Civil Engineering', code: 'CV' },
       { name: 'Computer Science & Engineering (AIML)', code: 'CSE-AIML' },
-    ], { returning: true });
-    const [cse] = depts;
+    ];
+
+    for (const d of departmentsData) {
+      await Department.findOrCreate({ where: { code: d.code }, defaults: d });
+    }
+
+    const depts = await Department.findAll();
+    const cse = depts.find(d => d.code === 'CSE') || depts[0];
+    const ece = depts.find(d => d.code === 'ECE') || depts[1];
     console.log('✓ Departments created.');
 
-    // ─── 1.5 Rejection Reasons ──────────────────────────────────────────────
-    await RejectionReason.bulkCreate([
+    // ─── 3. Semesters (2026-27) ─────────────────────────────────────────────
+    const semestersList = [
+      { num: 1, name: '1st Semester', start: '2026-08-01', end: '2026-12-31' },
+      { num: 2, name: '2nd Semester', start: '2027-01-15', end: '2027-05-31' },
+      { num: 3, name: '3rd Semester', start: '2026-08-01', end: '2026-12-31' },
+      { num: 4, name: '4th Semester', start: '2027-01-15', end: '2027-05-31' },
+      { num: 5, name: '5th Semester', start: '2026-08-01', end: '2026-12-31' },
+      { num: 6, name: '6th Semester', start: '2027-01-15', end: '2027-05-31' },
+      { num: 7, name: '7th Semester', start: '2026-08-01', end: '2026-12-31' },
+      { num: 8, name: '8th Semester', start: '2027-01-15', end: '2027-05-31' },
+    ];
+
+    for (const s of semestersList) {
+      await Semester.findOrCreate({
+        where: { academicYear: '2026-27', semesterNumber: s.num },
+        defaults: {
+          academicYear: '2026-27',
+          semesterNumber: s.num,
+          semesterName: s.name,
+          startDate: new Date(s.start),
+          endDate: new Date(s.end),
+          status: s.num % 2 !== 0 ? 'ACTIVE' : 'UPCOMING',
+        },
+      });
+    }
+    console.log('✓ Semesters created.');
+
+    // ─── 4. Sections ────────────────────────────────────────────────────────
+    // Sections are intentionally created on-demand by HODs per semester/department
+    console.log('✓ Sections ready for HOD creation.');
+
+    // ─── 5. Rejection Reasons ──────────────────────────────────────────────
+    const reasons = [
       { code: 'DOC_NOT_VERIFIED', label: 'Documents Not Verified', description: 'Uploaded documents are missing or invalid' },
       { code: 'INCOMPLETE_DOCUMENTS', label: 'Incomplete Documents', description: 'Some mandatory documents were not uploaded' },
       { code: 'FEES_NOT_PAID', label: 'Fees Not Paid', description: 'Admission or application fees have not been paid' },
@@ -36,134 +115,261 @@ export async function seed(exitOnComplete = false) {
       { code: 'AADHAAR_MISMATCH', label: 'Aadhaar Verification Failed', description: 'Aadhaar details could not be verified' },
       { code: 'USN_CONFLICT', label: 'USN Conflict / Already Exists', description: 'University Seat Number conflicts with an existing registration' },
       { code: 'OTHER', label: 'Other', description: 'Other rejection reason (additional comments provided in remarks)' },
-    ]);
+    ];
+    for (const r of reasons) {
+      await RejectionReason.findOrCreate({ where: { code: r.code }, defaults: r });
+    }
     console.log('✓ Rejection Reasons created.');
 
-    // ─── 2. Subjects (CSE Semester 3) ─────────────────────────────────────
+    // ─── 6. Subjects ───────────────────────────────────────────────────────
     const subjectsData = [
-      { name: 'Database Management Systems', code: 'CS301', semester: 3 },
-      { name: 'Data Structures & Algorithms', code: 'CS302', semester: 3 },
-      { name: 'Computer Networks', code: 'CS303', semester: 3 },
-      { name: 'Operating Systems', code: 'CS304', semester: 3 },
-      { name: 'Discrete Mathematics', code: 'CS305', semester: 3 },
+      { name: 'Database Management Systems', code: 'CS301', semester: 3, departmentId: cse.id, credits: 4, type: 'Theory' },
+      { name: 'Data Structures & Algorithms', code: 'CS302', semester: 3, departmentId: cse.id, credits: 4, type: 'Theory' },
+      { name: 'Operating Systems', code: 'CS304', semester: 3, departmentId: cse.id, credits: 4, type: 'Theory' },
+      { name: 'Computer Networks', code: 'CS303', semester: 3, departmentId: cse.id, credits: 4, type: 'Theory' },
+      { name: 'Discrete Mathematics', code: 'CS305', semester: 3, departmentId: cse.id, credits: 3, type: 'Theory' },
+      { name: 'Big Data Analytics', code: 'CS501', semester: 5, departmentId: cse.id, credits: 4, type: 'Theory' },
+      { name: 'Artificial Intelligence & ML', code: 'CS502', semester: 5, departmentId: cse.id, credits: 4, type: 'Theory' },
+      { name: 'Cloud Computing Architecture', code: 'CS503', semester: 5, departmentId: cse.id, credits: 3, type: 'Theory' },
+      { name: 'Database Systems Laboratory', code: 'CSL306', semester: 3, departmentId: cse.id, credits: 2, type: 'Practical' },
+      { name: 'Big Data Analytics Lab', code: 'CSL504', semester: 5, departmentId: cse.id, credits: 2, type: 'Practical' },
+      { name: 'Internet of Things Elective', code: 'CSE505', semester: 5, departmentId: cse.id, credits: 3, type: 'Elective' },
+      { name: 'Digital Signal Processing', code: 'EC501', semester: 5, departmentId: ece.id, credits: 4, type: 'Theory' },
+      { name: 'VLSI Design & Architecture', code: 'EC502', semester: 5, departmentId: ece.id, credits: 4, type: 'Theory' },
     ];
-    await Subject.bulkCreate(subjectsData);
+
+    for (const sub of subjectsData) {
+      await Subject.findOrCreate({ where: { code: sub.code }, defaults: sub as any });
+    }
+    const allSubjects = await Subject.findAll();
     console.log('✓ Subjects created.');
 
-    // ─── 3. Users ──────────────────────────────────────────────────────────
-
-    const adminEmail = process.env.INITIAL_ADMIN_EMAIL || 'arihantdesai483@gmail.com';
-    const adminPass = process.env.INITIAL_ADMIN_PASSWORD || 'Desai@2004';
+    // ─── 7. Users (Admin, Principal, Dean, HOD, Teachers) ───────────────────
+    const adminEmail = process.env.INITIAL_ADMIN_EMAIL || 'admin@college.com';
+    const adminPass = process.env.INITIAL_ADMIN_PASSWORD || 'password123';
     const adminHash = await bcrypt.hash(adminPass, 10);
 
-    const principalEmail = process.env.INITIAL_PRINCIPAL_EMAIL || 'arihantdesai47@gmail.com';
-    const principalPass = process.env.INITIAL_PRINCIPAL_PASSWORD || 'Desai@2004';
+    const principalEmail = process.env.INITIAL_PRINCIPAL_EMAIL || 'principal@college.com';
+    const principalPass = process.env.INITIAL_PRINCIPAL_PASSWORD || 'password123';
     const principalHash = await bcrypt.hash(principalPass, 10);
 
-    // Admin User
-    const adminUser = await User.create({
-      username: adminEmail,
-      email: adminEmail,
-      passwordHash: adminHash,
-      role: 'ADMIN',
-      status: 'ACTIVE',
-      firstName: 'Shivakumar',
-      lastName: 'Biradar',
-      phone: '9876543200',
-      profileImage: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&fit=crop',
-    });
+    // Dean Academics (Demo user)
+    const deanEmail = 'dean@college.com';
+    const deanPass = 'password123';
+    const deanHash = await bcrypt.hash(deanPass, 10);
 
-    // Admin 2 User (if configured)
-    const admin2Email = process.env.INITIAL_ADMIN2_EMAIL;
-    const admin2Pass = process.env.INITIAL_ADMIN2_PASSWORD || 'Desai@2004';
-    let admin2User: User | null = null;
-    if (admin2Email && admin2Email.trim() !== '') {
-      const admin2Hash = await bcrypt.hash(admin2Pass, 10);
-      admin2User = await User.create({
-        username: admin2Email.trim(),
-        email: admin2Email.trim(),
-        passwordHash: admin2Hash,
+    const [adminUser] = await User.findOrCreate({
+      where: { email: adminEmail },
+      defaults: {
+        username: adminEmail,
+        email: adminEmail,
+        passwordHash: adminHash,
         role: 'ADMIN',
         status: 'ACTIVE',
-        firstName: 'Admin',
-        lastName: 'Two',
-        phone: '9876543209',
-        profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&fit=crop',
-      });
-    }
+        firstName: 'Shivakumar',
+        lastName: 'Biradar',
+        phone: '9876543200',
+        profileImage: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&fit=crop',
+      },
+    });
 
-    // Principal User
-    await User.create({
-      username: principalEmail,
-      email: principalEmail,
-      passwordHash: principalHash,
-      role: 'PRINCIPAL',
-      status: 'ACTIVE',
-      firstName: 'Dr. S.V.',
-      lastName: 'Gorbal',
-      phone: '9876543201',
-      profileImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&fit=crop',
+    await User.findOrCreate({
+      where: { email: principalEmail },
+      defaults: {
+        username: principalEmail,
+        email: principalEmail,
+        passwordHash: principalHash,
+        role: 'PRINCIPAL',
+        status: 'ACTIVE',
+        firstName: 'Dr. S.V.',
+        lastName: 'Gorbal',
+        phone: '9876543201',
+        profileImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&fit=crop',
+      },
+    });
+
+    const [deanUser] = await User.findOrCreate({
+      where: { email: deanEmail },
+      defaults: {
+        username: deanEmail,
+        email: deanEmail,
+        passwordHash: deanHash,
+        role: 'DEAN',
+        status: 'ACTIVE',
+        firstName: 'Dr. K.B.',
+        lastName: 'Manwade',
+        phone: '9876543203',
+        profileImage: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&fit=crop',
+      },
     });
 
     // HOD User
-    const hodUser = await User.create({
-      username: 'hod1',
-      email: 'hod@college.com',
-      passwordHash: 'password123',
-      role: 'HOD',
-      status: 'ACTIVE',
-      firstName: 'Dr. Sharma',
-      lastName: 'Prasad',
-      phone: '9876543202',
-      profileImage: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&fit=crop',
+    const [hodUser] = await User.findOrCreate({
+      where: { email: 'hod@college.com' },
+      defaults: {
+        username: 'hod1',
+        email: 'hod@college.com',
+        passwordHash: await bcrypt.hash('password123', 10),
+        role: 'HOD',
+        status: 'ACTIVE',
+        firstName: 'Dr. Rahul',
+        lastName: 'Sharma',
+        phone: '9876543202',
+        profileImage: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&fit=crop',
+      },
     });
 
-    // Teacher User
-    const teacherUser = await User.create({
-      username: 'teacher1',
-      email: 'teacher@college.com',
-      passwordHash: 'password123',
-      role: 'TEACHER',
-      status: 'ACTIVE',
-      firstName: 'Sarah',
-      lastName: 'Smith',
-      phone: '9876543299',
-      profileImage: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&fit=crop',
+    // Active Teacher User
+    const [teacherUser] = await User.findOrCreate({
+      where: { email: 'teacher@college.com' },
+      defaults: {
+        username: 'teacher1',
+        email: 'teacher@college.com',
+        passwordHash: await bcrypt.hash('password123', 10),
+        role: 'TEACHER',
+        status: 'ACTIVE',
+        firstName: 'Sarah',
+        lastName: 'Smith',
+        phone: '9876543299',
+        profileImage: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&fit=crop',
+      },
+    });
+
+    // Faculty pending request user
+    const [pendingFacultyUser] = await User.findOrCreate({
+      where: { email: 'faculty.rahul@college.com' },
+      defaults: {
+        username: 'faculty.rahul',
+        email: 'faculty.rahul@college.com',
+        passwordHash: await bcrypt.hash('password123', 10),
+        role: 'TEACHER',
+        status: 'INACTIVE',
+        firstName: 'Rahul',
+        lastName: 'Verma',
+        phone: '9876543288',
+        profileImage: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&fit=crop',
+      },
+    });
+
+    // Another pending faculty
+    const [pendingFacultyUser2] = await User.findOrCreate({
+      where: { email: 'faculty.anita@college.com' },
+      defaults: {
+        username: 'faculty.anita',
+        email: 'faculty.anita@college.com',
+        passwordHash: await bcrypt.hash('password123', 10),
+        role: 'TEACHER',
+        status: 'INACTIVE',
+        firstName: 'Anita',
+        lastName: 'Deshmukh',
+        phone: '9876543277',
+        profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&fit=crop',
+      },
     });
 
     console.log('✓ Users created.');
 
-    // ─── 4. Admin profile ──────────────────────────────────────────────────
-    await Admin.create({
-      userId: adminUser.id,
-      designation: 'Senior Admission Officer',
-      employeeId: 'EMP-001',
+    // ─── 8. Profiles & Links ────────────────────────────────────────────────
+    await Admin.findOrCreate({
+      where: { userId: adminUser.id },
+      defaults: {
+        userId: adminUser.id,
+        designation: 'Senior Admission Officer',
+        employeeId: 'EMP-001',
+      },
     });
-    if (admin2User) {
-      await Admin.create({
-        userId: admin2User.id,
-        designation: 'Admission Officer',
-        employeeId: 'EMP-002',
+
+    const [teacherRecord] = await Teacher.findOrCreate({
+      where: { userId: teacherUser.id },
+      defaults: {
+        userId: teacherUser.id,
+        departmentId: cse.id,
+        designation: 'Associate Professor',
+        joiningDate: new Date('2020-08-01'),
+      },
+    });
+
+    const [hodRecord] = await HOD.findOrCreate({
+      where: { userId: hodUser.id, departmentId: cse.id },
+      defaults: {
+        userId: hodUser.id,
+        departmentId: cse.id,
+        tenureStartDate: new Date('2022-01-01'),
+        isActive: true,
+        appointmentOrderNo: 'APP-HOD-2022-001',
+        appointmentDate: new Date('2022-01-01'),
+      },
+    });
+
+    // HOD Assignment History
+    await HODAssignmentHistory.findOrCreate({
+      where: { userId: hodUser.id, departmentId: cse.id, academicYear: '2026-27' },
+      defaults: {
+        hodId: hodRecord.id,
+        userId: hodUser.id,
+        departmentId: cse.id,
+        academicYear: '2026-27',
+        startDate: new Date('2026-07-01'),
+        status: 'ACTIVE',
+        assignedByUserId: deanUser.id,
+      },
+    });
+
+    // Faculty Assignment for Sarah Smith
+    const bigDataSubject = allSubjects.find(s => s.code === 'CS501') || allSubjects[0];
+    if (bigDataSubject) {
+      await FacultyAssignment.findOrCreate({
+        where: { userId: teacherUser.id, subjectId: bigDataSubject.id },
+        defaults: {
+          teacherId: teacherRecord.id,
+          userId: teacherUser.id,
+          departmentId: cse.id,
+          subjectId: bigDataSubject.id,
+          semester: 5,
+          section: 'Section A',
+          academicYear: '2026-27',
+          status: 'ACTIVE',
+        },
       });
     }
-    console.log('✓ Admin profiles created.');
 
-    await Teacher.create({
-      userId: teacherUser.id,
-      departmentId: cse.id,
-      designation: 'Associate Professor',
-      joiningDate: new Date('2020-08-01'),
+    // Pending Faculty Authorization Requests for Dean review
+    const aiSubject = allSubjects.find(s => s.code === 'CS502') || allSubjects[0];
+    const cloudSubject = allSubjects.find(s => s.code === 'CS503') || allSubjects[0];
+
+    await FacultyAuthorizationRequest.findOrCreate({
+      where: { facultyUserId: pendingFacultyUser.id },
+      defaults: {
+        facultyUserId: pendingFacultyUser.id,
+        departmentId: cse.id,
+        subjectId: aiSubject ? aiSubject.id : null,
+        semester: 5,
+        section: 'Section A',
+        academicYear: '2026-27',
+        designation: 'Assistant Professor',
+        createdByHODId: hodUser.id,
+        authority: 'DEAN',
+        status: 'PENDING',
+      },
     });
 
-    await HOD.create({
-      userId: hodUser.id,
-      departmentId: cse.id,
-      tenureStartDate: new Date('2022-01-01'),
-      isActive: true,
-      appointmentOrderNo: 'APP-HOD-2022-001',
-      appointmentDate: new Date('2022-01-01'),
+    await FacultyAuthorizationRequest.findOrCreate({
+      where: { facultyUserId: pendingFacultyUser2.id },
+      defaults: {
+        facultyUserId: pendingFacultyUser2.id,
+        departmentId: cse.id,
+        subjectId: cloudSubject ? cloudSubject.id : null,
+        semester: 5,
+        section: 'Section B',
+        academicYear: '2026-27',
+        designation: 'Assistant Professor',
+        createdByHODId: hodUser.id,
+        authority: 'DEAN',
+        status: 'PENDING',
+      },
     });
-    console.log('✓ Teacher and HOD details linked.');
+
+    console.log('✓ Academic profiles, assignments, and authorization requests linked.');
 
     console.log('');
     console.log('='.repeat(55));
@@ -171,6 +377,7 @@ export async function seed(exitOnComplete = false) {
     console.log('='.repeat(55));
     console.log('');
     console.log('  LOGIN CREDENTIALS:');
+    console.log('  Dean     → dean@college.com       / password123 (No OTP required)');
     console.log('  Principal→ principal@college.com  / password123');
     console.log('  Admin    → admin@college.com      / password123');
     console.log('  HOD      → hod@college.com        / password123');

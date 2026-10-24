@@ -10,7 +10,7 @@ export const errorHandler = (
 ): void => {
   const correlationId = (req as any).correlationId || 'N/A';
   const status = err.status || 500;
-  
+
   // Identify if it's a known operational exception
   const isOperational = err instanceof HttpException;
 
@@ -18,42 +18,84 @@ export const errorHandler = (
   const isSequelizeError = err.name?.startsWith('Sequelize') || !!err.sql;
 
   let message = err.message || 'Internal Server Error';
-  let errorResponse: any = { error: message };
+  let errorResponse: any = { success: false, error: message, message };
 
   if (isSequelizeError) {
-    // Sanitize Sequelize DB errors — never expose SQL queries or table names
-    logger.error('Database query error:', {
+    // Structured backend logging for DB / Sequelize errors
+    logger.error('PostgreSQL Database Error:', {
       correlationId,
-      message: err.message,
+      endpoint: req.originalUrl || req.path,
+      method: req.method,
+      requestParams: req.params,
+      sectionId: req.params?.sectionId || null,
+      authenticatedUserId: (req as any).user?.id || null,
+      departmentId: (req as any).departmentId || null,
+      semester: req.params?.semester || req.query?.semester || req.body?.semester || null,
+      academicYear: req.params?.academicYear || req.query?.academicYear || req.body?.academicYear || null,
+      sequelizeOperation: err.name,
+      pgErrorCode: err.parent?.code || err.original?.code || null,
+      pgErrorMessage: err.parent?.message || err.original?.message || err.message,
       sql: err.sql,
       parameters: err.parameters,
       stack: err.stack,
     });
-    errorResponse = { error: 'A database error occurred. Please try again.', referenceId: correlationId };
+
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      const duplicateField = err.errors?.[0]?.path || 'record';
+      const duplicateMsg = err.errors?.[0]?.message || `A ${duplicateField} with these details already exists.`;
+      res.status(409).json({
+        success: false,
+        errorCode: 'DUPLICATE_RESOURCE',
+        error: duplicateMsg,
+        message: duplicateMsg,
+        referenceId: correlationId,
+      });
+      return;
+    }
+
+    errorResponse = {
+      success: false,
+      errorCode: 'DATABASE_ERROR',
+      error: 'Database operation failed. Please try again.',
+      message: 'Database operation failed. Please try again.',
+      referenceId: correlationId,
+    };
+    res.status(500).json(errorResponse);
+    return;
   } else if (!isOperational) {
-    // Plain Error thrown from controller business logic — safe to expose message
-    logger.error('Controller error:', {
+    // Plain Error thrown from controller business logic
+    logger.error('Unhandled Application Error:', {
       correlationId,
+      endpoint: req.originalUrl || req.path,
+      method: req.method,
       message: err.message,
       stack: err.stack,
     });
-    // Expose the actual error message (e.g. "USN already claimed", "Not found")
-    errorResponse = { error: message };
+    errorResponse = {
+      success: false,
+      errorCode: 'INTERNAL_ERROR',
+      error: message,
+      message,
+    };
   } else {
-    // Log operational HttpException as warning/info
+    // Log operational HttpException
     logger.warn(`Operational HTTP Exception [${status}]: ${message}`, {
       correlationId,
+      errorCode: err.errorCode,
       path: req.path,
       method: req.method,
     });
-    errorResponse = { 
+    errorResponse = {
+      success: false,
+      errorCode: err.errorCode || undefined,
       error: message,
-      fields: (err as any).fields || undefined
+      message,
+      fields: (err as any).fields || undefined,
     };
   }
 
   // Include stack trace in development for debugging
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !isSequelizeError) {
     errorResponse.stack = err.stack;
     errorResponse.details = (err as any).details || (err as any).errors || undefined;
   }

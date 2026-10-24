@@ -264,12 +264,12 @@ export const AdminStudentDocumentsPage: React.FC = () => {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-neutral-50 dark:bg-neutral-900/60 border-b border-neutral-200 dark:border-neutral-800 text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                <th className="py-4.5 px-6">Document Type</th>
-                <th className="py-4.5 px-6">Storage Path</th>
-                <th className="py-4.5 px-6 text-center">Status</th>
-                <th className="py-4.5 px-6 text-right">Actions</th>
+            <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase font-extrabold border-b border-neutral-800">
+              <tr className="bg-[#111111] dark:bg-neutral-950 border-b border-neutral-800 text-[10px] font-black uppercase tracking-widest text-white">
+                <th className="py-4.5 px-6 text-white">Document Type</th>
+                <th className="py-4.5 px-6 text-white">Storage Path</th>
+                <th className="py-4.5 px-6 text-center text-white">Status</th>
+                <th className="py-4.5 px-6 text-right text-white">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
@@ -330,12 +330,12 @@ export const AdminStudentDocumentsPage: React.FC = () => {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-neutral-50 dark:bg-neutral-900/60 border-b border-neutral-200 dark:border-neutral-800 text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                  <th className="py-4.5 px-6">Document</th>
-                  <th className="py-4.5 px-6">Original File</th>
-                  <th className="py-4.5 px-6 text-center">Status</th>
-                  <th className="py-4.5 px-6 text-right">Actions</th>
+              <thead className="bg-[#111111] dark:bg-neutral-950 text-white uppercase font-extrabold border-b border-neutral-800">
+                <tr className="bg-[#111111] dark:bg-neutral-950 border-b border-neutral-800 text-[10px] font-black uppercase tracking-widest text-white">
+                  <th className="py-4.5 px-6 text-white">Document</th>
+                  <th className="py-4.5 px-6 text-white">Original File</th>
+                  <th className="py-4.5 px-6 text-center text-white">Status</th>
+                  <th className="py-4.5 px-6 text-right text-white">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">

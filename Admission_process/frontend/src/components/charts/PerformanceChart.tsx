@@ -30,7 +30,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ sgpa, cgpa, 
   const getRiskExplanation = (level: string) => {
     if (level === 'GOOD' || level === 'EXCELLENT') return 'Excellent academic standing. Eligible for honors program.';
     if (level === 'AVERAGE') return 'Average standing. Maintain attendance and score higher in internals.';
-    return 'At-risk. Schedule academic mentoring. Minimum attendance 75% required.';
+    return 'At-risk. Schedule academic counseling. Minimum attendance 75% required.';
   };
 
   return (

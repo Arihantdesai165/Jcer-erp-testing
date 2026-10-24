@@ -20,10 +20,10 @@ export default defineConfig(({ mode }) => {
         registerType: 'prompt',
         includeAssets: ['favicon.ico', 'logo.png', 'emaillogo.png', 'college-view.jpg', 'offline.html', 'pwa-192x192.png', 'pwa-512x512.png', 'icons/icon-192.png', 'icons/icon-512.png'],
         manifest: {
-          name: 'JCER Student Admission Portal',
-          short_name: 'JCER Admission',
-          description: 'Progressive Web App for Jain College of Engineering & Research Student Admission',
-          start_url: '/admission/login',
+          name: 'JCER ERP',
+          short_name: 'JCER ERP',
+          description: 'Student academic dashboard for JCER ERP',
+          start_url: '/student/dashboard',
           scope: '/',
           display: 'standalone',
           orientation: 'portrait-primary',
@@ -80,7 +80,8 @@ export default defineConfig(({ mode }) => {
         devOptions: {
           enabled: true,
           type: 'module',
-          navigateFallback: 'index.html'
+          navigateFallback: 'index.html',
+          suppressWarnings: true
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,woff,woff2,ttf,eot}'],
@@ -115,7 +116,8 @@ export default defineConfig(({ mode }) => {
       allowedHosts: true,
       cors: true,
       hmr: {
-        clientPort: 443,
+        host: 'localhost',
+        port: 5173,
       },
       proxy: {
         '/api': {

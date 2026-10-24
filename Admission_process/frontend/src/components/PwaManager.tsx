@@ -38,7 +38,7 @@ const PwaManager: React.FC = () => {
     };
 
     return (
-        <div className="fixed bottom-6 right-6 left-6 md:left-auto md:w-96 z-[9999] flex flex-col gap-3 font-sans">
+        <div className="fixed bottom-20 md:bottom-6 right-4 left-4 md:left-auto md:right-6 md:w-96 z-[9999] flex flex-col gap-3 font-sans">
             
             {/* 1. App Update Banner */}
             {needRefresh && (
@@ -50,7 +50,7 @@ const PwaManager: React.FC = () => {
                             </div>
                             <div className="space-y-0.5">
                                 <h4 className="text-sm font-bold tracking-tight">New version available</h4>
-                                <p className="text-[11px] text-slate-400 leading-normal">JCER Admission Portal has been updated. Refresh now to experience the latest features.</p>
+                                <p className="text-[11px] text-slate-400 leading-normal">JCER ERP has been updated. Refresh now to experience the latest features.</p>
                             </div>
                         </div>
                         <button 
@@ -87,8 +87,8 @@ const PwaManager: React.FC = () => {
                                 <img src="/logo.png" alt="JCER Logo" className="size-9 object-contain" />
                             </div>
                             <div className="space-y-0.5">
-                                <h4 className="text-sm font-extrabold tracking-tight">Install JCER Admission</h4>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">Add the admission app to your home screen for instant access, native layouts, and full offline capabilities.</p>
+                                <h4 className="text-sm font-extrabold tracking-tight">Install JCER ERP</h4>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">Add JCER ERP to your home screen for quick access to your dashboard, attendance, and academic records.</p>
                             </div>
                         </div>
                         <button 

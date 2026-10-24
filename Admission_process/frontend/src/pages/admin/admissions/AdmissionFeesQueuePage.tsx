@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
+import { ShowStudentsRangeSelector } from '../../../components/common/ShowStudentsRangeSelector';
 
 export const AdmissionFeesQueuePage: React.FC = () => {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export const AdmissionFeesQueuePage: React.FC = () => {
   
   // Filters & Pagination
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [statusTab, setStatusTab] = useState<string>('FEE_RECEIPT_UPLOADED');
   const [branchId, setBranchId] = useState('ALL');
   const [admissionType, setAdmissionType] = useState('ALL');
@@ -52,7 +54,7 @@ export const AdmissionFeesQueuePage: React.FC = () => {
     try {
       const result = await admissionService.listApplications({
         page,
-        limit: 10,
+        limit,
         status: statusTab,
         branchId: branchId === 'ALL' ? undefined : branchId,
         admissionType: admissionType === 'ALL' ? undefined : admissionType,
@@ -75,7 +77,7 @@ export const AdmissionFeesQueuePage: React.FC = () => {
 
   useEffect(() => {
     fetchApplications();
-  }, [page, statusTab, branchId, admissionType, sortBy, sortOrder, search]);
+  }, [page, limit, statusTab, branchId, admissionType, sortBy, sortOrder, search]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -289,6 +291,14 @@ export const AdmissionFeesQueuePage: React.FC = () => {
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>{sortOrder === 'DESC' ? 'Newest First' : 'Oldest First'}</span>
           </button>
+
+          <ShowStudentsRangeSelector
+            value={limit}
+            onChange={(newLimit) => {
+              setLimit(newLimit);
+              setPage(1);
+            }}
+          />
         </div>
       </div>
 

@@ -21,6 +21,7 @@ export type AdmissionStatus =
 export interface AdmissionApplication {
   id: string;
   applicationNumber: string;
+  usn?: string | null;
   admissionType: string | null;
   qualification: string | null;
   aadhaar?: string;
@@ -58,6 +59,7 @@ export interface AdmissionApplication {
   correctionRequestedAt?: string | null;
   correctionRequestedById?: string | null;
   academicYear?: string | null;
+  entrySemester?: number | null;
   cancellationReason?: string | null;
   cancellationRemarks?: string | null;
   cancellationAdminRemarks?: string | null;
@@ -102,6 +104,8 @@ export interface AdmissionApplication {
     phone: string | null;
     profileImage: string | null;
     student?: {
+      id?: string;
+      usn?: string | null;
       enrollmentNumber: string;
       semester?: number | null;
     } | null;
@@ -271,6 +275,7 @@ const admissionService = {
     category?: string;
     district?: string;
     academicYear?: string;
+    batch?: string;
     startDate?: string;
     endDate?: string;
     includeFullDetails?: boolean;
@@ -290,6 +295,7 @@ const admissionService = {
     if (params.category) query.set('category', params.category);
     if (params.district) query.set('district', params.district);
     if (params.academicYear) query.set('academicYear', params.academicYear);
+    if (params.batch) query.set('batch', params.batch);
     if (params.startDate) query.set('startDate', params.startDate);
     if (params.endDate) query.set('endDate', params.endDate);
     if (params.includeFullDetails) query.set('includeFullDetails', 'true');
@@ -299,12 +305,29 @@ const admissionService = {
     if (Array.isArray(data)) {
       return {
         applications: data,
-        total: res.data.total || 0,
+        total: res.data.total || data.length || 0,
         page: params.page || 1,
-        totalPages: Math.ceil((res.data.total || 0) / (params.limit || 20))
+        totalPages: Math.ceil((res.data.total || data.length || 0) / (params.limit || 20)) || 1
       } as AdmissionListResult;
     }
-    return data as AdmissionListResult;
+    if (data && typeof data === 'object' && 'applications' in data) {
+      return data as AdmissionListResult;
+    }
+    // Fallback: empty result
+    return { applications: [], total: 0, page: params.page || 1, totalPages: 1 };
+  },
+
+  /** GET /api/admin/admissions/batches — available distinct cohort batches */
+  async getAvailableBatches(): Promise<string[]> {
+    try {
+      const res = await API.get('/admin/admissions/batches');
+      if (res.data?.data && Array.isArray(res.data.data)) {
+        return res.data.data;
+      }
+      return ['2026–2030', '2025–2029', '2024–2028', '2023–2027', '2022–2026', '2021–2025'];
+    } catch {
+      return ['2026–2030', '2025–2029', '2024–2028', '2023–2027', '2022–2026', '2021–2025'];
+    }
   },
 
   /** GET /api/admin/admissions/:id — full application detail */
@@ -404,13 +427,18 @@ const admissionService = {
   },
 
   /** GET /api/admin/usn/summary */
-  async getUsnSummary(): Promise<{
+  async getUsnSummary(params?: {
+    academicYear?: string;
+    branchId?: string;
+    semester?: string;
+    entryType?: string;
+  }): Promise<{
     totalEligible: number;
     assigned: number;
     pending: number;
     completionRate: number;
   }> {
-    const res = await API.get('/admin/usn/summary');
+    const res = await API.get('/admin/usn/summary', { params });
     return res.data.data;
   },
 

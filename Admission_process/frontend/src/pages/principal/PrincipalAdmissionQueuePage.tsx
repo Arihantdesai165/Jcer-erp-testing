@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import API from '../../services/api';
 import { AdmissionApplication, AdmissionListResult } from '../../services/admission.service';
@@ -8,6 +9,8 @@ import {
   CheckCheck, AlertCircle, X, Loader2, Info
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { ShowStudentsRangeSelector } from '../../components/common/ShowStudentsRangeSelector';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 
 interface PrincipalAdmissionQueuePageProps {
   defaultStatus?: string;
@@ -31,6 +34,7 @@ interface BulkConfirmSummary {
 
 export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePageProps> = ({ defaultStatus = 'APPROVED' }) => {
   const navigate = useNavigate();
+  const { academicYears: availableAcademicYears } = useAcademicYear();
 
   const getRouteForStatus = (tabStatus: string) => {
     switch (tabStatus) {
@@ -54,6 +58,7 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
 
   // Filters & Pagination
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [status, setStatus] = useState<string>(defaultStatus);
   const [branchId, setBranchId] = useState('ALL');
   const [admissionType, setAdmissionType] = useState('ALL');
@@ -92,7 +97,7 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
     try {
       const query = new URLSearchParams();
       query.set('page', String(page));
-      query.set('limit', '10');
+      query.set('limit', String(limit));
       if (status) query.set('status', status);
       if (branchId !== 'ALL') query.set('branchId', branchId);
       if (admissionType !== 'ALL') query.set('admissionType', admissionType);
@@ -129,7 +134,7 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
   useEffect(() => {
     fetchApplications();
     // eslint-disable-next-line
-  }, [page, status, branchId, admissionType, qualification, academicYear, startDate, endDate, search, sortBy, sortOrder]);
+  }, [page, limit, status, branchId, admissionType, qualification, academicYear, startDate, endDate, search, sortBy, sortOrder]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -407,10 +412,17 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
           </div>
           <button
             type="submit"
-            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold transition-all shrink-0"
+            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer"
           >
             Search
           </button>
+          <ShowStudentsRangeSelector
+            value={limit}
+            onChange={(newLimit) => {
+              setLimit(newLimit);
+              setPage(1);
+            }}
+          />
         </form>
 
         <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
@@ -449,11 +461,9 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
             className="bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
           >
             <option value="ALL">All Academic Years</option>
-            {Array.from({ length: 5 }).map((_, i) => {
-              const y = new Date().getFullYear() + i;
-              const opt = `${y}-${y + 1}`;
-              return <option key={opt} value={opt}>{opt}</option>;
-            })}
+            {availableAcademicYears.map((ay) => (
+              <option key={ay.id || ay.year} value={ay.year}>{ay.year}</option>
+            ))}
           </select>
 
           {(branchId !== 'ALL' || admissionType !== 'ALL' || qualification !== 'ALL' || academicYear !== 'ALL' || search) && (
@@ -528,25 +538,25 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-neutral-100 dark:border-neutral-800 text-neutral-400 font-extrabold uppercase text-[10px] tracking-wider bg-neutral-50/50 dark:bg-neutral-800/50">
-                    <th className="py-4 px-4 w-12 text-center">
+                  <tr className="bg-[#111111] dark:bg-neutral-950 text-white font-extrabold uppercase text-[11px] tracking-wider border-b border-neutral-800">
+                    <th className="py-3.5 px-4 w-12 text-center">
                       <input
                         type="checkbox"
                         checked={isAllEligibleSelected}
                         onChange={handleToggleSelectAll}
                         disabled={eligibleAppsOnPage.length === 0}
-                        className="size-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="size-4 rounded border-neutral-600 bg-neutral-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                         title={eligibleAppsOnPage.length === 0 ? 'No eligible admissions to select on this page' : 'Select all eligible on this page'}
                       />
                     </th>
-                    <th className="py-4 px-4">Admission No</th>
-                    <th className="py-4 px-6">Student Name</th>
-                    <th className="py-4 px-4">Branch</th>
-                    <th className="py-4 px-4">Quota</th>
-                    <th className="py-4 px-4">CET / DCET No</th>
-                    <th className="py-4 px-6">Status</th>
-                    <th className="py-4 px-4">Date</th>
-                    <th className="py-4 px-6 text-right">Action</th>
+                    <th className="py-3.5 px-4">Admission No</th>
+                    <th className="py-3.5 px-6">Student Name</th>
+                    <th className="py-3.5 px-4">Branch</th>
+                    <th className="py-3.5 px-4">Quota</th>
+                    <th className="py-3.5 px-4">CET / DCET No</th>
+                    <th className="py-3.5 px-6">Status</th>
+                    <th className="py-3.5 px-4">Date</th>
+                    <th className="py-3.5 px-6 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -624,6 +634,21 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
               </table>
             </div>
 
+            {/* ── Dynamic Count Summary Bar (Outside & Below Table) ── */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200/90 dark:border-neutral-800 bg-slate-50/70 dark:bg-neutral-850/70 text-xs text-slate-600 dark:text-neutral-300 shadow-2xs select-none">
+              <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
+                <span>
+                  Total: <strong className="font-extrabold text-slate-900 dark:text-white">{data.total}</strong> student{data.total === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span>
+                  Selected: <strong className="font-extrabold text-indigo-600 dark:text-indigo-400">{selectedIds.length}</strong> of {data.applications.length}
+                </span>
+              </div>
+            </div>
+
             {/* ═══ PAGINATION ═══ */}
             {data.totalPages > 1 && (
               <div className="flex items-center justify-between p-4 border-t border-neutral-100 dark:border-neutral-800 text-xs">
@@ -653,8 +678,8 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
       </div>
 
       {/* ═══ CONFIRMATION DIALOG MODAL ═══ */}
-      {confirmModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+      {confirmModalOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-slate-200 dark:border-neutral-800 p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 animate-scale-up">
             <div className="flex items-start justify-between">
               <div className="size-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
@@ -717,12 +742,13 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ═══ SUMMARY / RESULTS MODAL ═══ */}
-      {summaryData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+      {summaryData && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-slate-200 dark:border-neutral-800 p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 animate-scale-up">
             <div className="flex items-start justify-between">
               <div className="size-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -774,7 +800,8 @@ export const PrincipalAdmissionQueuePage: React.FC<PrincipalAdmissionQueuePagePr
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

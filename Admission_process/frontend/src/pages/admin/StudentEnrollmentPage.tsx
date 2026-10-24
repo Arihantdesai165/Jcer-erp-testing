@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ClipboardList, CheckCircle2, XCircle, Clock, Search,
   Eye, X, FileText, User, Phone, MapPin,
@@ -7,6 +8,7 @@ import {
 } from 'lucide-react';
 import Toast from '../../components/common/Toast';
 import { CardSkeleton } from '../../components/common/Skeleton';
+import { ShowStudentsRangeSelector } from '../../components/common/ShowStudentsRangeSelector';
 import admissionService, {
   AdmissionApplication,
   AdmissionStatus,
@@ -68,6 +70,7 @@ export const StudentEnrollmentPage: React.FC<StudentEnrollmentPageProps> = ({ de
   const [filter, setFilter]             = useState<FilterKey>(resolveDefaultFilter());
   const [search, setSearch]             = useState('');
   const [page, setPage]                 = useState(1);
+  const [limit, setLimit]               = useState(12);
   const [selected, setSelected]         = useState<AdmissionApplication | null>(null);
   const [remarks, setRemarks]           = useState('');
   const [toast, setToast]               = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -80,7 +83,7 @@ export const StudentEnrollmentPage: React.FC<StudentEnrollmentPageProps> = ({ de
         status: filter === 'ALL' ? undefined : filter,
         search: search || undefined,
         page,
-        limit: 12,
+        limit,
       });
       setApplications(result.applications);
       setTotal(result.total);
@@ -91,7 +94,7 @@ export const StudentEnrollmentPage: React.FC<StudentEnrollmentPageProps> = ({ de
     } finally {
       setLoading(false);
     }
-  }, [filter, search, page]);
+  }, [filter, search, page, limit]);
 
   useEffect(() => {
     fetchApplications();
@@ -288,17 +291,26 @@ export const StudentEnrollmentPage: React.FC<StudentEnrollmentPageProps> = ({ de
             ))}
           </div>
 
-          {/* Search */}
-          <div className="relative w-full md:w-72">
-            <input
-              type="text"
-              placeholder="Search by name, email, admission no..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-neutral-50 border border-neutral-200 rounded-xl py-2 px-3 pl-9 text-xs outline-none focus:ring-2 text-neutral-800 placeholder:text-neutral-400"
-              style={{ '--tw-ring-color': '#7C3AED30' } as React.CSSProperties}
+          {/* Search + Range */}
+          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            <div className="relative flex-1 md:w-72">
+              <input
+                type="text"
+                placeholder="Search by name, email, admission no..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-neutral-50 border border-neutral-200 rounded-xl py-2 px-3 pl-9 text-xs outline-none focus:ring-2 text-neutral-800 placeholder:text-neutral-400"
+                style={{ '--tw-ring-color': '#7C3AED30' } as React.CSSProperties}
+              />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-neutral-400" />
+            </div>
+            <ShowStudentsRangeSelector
+              value={limit}
+              onChange={(newLimit) => {
+                setLimit(newLimit);
+                setPage(1);
+              }}
             />
-            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-neutral-400" />
           </div>
         </div>
 
@@ -437,9 +449,9 @@ export const StudentEnrollmentPage: React.FC<StudentEnrollmentPageProps> = ({ de
       </div>
 
       {/* ── Detail Modal ─────────────────────────────────────────────────────── */}
-      {selected && (
+      {selected && createPortal(
         <div
-          className="fixed inset-0 bg-neutral-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in"
           onClick={() => setSelected(null)}
         >
           <div
@@ -701,7 +713,8 @@ export const StudentEnrollmentPage: React.FC<StudentEnrollmentPageProps> = ({ de
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

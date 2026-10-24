@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -394,9 +395,9 @@ const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, onClose }
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div 
-      className="fixed inset-0 bg-neutral-950/70 dark:bg-neutral-950/85 backdrop-blur-[5px] z-[9999] flex items-start justify-center pt-[12vh] px-4 md:px-0"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-start justify-center pt-[12vh] px-4 md:px-0"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -657,7 +658,8 @@ const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, onClose }
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
